@@ -1,55 +1,112 @@
 export const colors = {
-  bg: '#0a0a0f',
-  bgElevated: '#14141c',
-  bgPressed: '#1c1c26',
-  border: '#22222e',
-  borderActive: '#00ff88',
-  primary: '#00ff88',
-  primaryDim: '#00cc6a',
-  primaryGlow: 'rgba(0, 255, 136, 0.15)',
-  accent: '#ff6b35',
-  accentDim: '#cc5529',
-  danger: '#ff4757',
-  warning: '#ffa502',
-  success: '#00ff88',
-  textPrimary: '#ffffff',
-  textSecondary: '#a0a0b0',
-  textMuted: '#5a5a68',
-  textOnPrimary: '#0a0a0f',
+  // Backgrounds
+  bg: '#08080C',
+  bgElevated: '#101018',
+  bgPressed: '#1A1A24',
+  surface: '#101018',
+  surfaceHigh: '#16161F',
+  glassBg: 'rgba(16, 16, 24, 0.9)',
   overlay: 'rgba(0, 0, 0, 0.7)',
-  glassBg: 'rgba(20, 20, 28, 0.9)',
+
+  // Borders
+  border: '#22222E',
+  borderStrong: '#2E2E3C',
+  borderActive: '#D4FF3A',
+
+  // Brand
+  primary: '#D4FF3A',
+  primaryDim: '#A8CC2E',
+  primaryGlow: 'rgba(212, 255, 58, 0.18)',
+  textOnPrimary: '#08080C',
+
+  // Status
+  success: '#00FF88',
+  successDim: '#00CC6A',
+  danger: '#FF4757',
+  dangerDim: '#CC3845',
+  warning: '#FFA502',
+  warningDim: '#CC8400',
+
+  // Accents (usar como destaques em gráficos, splashes, gradients)
+  accentMagenta: '#FF3DCB',
+  accentCyan: '#3DDCFF',
+  accentPurple: '#9D5BFF',
+  accentOrange: '#FF6B35',
+
+  // Text
+  textPrimary: '#FFFFFF',
+  textSecondary: '#A0A0B0',
+  textMuted: '#5A5A68',
+  textDim: '#3A3A45',
 };
 
 export const typography = {
-  displayL: { fontSize: 72, fontWeight: '900' as const, letterSpacing: -2 },
-  displayM: { fontSize: 48, fontWeight: '900' as const, letterSpacing: -1 },
-  displayS: { fontSize: 36, fontWeight: '800' as const, letterSpacing: -0.5 },
+  /** Times de volta e outros números gigantes (tela live). */
+  displayXL: { fontSize: 84, fontWeight: '900' as const, letterSpacing: -3 },
+  displayL: { fontSize: 64, fontWeight: '900' as const, letterSpacing: -2 },
+  displayM: { fontSize: 44, fontWeight: '900' as const, letterSpacing: -1 },
+  displayS: { fontSize: 32, fontWeight: '800' as const, letterSpacing: -0.5 },
+
   h1: { fontSize: 28, fontWeight: '800' as const, letterSpacing: -0.5 },
   h2: { fontSize: 22, fontWeight: '700' as const, letterSpacing: -0.3 },
   h3: { fontSize: 18, fontWeight: '700' as const },
+
   bodyL: { fontSize: 16, fontWeight: '500' as const },
   body: { fontSize: 14, fontWeight: '500' as const },
   bodyS: { fontSize: 13, fontWeight: '500' as const },
-  label: { fontSize: 11, fontWeight: '700' as const, letterSpacing: 1.5, textTransform: 'uppercase' as const },
-  labelL: { fontSize: 13, fontWeight: '700' as const, letterSpacing: 1, textTransform: 'uppercase' as const },
-  mono: { fontVariant: ['tabular-nums'] as const },
+
+  label: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    letterSpacing: 1.5,
+    textTransform: 'uppercase' as const,
+  },
+  labelL: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    letterSpacing: 1,
+    textTransform: 'uppercase' as const,
+  },
+
+  /** Para números — sempre usar pra tabular-nums. */
+  mono: { fontVariant: ['tabular-nums'] as ['tabular-nums'] },
 };
 
 export const spacing = {
-  xs: 4, s: 8, m: 12, l: 16, xl: 20, xxl: 24, xxxl: 32, huge: 48,
+  xs: 4,
+  s: 8,
+  m: 12,
+  l: 16,
+  xl: 20,
+  xxl: 24,
+  xxxl: 32,
+  huge: 48,
 };
 
 export const radius = {
-  s: 8, m: 12, l: 16, xl: 20, pill: 999,
+  xs: 4,
+  s: 8,
+  m: 12,
+  l: 16,
+  xl: 20,
+  xxl: 28,
+  pill: 999,
 };
 
 export const shadows = {
   card: {
     shadowColor: '#000',
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.35,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },
     elevation: 4,
+  },
+  cardHigh: {
+    shadowColor: '#000',
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
   },
   glow: {
     shadowColor: colors.primary,
@@ -58,4 +115,19 @@ export const shadows = {
     shadowOffset: { width: 0, height: 0 },
     elevation: 8,
   },
+  glowSoft: {
+    shadowColor: colors.primary,
+    shadowOpacity: 0.3,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 6,
+  },
+};
+
+/** Gradientes pre-set pros splashes coloridos da arte do Copilot. */
+export const gradients = {
+  primarySplash: [colors.accentMagenta, colors.accentPurple, colors.accentCyan, colors.primary],
+  cardGlow: ['rgba(212, 255, 58, 0.1)', 'rgba(212, 255, 58, 0)'],
+  bottomFade: ['rgba(8,8,12,0)', 'rgba(8,8,12,0.85)', 'rgba(8,8,12,0.98)'],
+  topFade: ['rgba(8,8,12,0.95)', 'rgba(8,8,12,0.4)', 'rgba(8,8,12,0)'],
 };

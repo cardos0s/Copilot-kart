@@ -17,7 +17,7 @@ export function TrackSilhouette({
   samples,
   width = 120,
   height = 80,
-  strokeColor = colors.accent,
+  strokeColor = colors.primary,
   strokeWidth = 2.5,
   showStart = true,
 }: Props) {
@@ -68,7 +68,7 @@ export function TrackSilhouette({
         fill="none"
       />
       {showStart && (
-        <Circle cx={startX} cy={startY} r={3.5} fill={colors.primary} />
+        <Circle cx={startX} cy={startY} r={3.5} fill={colors.accentMagenta} />
       )}
     </Svg>
   );

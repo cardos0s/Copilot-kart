@@ -47,7 +47,7 @@ function TrackIconFallback({ trackId }: { trackId: string }) {
     <Svg width={60} height={44} viewBox="0 0 60 44">
       <Path
         d={paths[trackId] ?? paths['leandro-melo']}
-        stroke={colors.accent}
+        stroke={colors.accentMagenta}
         strokeWidth={2.5}
         fill="none"
         strokeLinecap="round"
@@ -142,26 +142,15 @@ export default function NewSession() {
 
   const handleSelectTrack = (row: TrackRow) => {
     if (row.reference) {
-      // Já tem referência: oferece opções
+      // Já tem referência: ação primária = correr. Android Alert tem limite
+      // de 3 botões, então "Apagar referência" mora no long-press.
       Alert.alert(
         row.shortName,
         `Referência atual: ${formatLap(row.reference.durationMs)}`,
         [
+          { text: 'Bora correr', onPress: () => startRace(row) },
+          { text: 'Regravar referência', onPress: () => startReference(row) },
           { text: 'Cancelar', style: 'cancel' },
-          {
-            text: 'Regravar referência',
-            onPress: () => startReference(row),
-          },
-          {
-            text: 'Apagar referência',
-            style: 'destructive',
-            onPress: () => confirmDeleteReference(row),
-          },
-          {
-            text: 'Bora correr',
-            style: 'default',
-            onPress: () => startRace(row),
-          },
         ]
       );
     } else {
@@ -185,6 +174,27 @@ export default function NewSession() {
         trackName: row.name,
       },
     });
+  };
+
+  /**
+   * Long-press na pista — abre menu de gerenciamento da referência (incluindo
+   * "Apagar"). Mantém o tap simples como ação primária (correr ou reconhecer).
+   */
+  const handleLongPressTrack = (row: TrackRow) => {
+    if (!row.reference) return; // sem ref, long-press não faz nada
+    Alert.alert(
+      `Gerenciar ${row.shortName}`,
+      `Referência atual: ${formatLap(row.reference.durationMs)}`,
+      [
+        {
+          text: 'Apagar referência',
+          style: 'destructive',
+          onPress: () => confirmDeleteReference(row),
+        },
+        { text: 'Regravar referência', onPress: () => startReference(row) },
+        { text: 'Cancelar', style: 'cancel' },
+      ]
+    );
   };
 
   const startRace = (row: TrackRow) => {
@@ -253,6 +263,8 @@ export default function NewSession() {
             <Pressable
               key={row.id}
               onPress={() => handleSelectTrack(row)}
+              onLongPress={() => handleLongPressTrack(row)}
+              delayLongPress={400}
               style={({ pressed }) => [
                 s.row,
                 row.reference && s.rowReady,

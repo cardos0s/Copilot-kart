@@ -3,7 +3,7 @@
     "name": "Copilot",
     "slug": "kartlap",
     "version": "0.1.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "scheme": "kartlap",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
@@ -12,12 +12,16 @@
       "package": "com.cortextech.copilot",
       "infoPlist": {
         "UIBackgroundModes": [
+          "location",
           "location"
         ],
         "NSLocationWhenInUseUsageDescription": "O KartLap usa sua localização para gravar a trajetória na pista.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "O KartLap precisa da localização em segundo plano para continuar gravando quando a tela estiver apagada.",
-        "NSMotionUsageDescription": "O KartLap usa sensores de movimento para melhorar a precisão da trajetória."
-      }
+        "NSMotionUsageDescription": "O KartLap usa sensores de movimento para melhorar a precisão da trajetória.",
+        "NSPhotoLibraryUsageDescription": "Selecione uma foto da galeria para usar no seu perfil.",
+        "NSCameraUsageDescription": "Tire uma foto para usar no seu perfil."
+      },
+      "bundleIdentifier": "com.cortextech.copilot"
     },
     "android": {
       "package": "com.cortextech.copilot",
@@ -38,12 +42,29 @@
     "plugins": [
       "expo-router",
       [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#000000"
+        }
+      ],
+      [
         "expo-location",
         {
           "locationAlwaysAndWhenInUsePermission": "O KartLap precisa da localização em segundo plano para gravar a volta completa.",
           "isIosBackgroundLocationEnabled": true,
           "isAndroidBackgroundLocationEnabled": true,
           "isAndroidForegroundServiceEnabled": true
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableProguardInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true
+          }
         }
       ]
     ],
@@ -53,9 +74,8 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "76fe31f3-ad5e-421c-bf9b-307e71ae6e7c"
+        "projectId": "290688e3-7d00-42d8-ab7b-05455cfb380f"
       }
-    },
-    "owner": "jucsantana0"
+    }
   }
 }

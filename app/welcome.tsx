@@ -1,57 +1,52 @@
+import { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ImageBackground, Pressable, StatusBar } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getProfile } from '../src/storage/profile';
 import { colors, spacing, radius } from '../src/theme';
 
 export default function Welcome() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const [hasProfile, setHasProfile] = useState(false);
+
+  useEffect(() => {
+    getProfile().then((p) => setHasProfile(p !== null && !!p.name));
+  }, []);
+
+  const handleStart = () => {
+    if (hasProfile) {
+      router.replace('/');
+    } else {
+      router.push('/onboarding/name');
+    }
+  };
 
   return (
     <View style={s.container}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       <ImageBackground
-        source={require('../assets/kart.jpg')}
+        source={require('../assets/splash.png')}
         style={s.bg}
         resizeMode="cover"
-        imageStyle={{ transform: [{ translateY: 40 }] }}
       >
-        {/* Gradiente topo pra status bar — derrete suavemente */}
-        <LinearGradient
-          colors={['rgba(10,10,15,0.95)', 'rgba(10,10,15,0.4)', 'rgba(10,10,15,0)']}
-          locations={[0, 0.6, 1]}
-          style={s.topGradient}
-        />
-
         {/* Gradiente base pra botão — derrete de transparente pra preto */}
         <LinearGradient
-          colors={['rgba(10,10,15,0)', 'rgba(10,10,15,0.85)', 'rgba(10,10,15,0.98)']}
-          locations={[0, 0.4, 1]}
+          colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.7)', 'rgba(0,0,0,0.95)']}
+          locations={[0, 0.55, 1]}
           style={s.bottomGradient}
         />
 
         <View style={[s.content, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 20 }]}>
-          <View style={s.top}>
-            <Text style={s.brand}>
-              <Text style={s.brandWhite}>co</Text>
-              <Text style={s.brandGreen}>pilot</Text>
-            </Text>
-          </View>
-
-          <View style={s.middle}>
-            <Text style={s.headline}>Onde você está{'\n'}perdendo tempo?</Text>
-            <Text style={s.sub}>
-              Uma volta você é rápido, na outra segundos atrás. Chegou a hora de saber o que mudou.
-            </Text>
-          </View>
+          <View style={s.middle} />
 
           <View style={s.bottom}>
             <Pressable
               style={({ pressed }) => [s.button, pressed && { opacity: 0.6 }]}
-              onPress={() => router.push('/onboarding/name')}
+              onPress={handleStart}
             >
-              <Text style={s.buttonText}>Começar</Text>
+              <Text style={s.buttonText}>{hasProfile ? 'Entrar' : 'Começar'}</Text>
               <Text style={s.buttonArrow}>→</Text>
             </Pressable>
             <Text style={s.version}>v0.1 · Brasil</Text>

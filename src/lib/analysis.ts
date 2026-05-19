@@ -95,6 +95,13 @@ export type Sector = {
   deltaMs: number;           // positivo = perdeu tempo; negativo = ganhou
   avgSpeedRef: number;       // m/s
   avgSpeedCurrent: number;   // m/s
+  /**
+   * False quando os dados desse setor são suspeitos:
+   *   - curMs == 0 (sem amostras na volta atual — interpolação falhou)
+   *   - curMs > 3x refMs (provavelmente pit-in / sinal perdido)
+   * Setores inválidos não devem entrar em estatísticas de "onde ganhou/perdeu".
+   */
+  valid: boolean;
 };
 
 export type LapAnalysis = {
@@ -131,22 +138,35 @@ export function analyzeLap(
     const avgSpeedRef = refMs > 0 ? sectorLen / (refMs / 1000) : 0;
     const avgSpeedCur = curMs > 0 ? sectorLen / (curMs / 1000) : 0;
 
+    // Setor inválido = sem dados (interpolação retornou tempo idêntico nos dois
+    // extremos, indicando que o piloto não passou por essa região) ou tempo
+    // muito anômalo (>5x da referência, kart parado em pit-in ou box).
+    // 5x é tolerante o bastante pra aceitar out-laps em ritmo lento mas
+    // ainda descartar segmentos onde o GPS perdeu o piloto.
+    const valid = curMs > 0 && refMs > 0 && curMs <= refMs * 5;
+
     sectors.push({
       index: i,
       sStart,
       sEnd,
       referenceMs: refMs,
       currentMs: curMs,
-      deltaMs: curMs - refMs,
+      deltaMs: valid ? curMs - refMs : 0,
       avgSpeedRef,
       avgSpeedCurrent: avgSpeedCur,
+      valid,
     });
   }
 
   const totalDeltaMs = matchedCurrent.durationMs - matchedReference.durationMs;
-  let worst = 0;
-  let best = 0;
-  for (let i = 1; i < sectors.length; i++) {
+  // Ignora setores inválidos pra escolher pior/melhor — senão um setor "sem dados"
+  // dominaria a estatística com delta zerado ou anômalo.
+  const validIdx = sectors
+    .map((sec, i) => (sec.valid ? i : -1))
+    .filter((i) => i >= 0);
+  let worst = validIdx[0] ?? 0;
+  let best = validIdx[0] ?? 0;
+  for (const i of validIdx) {
     if (sectors[i].deltaMs > sectors[worst].deltaMs) worst = i;
     if (sectors[i].deltaMs < sectors[best].deltaMs) best = i;
   }

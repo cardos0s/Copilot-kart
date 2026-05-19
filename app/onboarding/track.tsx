@@ -26,7 +26,7 @@ function TrackIcon({ trackId }: { trackId: string }) {
     <Svg width={36} height={28} viewBox="0 0 36 28">
       <Path
         d={paths[trackId] ?? paths['leandro-melo']}
-        stroke={colors.accent}
+        stroke={colors.accentMagenta}
         strokeWidth={2}
         fill="none"
         strokeLinecap="round"
@@ -279,4 +279,4 @@ const s = StyleSheet.create({
     textAlign: 'center',
     padding: spacing.xl,
   },
-});r
+});

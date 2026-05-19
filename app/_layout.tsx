@@ -1,20 +1,47 @@
-import { useEffect, useState } from 'react';
-import { View, ActivityIndicator } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { Platform, View } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import * as SplashScreen from 'expo-splash-screen';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { getProfile } from '../src/storage/profile';
+import { SplashLoader } from '../src/components/SplashLoader';
 import { colors } from '../src/theme';
+
+SplashScreen.preventAutoHideAsync().catch(() => {
+  /* já escondida — ok */
+});
+
+/**
+ * Esconde a barra de navegação do Android (3 botões) globalmente.
+ * Comportamento "inset-swipe": o usuário pode trazer de volta com swipe da
+ * borda inferior, mas ela some sozinha logo depois — modo imersivo sticky.
+ *
+ * iOS não tem barra equivalente, então o módulo não faz nada lá.
+ */
+async function hideAndroidNavBar() {
+  if (Platform.OS !== 'android') return;
+  try {
+    const NavigationBar = await import('expo-navigation-bar');
+    await NavigationBar.setVisibilityAsync('hidden');
+    await NavigationBar.setBehaviorAsync('inset-swipe');
+    await NavigationBar.setBackgroundColorAsync(colors.bg);
+  } catch {
+    // Falha silenciosa — alguns devices Android não permitem
+  }
+}
+
+// Flag de cold start: resetada quando o JS bundle recarrega. Garante que
+// a Welcome screen apareça em toda inicialização fria, independentemente
+// de já ter perfil salvo.
+let coldStartHandled = false;
 
 function AuthGate() {
   const router = useRouter();
   const segments = useSegments();
-  const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    // Re-checa o perfil sempre que a rota muda. Isso captura o caso em que
-    // o usuário termina o onboarding e salva perfil pela primeira vez.
     (async () => {
       const profile = await getProfile();
       const hasProfile = profile !== null && !!profile.name;
@@ -24,47 +51,86 @@ function AuthGate() {
         currentRoute === 'welcome' ||
         currentRoute.startsWith('onboarding');
 
-      if (checking) setChecking(false);
+      // Cold start: força welcome screen mesmo com perfil já criado.
+      if (!coldStartHandled) {
+        coldStartHandled = true;
+        if (!inAuthFlow) {
+          router.replace('/welcome');
+          return;
+        }
+      }
 
+      // Sem perfil + não está em fluxo de auth → redireciona pra welcome.
       if (!hasProfile && !inAuthFlow) {
         router.replace('/welcome');
       }
     })();
-  }, [segments, checking]);
-
-  if (checking) {
-    return (
-      <View style={{ flex: 1, backgroundColor: colors.bg, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
-    );
-  }
+  }, [segments]);
 
   return null;
 }
 
 export default function RootLayout() {
+  const [profileReady, setProfileReady] = useState(false);
+  const [barFinished, setBarFinished] = useState(false);
+  const ready = profileReady && barFinished;
+
+  useEffect(() => {
+    // Pré-checa o perfil em paralelo à animação da barra, pra que a transição
+    // pra rota correta seja imediata quando a splash sair.
+    (async () => {
+      try {
+        await getProfile();
+      } finally {
+        setProfileReady(true);
+      }
+    })();
+    // Esconde nav bar Android assim que o app monta
+    hideAndroidNavBar();
+  }, []);
+
+  const handleSplashAnimationFinish = useCallback(() => {
+    setBarFinished(true);
+  }, []);
+
+  useEffect(() => {
+    if (ready) {
+      SplashScreen.hideAsync().catch(() => {
+        /* já escondida — ok */
+      });
+    }
+  }, [ready]);
+
   return (
     <SafeAreaProvider>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <StatusBar style="light" />
-        <AuthGate />
-        <Stack
-          screenOptions={{
-            headerStyle: { backgroundColor: colors.bg },
-            headerTintColor: '#fff',
-            headerTitleStyle: { fontWeight: '700' },
-            contentStyle: { backgroundColor: colors.bg },
-          }}
-        >
-          <Stack.Screen name="index" options={{ headerShown: false }} />
-          <Stack.Screen name="welcome" options={{ headerShown: false }} />
-          <Stack.Screen name="onboarding" options={{ headerShown: false }} />
-          <Stack.Screen name="new-session" options={{ title: 'Nova sessão' }} />
-          <Stack.Screen name="recording" options={{ headerShown: false }} />
-          <Stack.Screen name="recording-reference" options={{ headerShown: false }} />
-          <Stack.Screen name="session/[id]" options={{ title: 'Sessão' }} />
-        </Stack>
+        <View style={{ flex: 1, backgroundColor: colors.bg }}>
+          <AuthGate />
+          <Stack
+            screenOptions={{
+              headerStyle: { backgroundColor: colors.bg },
+              headerTintColor: '#fff',
+              headerTitleStyle: { fontWeight: '700' },
+              contentStyle: { backgroundColor: colors.bg },
+            }}
+          >
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="welcome" options={{ headerShown: false }} />
+            <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+            <Stack.Screen name="new-session" options={{ title: 'Nova sessão' }} />
+            <Stack.Screen name="recording" options={{ headerShown: false }} />
+            <Stack.Screen name="recording-reference" options={{ headerShown: false }} />
+            <Stack.Screen name="session/[id]" options={{ headerShown: false }} />
+            <Stack.Screen name="settings" options={{ headerShown: false }} />
+            <Stack.Screen name="profile-edit" options={{ headerShown: false }} />
+          </Stack>
+          {!ready && (
+            <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
+              <SplashLoader onFinish={handleSplashAnimationFinish} />
+            </View>
+          )}
+        </View>
       </GestureHandlerRootView>
     </SafeAreaProvider>
   );

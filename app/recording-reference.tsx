@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, Pressable, Alert, ScrollView } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,7 +17,7 @@ import { colors, spacing, radius, typography } from '../src/theme';
  * DESLIGAR (mudar pra false) antes de qualquer teste em pista ou produção.
  * Enquanto ativado, um banner vermelho aparece no topo da tela.
  */
-const BENCH_MODE = true;
+const BENCH_MODE = false;
 
 const BENCH_DETECTOR_OPTIONS = {
   ritmoSpeedMs: 0.6,         // 2.2 km/h — caminhada tranquila atinge
@@ -108,7 +108,7 @@ function LiveRadar({ samples }: { samples: GpsSample[] }) {
               strokeLinecap="round"
               strokeLinejoin="round"
             />
-            <Circle cx={path.firstX} cy={path.firstY} r={5} fill={colors.accent} />
+            <Circle cx={path.firstX} cy={path.firstY} r={5} fill={colors.accentMagenta} />
             <Circle cx={path.lastX} cy={path.lastY} r={6} fill={colors.primary} stroke={colors.bg} strokeWidth={2} />
           </>
         )}
@@ -124,6 +124,43 @@ export default function RecordingReference() {
   const [targetLaps, setTargetLaps] = useState(3);
   const [starting, setStarting] = useState(false);
   const targetReachedHandledRef = useRef(false);
+
+  /**
+   * Overlay de transição pós-reconhecimento. Quando setado, mostra
+   * "Pista mapeada! Iniciando cronometragem em X..." e auto-navega pra
+   * /recording após contagem. Driver continua no kart sem precisar tocar.
+   */
+  const [transition, setTransition] = useState<{
+    lapsCount: number;
+    bestMs: number;
+    lengthM: number;
+  } | null>(null);
+  const [countdown, setCountdown] = useState(5);
+
+  useEffect(() => {
+    if (!transition) return;
+    setCountdown(5);
+    const tick = setInterval(() => {
+      setCountdown((c) => {
+        if (c <= 1) {
+          clearInterval(tick);
+          // Auto-navega quando chega a 0
+          router.replace({
+            pathname: '/recording',
+            params: { trackId: params.trackId!, trackName: params.trackName! },
+          });
+          return 0;
+        }
+        return c - 1;
+      });
+    }, 1000);
+    return () => clearInterval(tick);
+  }, [transition, router, params.trackId, params.trackName]);
+
+  const cancelTransition = () => {
+    setTransition(null);
+    router.replace('/');
+  };
 
   const handleTargetReached = () => {
     if (targetReachedHandledRef.current) return;
@@ -142,7 +179,7 @@ export default function RecordingReference() {
     targetLaps,
     onTargetReached: handleTargetReached,
     detectorOptions: BENCH_MODE ? BENCH_DETECTOR_OPTIONS : undefined,
-  });
+  } as any);
 
   const handleStart = async () => {
     setStarting(true);
@@ -192,22 +229,14 @@ export default function RecordingReference() {
       recordedAt: Date.now(),
     });
 
-    Alert.alert(
-      'Pista reconhecida! 🏁',
-      `${result.laps.length} volta(s) detectada(s). Melhor: ${fmtLap(best.durationMs)} · ${lengthM.toFixed(0)}m\n\nVamos correr agora?`,
-      [
-        { text: 'Agora não', style: 'cancel', onPress: () => router.replace('/') },
-        {
-          text: 'Bora correr',
-          onPress: () => {
-            router.replace({
-              pathname: '/recording',
-              params: { trackId: params.trackId!, trackName: params.trackName! },
-            });
-          },
-        },
-      ]
-    );
+    // Em vez de Alert bloqueante, dispara o overlay de countdown — driver
+    // ainda tá no kart, então auto-transição pra cronometragem é a default.
+    // 5s de janela pra cancelar caso queira parar/pit.
+    setTransition({
+      lapsCount: result.laps.length,
+      bestMs: best.durationMs,
+      lengthM,
+    });
   };
 
   const handleFinishConfirm = () => {
@@ -364,6 +393,33 @@ export default function RecordingReference() {
           </Pressable>
         )}
       </View>
+
+      {/* Overlay de transição auto pra cronometragem */}
+      {transition && (
+        <View style={s.transitionOverlay}>
+          <View style={s.transitionCard}>
+            <Text style={s.transitionEmoji}>🏁</Text>
+            <Text style={s.transitionTitle}>PISTA MAPEADA</Text>
+            <Text style={s.transitionMeta}>
+              {transition.lapsCount} volta(s) · melhor {fmtLap(transition.bestMs)} ·{' '}
+              {transition.lengthM.toFixed(0)}m
+            </Text>
+            <Text style={s.transitionMessage}>
+              Iniciando cronometragem em
+            </Text>
+            <Text style={s.transitionCountdown}>{countdown}</Text>
+            <Text style={s.transitionHint}>
+              Continue dirigindo — vamos comparar suas voltas com essa referência
+            </Text>
+            <Pressable
+              onPress={cancelTransition}
+              style={({ pressed }) => [s.transitionCancel, pressed && { opacity: 0.6 }]}
+            >
+              <Text style={s.transitionCancelText}>Não, vou parar</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -525,6 +581,73 @@ const s = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     letterSpacing: 1,
+  },
+
+  /* Transition overlay (auto -> cronometragem) */
+  transitionOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.92)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xl,
+  },
+  transitionCard: {
+    width: '100%',
+    maxWidth: 420,
+    alignItems: 'center',
+    padding: spacing.xxl,
+    borderRadius: radius.l,
+    backgroundColor: colors.surfaceHigh,
+    borderWidth: 2,
+    borderColor: colors.primary,
+  },
+  transitionEmoji: { fontSize: 48, marginBottom: spacing.s },
+  transitionTitle: {
+    color: colors.primary,
+    fontSize: 18,
+    fontWeight: '900',
+    letterSpacing: 2,
+  },
+  transitionMeta: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    marginTop: 6,
+    textAlign: 'center',
+  },
+  transitionMessage: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: '700',
+    marginTop: spacing.l,
+  },
+  transitionCountdown: {
+    color: colors.primary,
+    fontSize: 96,
+    fontWeight: '900',
+    letterSpacing: -4,
+    lineHeight: 110,
+    ...typography.mono,
+  },
+  transitionHint: {
+    color: colors.textMuted,
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: spacing.s,
+    fontWeight: '500',
+  },
+  transitionCancel: {
+    marginTop: spacing.l,
+    paddingVertical: spacing.s,
+    paddingHorizontal: spacing.l,
+  },
+  transitionCancelText: {
+    color: colors.danger,
+    fontSize: 13,
+    fontWeight: '700',
   },
 });
 
