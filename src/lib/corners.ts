@@ -144,13 +144,13 @@ export function describeSector(sec: Sector, corners: Corner[]): string {
   const nextCorner = corners.find((c) => c.sStart > center);
 
   if (prevCorner && nextCorner) {
-    return `Reta ${prevCorner.index + 1}→${nextCorner.index + 1} · S${sectorNum}`;
+    return `Reta ${prevCorner.index + 1}-${nextCorner.index + 1} · S${sectorNum}`;
   }
   if (nextCorner) {
-    return `Largada → ${nextCorner.name} · S${sectorNum}`;
+    return `Largada · ${nextCorner.name} · S${sectorNum}`;
   }
   if (prevCorner) {
-    return `${prevCorner.name} → Chegada · S${sectorNum}`;
+    return `${prevCorner.name} · Chegada · S${sectorNum}`;
   }
   return `Setor ${sectorNum}`;
 }
