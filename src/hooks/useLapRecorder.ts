@@ -20,8 +20,12 @@ TaskManager.defineTask(BG_TASK, async ({ data, error }) => {
   if (!locations) return;
   for (const loc of locations as Location.LocationObject[]) {
     if ((loc.coords.accuracy ?? 999) > 30) continue;
+    // Fallback pra Date.now() porque algumas builds Expo/Android entregam
+    // loc.timestamp = 0 ou undefined; sem isso a volta inteira fica com
+    // tMs constante e a análise por setor zera (curMs = 0 em tudo).
+    const t = loc.timestamp && loc.timestamp > 0 ? loc.timestamp : Date.now();
     buf.samples.push({
-      t: loc.timestamp,
+      t,
       lat: loc.coords.latitude,
       lng: loc.coords.longitude,
       speed: loc.coords.speed ?? 0,

@@ -19,6 +19,7 @@ import {
   buildReferenceLap,
   makeLocalProjector,
   matchToReference,
+  projectOnSegment,
 } from './geometry';
 
 export type LapRecord = {
@@ -40,19 +41,89 @@ export type MatchedLap = {
 export function matchLapToReference(lap: LapRecord, ref: ReferenceLap): MatchedLap {
   const proj = makeLocalProjector(ref.origin);
   const t0 = lap.samples[0]?.t ?? 0;
+  const totalLength = ref.totalLength;
   let hintIdx: number | undefined;
-  const points: MatchedLap['points'] = [];
+  const rawS: number[] = [];
+  const meta: Array<{ tMs: number; speed: number; x: number; y: number }> = [];
 
   for (const sample of lap.samples) {
     const xy = proj.toXY(sample);
     const match = matchToReference(xy, ref, hintIdx);
     hintIdx = match.segmentIdx;
-    points.push({
-      s: match.s,
+    rawS.push(match.s);
+    meta.push({
       tMs: sample.t - t0,
       speed: sample.speed,
       x: xy.x,
       y: xy.y,
+    });
+  }
+
+  // ===== Fix 1: ambiguidade da linha de chegada =====
+  // O ponto físico de largada/chegada aparece em DOIS lugares da polyline de
+  // referência: no início (s≈0) e no fim (s≈totalLength). Quando o primeiro
+  // sample da volta cai no de retorno (fim), o `hintIdx` da iteração seguinte
+  // procura em janela ±30 ao redor do fim e nunca consegue voltar pro início
+  // — a volta inteira fica "presa" no terço final da pista.
+  //
+  // Detecção: se o primeiro sample foi pra região do fim (s > 70% total) mas
+  // o restante deveria estar no início (poucos samples lá), refaz o primeiro
+  // forçando busca apenas na região inicial. Daí o hint da próxima iteração
+  // cai no lugar certo e tudo se ajusta.
+  if (rawS.length > 5 && totalLength > 0) {
+    const samplesAtEnd = rawS.filter((s) => s > totalLength * 0.7).length;
+    const ratioAtEnd = samplesAtEnd / rawS.length;
+    if (rawS[0] > totalLength * 0.7 && ratioAtEnd > 0.5) {
+      const firstXY = { x: meta[0].x, y: meta[0].y };
+      let altDist = Infinity;
+      let altS = 0;
+      // Busca SÓ no primeiro terço da polyline pra forçar match no início
+      const searchEnd = Math.max(2, Math.floor(ref.points.length * 0.35));
+      for (let i = 0; i < searchEnd - 1; i++) {
+        const a = ref.points[i];
+        const b = ref.points[i + 1];
+        const { dist, t } = projectOnSegment(firstXY, a, b);
+        if (dist < altDist) {
+          altDist = dist;
+          const segLen = ref.cumulativeDist[i + 1] - ref.cumulativeDist[i];
+          altS = ref.cumulativeDist[i] + t * segLen;
+        }
+      }
+      // Aceita se a match alternativa não estiver absurdamente longe (até 25m).
+      // 25m cobre tracks largas — kart de rental tem pista de ~6-10m de largura.
+      if (altDist < 25) {
+        rawS[0] = altS;
+        // Re-roda map matching dos próximos samples com hint corrigido
+        let newHint = Math.floor((altS / totalLength) * (ref.points.length - 1));
+        for (let i = 1; i < lap.samples.length; i++) {
+          const xy = { x: meta[i].x, y: meta[i].y };
+          const m = matchToReference(xy, ref, newHint);
+          rawS[i] = m.s;
+          newHint = m.segmentIdx;
+        }
+      }
+    }
+  }
+
+  // ===== Fix 2: unwrap pra `s` ficar monotonicamente crescente =====
+  // Se a volta cruza a linha de chegada no meio (lap detector recortou um
+  // pouco antes do ponto exato), os últimos samples podem ter s≈0 enquanto
+  // os anteriores estão em s≈totalLength. Pra interpolateTimeAtS funcionar,
+  // os pts.s precisam ser monotônicos — então somamos totalLength quando
+  // detectamos wrap (s caiu mais que metade do traçado).
+  let offset = 0;
+  const points: MatchedLap['points'] = [];
+  for (let i = 0; i < rawS.length; i++) {
+    if (i > 0 && totalLength > 0) {
+      const prevSWithOffset = points[i - 1].s;
+      const currSWithOffset = rawS[i] + offset;
+      if (currSWithOffset < prevSWithOffset - totalLength / 2) {
+        offset += totalLength;
+      }
+    }
+    points.push({
+      s: rawS[i] + offset,
+      ...meta[i],
     });
   }
 
@@ -66,20 +137,34 @@ export function matchLapToReference(lap: LapRecord, ref: ReferenceLap): MatchedL
 /**
  * Interpola tempo em função de s, usando os pontos matched.
  * Retorna ms decorridos quando o piloto passou pela posição `s` metros.
+ *
+ * Suporta `pts` "unwrapped" (s pode ultrapassar referenceLength quando a
+ * volta cruzou a linha de chegada — ver Fix 2 em matchLapToReference).
+ * O `s` solicitado está sempre em [0, referenceLength); a função desloca
+ * pra alinhar com o range real de pts antes de interpolar.
  */
 function interpolateTimeAtS(matched: MatchedLap, s: number): number | null {
   const pts = matched.points;
   if (pts.length < 2) return null;
-  if (s <= pts[0].s) return pts[0].tMs;
-  if (s >= pts[pts.length - 1].s) return pts[pts.length - 1].tMs;
+
+  // Se pts foi "unwrapped" (primeiro s já passou de uma volta), shift o
+  // target em múltiplos de referenceLength até cair no range de pts.
+  let target = s;
+  const refLen = matched.referenceLength;
+  if (refLen > 0) {
+    while (target < pts[0].s) target += refLen;
+  }
+
+  if (target <= pts[0].s) return pts[0].tMs;
+  if (target >= pts[pts.length - 1].s) return pts[pts.length - 1].tMs;
 
   // Busca binária seria melhor; linear é suficiente pros tamanhos aqui.
   for (let i = 1; i < pts.length; i++) {
-    if (pts[i].s >= s) {
+    if (pts[i].s >= target) {
       const a = pts[i - 1];
       const b = pts[i];
       if (b.s === a.s) return a.tMs;
-      const ratio = (s - a.s) / (b.s - a.s);
+      const ratio = (target - a.s) / (b.s - a.s);
       return a.tMs + ratio * (b.tMs - a.tMs);
     }
   }
@@ -212,4 +297,48 @@ export function analyzeSession(laps: LapRecord[]) {
 /** Filtro simples pra remover amostras com accuracy ruim antes de analisar. */
 export function cleanSamples(samples: GpsSample[], maxAccuracyM: number = 10): GpsSample[] {
   return samples.filter((s) => s.accuracy <= maxAccuracyM);
+}
+
+/**
+ * Detecta voltas com `sample.t` degenerado (todos os timestamps iguais ou
+ * span muito menor que a duração conhecida da volta) e reescreve `t` com
+ * espaçamento linear baseado em `durationMs`.
+ *
+ * Por que existe: algumas builds Expo/Android entregam `loc.timestamp = 0`
+ * em todas as fixes GPS. Os samples saem com posição/velocidade corretas
+ * mas timestamps iguais. Resultado: `matchLapToReference` produz
+ * `tMs = 0` em todos os pontos → `interpolateTimeAtS` sempre retorna 0 →
+ * cada setor calcula `curMs = 0` → tudo marcado inválido → tela mostra
+ * "Confiança baixa 20/20".
+ *
+ * Limitação: o reparo distribui tempo uniformemente. Não recupera onde o
+ * piloto perdeu/ganhou tempo dentro da volta (essa informação foi perdida
+ * na gravação). Mas viabiliza pelo menos:
+ *   - peak speed por setor (vinha do `sample.speed`, que tava OK)
+ *   - delta TOTAL da volta (vem de `durationMs`, também OK)
+ *   - mostrar a volta no mapa colorida pelo delta proporcional
+ *
+ * Retorna `{ samples, repaired }` — `repaired = true` quando precisou
+ * reescrever, pra UI poder sinalizar que os tempos por setor são aproximados.
+ */
+export function repairDegenerateTimestamps(
+  samples: GpsSample[],
+  durationMs: number,
+  baseT?: number
+): { samples: GpsSample[]; repaired: boolean } {
+  if (samples.length < 2 || durationMs <= 0) {
+    return { samples, repaired: false };
+  }
+  const span = samples[samples.length - 1].t - samples[0].t;
+  // Threshold: se o span é pelo menos metade da durationMs, confia. Caso
+  // contrário (timestamps degenerados ou faltando muito), reescreve.
+  if (span >= durationMs / 2) {
+    return { samples, repaired: false };
+  }
+  const t0 = baseT ?? samples[0].t ?? 0;
+  const repairedSamples = samples.map((s, i) => ({
+    ...s,
+    t: t0 + (i / (samples.length - 1)) * durationMs,
+  }));
+  return { samples: repairedSamples, repaired: true };
 }
