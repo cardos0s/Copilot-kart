@@ -122,3 +122,26 @@ $$ language plpgsql;
 
 -- Pra agendar: Supabase Dashboard → Database → Cron Jobs → New job
 -- Exemplo: a cada 1h, executar: select cleanup_expired_live_sessions();
+
+-- =====================
+-- Leaderboard (PBs públicos por pista)
+-- =====================
+-- Cada PB pessoal pode ser publicado opcionalmente. Spectator (qualquer app
+-- com a anon key) lê e mostra top N por (track_id, layout_id).
+
+create table if not exists leaderboard_entries (
+  id uuid primary key default gen_random_uuid(),
+  pilot_id uuid references pilots(id) on delete cascade,
+  track_id text not null,
+  layout_id text,
+  best_lap_ms integer not null,
+  session_id text,
+  created_at timestamptz default now()
+);
+
+create index if not exists idx_leaderboard_track on leaderboard_entries(track_id, best_lap_ms);
+
+alter table leaderboard_entries enable row level security;
+
+create policy "public read leaderboard" on leaderboard_entries for select using (true);
+create policy "public insert leaderboard" on leaderboard_entries for insert with check (true);

@@ -59,7 +59,7 @@ function generateCode(len = 6): string {
  * Upsert do registro de piloto no backend a partir do perfil local.
  * Retorna o id do piloto no Supabase (uuid).
  */
-async function ensurePilot(): Promise<string | null> {
+export async function ensurePilot(): Promise<string | null> {
   const supabase = getSupabase();
   if (!supabase) return null;
   const deviceId = await getDeviceId();
