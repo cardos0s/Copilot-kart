@@ -7,6 +7,7 @@ import { getProfile, PilotProfile } from '../../src/storage/profile';
 import { findTrackById } from '../../src/data/tracks';
 import { TrackSilhouette } from '../../src/components/TrackSilhouette';
 import { Button, Card, Chart, DecorativeSplash, Icon, Metric } from '../../src/components/ui';
+import { SennaQuoteCard } from '../../src/components/SennaQuoteCard';
 import { peakSpeedMsOfLaps, msToKmh } from '../../src/lib/speed';
 import { LapRecord } from '../../src/lib/analysis';
 import { colors, spacing, typography } from '../../src/theme';
@@ -101,28 +102,29 @@ export default function Home() {
         }}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header — greeting */}
+        {/* Header — greeting + bell */}
         <View style={s.headerRow}>
           <View style={{ flex: 1 }}>
-            <Text style={s.greetingLabel}>{greeting.toUpperCase()},</Text>
-            <Text style={s.greetingName}>
-              {firstName ? `${firstName.toUpperCase()} ` : ''}
-              <Text style={{ fontSize: 22 }}>👋</Text>
+            <Text style={s.greetingLabel}>
+              {new Date().toLocaleDateString('pt-BR', { weekday: 'long' }).toUpperCase().slice(0, 3)} ·{' '}
+              {new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).toUpperCase()}
             </Text>
-            <Text style={s.greetingSub}>Pronto para acelerar hoje?</Text>
+            <Text style={s.greetingName}>
+              {greeting}{firstName ? `, ${firstName}.` : '.'}
+            </Text>
           </View>
-          <Pressable
-            hitSlop={12}
-            onPress={() => {
-              // Placeholder — notificações
-            }}
-          >
+          <Pressable hitSlop={12} onPress={() => { /* placeholder */ }}>
             <Icon name="bell" size={22} color={colors.textSecondary} />
           </Pressable>
         </View>
 
-        {/* Card: Última sessão */}
-        <Card variant="elevated" padding="m" style={{ marginTop: spacing.xl }}>
+        {/* Citação Senna — destaque emocional, troca a cada abertura */}
+        <View style={{ marginTop: spacing.l }}>
+          <SennaQuoteCard />
+        </View>
+
+        {/* Card: Última sessão — sem border duro, com mais respiro */}
+        <Card variant="flat" padding="l" style={{ marginTop: spacing.xxl, borderColor: 'transparent', backgroundColor: colors.surface }}>
           <View style={{ flexDirection: 'row', gap: spacing.m }}>
             <View style={{ flex: 1 }}>
               <Text style={s.cardLabel}>ÚLTIMA SESSÃO</Text>
@@ -172,7 +174,7 @@ export default function Home() {
 
         {/* Card: Desempenho */}
         {sparkData.length >= 2 && (
-          <Card variant="elevated" padding="m" style={{ marginTop: spacing.m }}>
+          <Card variant="flat" padding="l" style={{ marginTop: spacing.m, borderColor: 'transparent', backgroundColor: colors.surface }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
               <Text style={s.cardLabel}>DESEMPENHO</Text>
               <Text style={[s.bestNum, typography.mono]}>
@@ -194,15 +196,14 @@ export default function Home() {
           </Card>
         )}
 
-        {/* CTA */}
-        <View style={{ marginTop: spacing.xxl }}>
+        {/* CTA — respiro generoso pra separar do conteúdo acima */}
+        <View style={{ marginTop: spacing.huge * 1.5 }}>
           <Button
             label="Iniciar Sessão"
             onPress={() => router.push('/new-session')}
             variant="primary"
             size="l"
             fullWidth
-            iconRight={<Icon name="arrow-right" size={20} color={colors.textOnPrimary} />}
           />
         </View>
 
@@ -244,23 +245,17 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
   },
   greetingLabel: {
-    color: colors.textMuted,
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 2,
+    color: colors.primary,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 2.5,
   },
   greetingName: {
+    fontFamily: 'PlayfairDisplay_400Regular',
     color: colors.textPrimary,
-    fontSize: 28,
-    fontWeight: '900',
-    letterSpacing: -0.5,
-    marginTop: 2,
-  },
-  greetingSub: {
-    color: colors.textSecondary,
-    fontSize: 14,
+    fontSize: 26,
+    letterSpacing: -0.3,
     marginTop: 4,
-    fontWeight: '500',
   },
 
   cardLabel: {
