@@ -13,8 +13,8 @@ export type TrackRef = {
 export const TRACKS: TrackRef[] = [
   {
     id: 'leandro-melo',
-    name: 'Kartódromo Leandro Melo',
-    shortName: 'Leandro Melo',
+    name: 'Kartódromo Leandro Merlo',
+    shortName: 'Leandro Merlo',
     city: 'Vitória da Conquista',
     state: 'BA',
     lat: -14.8789,

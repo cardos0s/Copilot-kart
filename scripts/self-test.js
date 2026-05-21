@@ -337,7 +337,7 @@ const prompt = buildAnalysisPrompt({
   analysis: fakeAnalysis,
   lapDurationMs: 50000 + fakeAnalysis.totalDeltaMs,
   referenceDurationMs: 50000,
-  trackName: 'Kartódromo Leandro Melo',
+  trackName: 'Kartódromo Leandro Merlo',
 });
 
 console.log('--- SYSTEM ---');
