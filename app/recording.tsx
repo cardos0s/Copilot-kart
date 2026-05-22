@@ -46,14 +46,18 @@ import { ensurePilot } from '../src/lib/liveSession';
 import {
   createLiveSession,
   endLiveSession,
+  LiveMessage,
   LiveSessionInfo,
+  ackMessage,
   publishLap,
   publishSample,
+  subscribeLiveSession,
 } from '../src/lib/liveSession';
 import { polylineLength } from '../src/lib/geometry';
 import { LapRecord } from '../src/lib/analysis';
 import { Button, Card, Icon } from '../src/components/ui';
 import { LapResultOverlay } from '../src/components/LapResultOverlay';
+import { PilotMessageOverlay } from '../src/components/PilotMessageOverlay';
 import { colors, radius, spacing, typography } from '../src/theme';
 
 function fmtLap(ms: number) {
@@ -128,6 +132,9 @@ export default function Recording() {
   const [liveStarting, setLiveStarting] = useState(false);
   const lastSampleIdxRef = useRef(0);
   const lastLapCountRef = useRef(0);
+  // Mensagem mais recente vinda da equipe pelo realtime. Quando vira não-null,
+  // o PilotMessageOverlay mostra. Auto-limpa após animação (callback onDismiss).
+  const [latestTeamMessage, setLatestTeamMessage] = useState<LiveMessage | null>(null);
   const {
     state,
     info,
@@ -285,29 +292,78 @@ export default function Recording() {
               reference && info.bestLapMs !== null
                 ? info.bestLapMs - reference.durationMs
                 : null,
+            // Setores — null quando o app não tem layout reference carregada.
+            // Team panel usa esses pra mostrar delta por setor + ranking.
+            currentSectorIdx: info.currentSectorIdx,
+            currentSectorElapsedMs: info.currentSectorElapsedMs,
+            s1Ms: info.currentSectors.s1Ms,
+            s2Ms: info.currentSectors.s2Ms,
+            s3Ms: info.currentSectors.s3Ms,
           });
         } catch {
           /* engole — não pode quebrar gravação se realtime falhar */
         }
       }
     })();
-  }, [live, liveSamples, info.lapsCompleted, info.elapsedMs, info.bestLapMs, reference]);
+  }, [
+    live,
+    liveSamples,
+    info.lapsCompleted,
+    info.elapsedMs,
+    info.bestLapMs,
+    info.currentSectorIdx,
+    info.currentSectorElapsedMs,
+    info.currentSectors,
+    reference,
+  ]);
 
   // Publica nova volta quando lapsCompleted incrementa.
   useEffect(() => {
     if (!live) return;
     if (info.lapsCompleted <= lastLapCountRef.current) return;
     const lapNumber = info.lapsCompleted;
-    const ms = info.bestLapMs;
+    // Usa lastClosedLap (snapshot da volta que ACABOU de fechar) — tem
+    // durationMs específico dessa volta, não bestLapMs (que poderia ser
+    // de outra volta). Setores também vêm daqui se layout ref estava
+    // carregada quando fechou.
+    const closed = info.lastClosedLap;
+    const ms = closed?.durationMs ?? info.bestLapMs;
+    const sectors = info.lastClosedLapSectors;
     lastLapCountRef.current = lapNumber;
     if (ms != null) {
       publishLap(live.id, {
         lapNumber,
         durationMs: ms,
         finishedAt: Date.now(),
+        s1Ms: sectors?.s1Ms ?? null,
+        s2Ms: sectors?.s2Ms ?? null,
+        s3Ms: sectors?.s3Ms ?? null,
       }).catch(() => {});
     }
-  }, [live, info.lapsCompleted, info.bestLapMs]);
+  }, [live, info.lapsCompleted, info.bestLapMs, info.lastClosedLap, info.lastClosedLapSectors]);
+
+  // Assina canal realtime da live session pra receber mensagens da equipe.
+  // Roda só enquanto `live` está ativa — desmonta + remonta se ativar/desativar.
+  // Não escuta samples/laps de volta (esses são EVITAS pelo próprio app —
+  // mas o canal os entrega; ignoramos no callback).
+  useEffect(() => {
+    if (!live) return;
+    const unsubscribe = subscribeLiveSession(live.id, {
+      onMessage: (msg) => {
+        // Sempre exibe a mais recente. Se chega outra durante animação,
+        // o overlay reseta e mostra a nova (prioridade humana > anterior).
+        setLatestTeamMessage(msg);
+      },
+    });
+    return unsubscribe;
+  }, [live]);
+
+  // Callback do overlay quando ANIMAÇÃO termina — marca como reconhecida
+  // no backend (pra histórico/latência) e limpa o estado local.
+  const handleMessageDismiss = (msgId: number) => {
+    ackMessage(msgId).catch(() => {});
+    setLatestTeamMessage((curr) => (curr?.id === msgId ? null : curr));
+  };
 
   const handleFinish = () => {
     Alert.alert(
@@ -805,6 +861,14 @@ export default function Recording() {
               }
             : null
         }
+      />
+
+      {/* Mensagem da equipe — fica POR CIMA do LapResultOverlay (zIndex 10).
+       * Se a equipe manda mensagem durante celebração de volta, mensagem
+       * ganha — humano > automático. */}
+      <PilotMessageOverlay
+        message={latestTeamMessage}
+        onDismiss={handleMessageDismiss}
       />
 
       {/* Idle prompt — overlay quando piloto fica parado por 30s+ */}

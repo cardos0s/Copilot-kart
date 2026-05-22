@@ -54,28 +54,103 @@ create table if not exists live_samples (
   lap_number int,                             -- volta atual (0-based)
   lap_elapsed_ms int,                         -- tempo da volta em curso
   best_lap_ms int,                            -- melhor volta da sessão até aqui
-  delta_vs_ref_ms int                         -- delta vs referência da pista (pode ser null)
+  delta_vs_ref_ms int,                        -- delta vs referência da pista (pode ser null)
+  -- Setores (geográficos: 1/3 e 2/3 da polyline da ref do layout).
+  -- Preenchidos só quando há layout reference carregada no app.
+  current_sector_idx smallint,                -- 0=S1, 1=S2, 2=S3
+  current_sector_elapsed_ms int,              -- tempo no setor atual
+  s1_ms int,                                  -- parcial S1 (null antes de fechar)
+  s2_ms int,                                  -- parcial S2
+  s3_ms int                                   -- parcial S3 (só preenche no fim da volta)
 );
 
 create index if not exists idx_live_samples_session_t on live_samples(live_session_id, t);
+
+-- Migration pra deployments existentes (idempotente — não falha se já tem)
+alter table live_samples add column if not exists current_sector_idx smallint;
+alter table live_samples add column if not exists current_sector_elapsed_ms int;
+alter table live_samples add column if not exists s1_ms int;
+alter table live_samples add column if not exists s2_ms int;
+alter table live_samples add column if not exists s3_ms int;
 
 create table if not exists live_laps (
   id bigserial primary key,
   live_session_id uuid references live_sessions(id) on delete cascade not null,
   lap_number int not null,
   duration_ms int not null,
-  finished_at timestamptz default now()
+  finished_at timestamptz default now(),
+  -- Tempos por setor da volta fechada (null se sem layout ref no app).
+  s1_ms int,
+  s2_ms int,
+  s3_ms int
 );
 
 create index if not exists idx_live_laps_session on live_laps(live_session_id);
 
+-- Migration idempotente pra adicionar setores em deployments existentes
+alter table live_laps add column if not exists s1_ms int;
+alter table live_laps add column if not exists s2_ms int;
+alter table live_laps add column if not exists s3_ms int;
+
+-- =====================
+-- Mensagens da equipe pro piloto (Team→Pilot)
+-- =====================
+-- Equipe/box manda comandos curtos pro piloto durante a sessão. O app
+-- assina o canal realtime e mostra como overlay grande (~5s) por cima
+-- do HUD. Severidade controla cor + prioridade visual:
+--
+--   info     → verde (BOA VOLTA, MANTÉM RITMO) — feedback positivo
+--   warning  → amarelo (SETOR 2 LENTO, CUIDADO TRÁFEGO) — atenção
+--   critical → vermelho (BOX AGORA, REDUZ RITMO) — comando urgente
+--
+-- Texto livre limitado a 24 chars (UI restringe). Mensagens ficam pra
+-- consulta do histórico depois (debrief pós-sessão).
+create table if not exists live_messages (
+  id bigserial primary key,
+  live_session_id uuid references live_sessions(id) on delete cascade not null,
+  severity text not null check (severity in ('info', 'warning', 'critical')),
+  text text not null,
+  sent_at timestamptz not null default now(),
+  -- Marcado quando o app do piloto recebe e renderiza. Opcional, usado
+  -- pra calcular latência real e pra histórico "mensagem foi vista".
+  acked_at timestamptz,
+  -- Quem mandou: nome livre da equipe pra contexto no histórico
+  -- ("Coach Paulo", "Box A"). Não é auth — só etiqueta.
+  sent_by text
+);
+
+create index if not exists idx_live_messages_session on live_messages(live_session_id, sent_at desc);
+
 -- =====================
 -- Realtime
 -- =====================
--- Habilita Realtime nas tabelas de stream.
-alter publication supabase_realtime add table live_samples;
-alter publication supabase_realtime add table live_laps;
-alter publication supabase_realtime add table live_sessions;
+-- Habilita Realtime nas tabelas de stream. Usa DO block com EXCEPTION pra
+-- ser idempotente — `alter publication add table` é o tipo de DDL que
+-- não tem "if not exists" e dá erro 42710 quando rodado de novo. Engole
+-- duplicate_object pra que o schema possa ser reaplicado sem quebrar.
+do $$
+begin
+  alter publication supabase_realtime add table live_samples;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table live_laps;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table live_sessions;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table live_messages;
+exception when duplicate_object then null;
+end $$;
 
 -- =====================
 -- RLS (Row-Level Security)
@@ -92,20 +167,42 @@ alter table pilots enable row level security;
 alter table live_sessions enable row level security;
 alter table live_samples enable row level security;
 alter table live_laps enable row level security;
+alter table live_messages enable row level security;
 
+-- Policies — `create policy` não tem "if not exists" no Postgres, então
+-- precedemos cada uma com `drop policy if exists` pra que o schema rode
+-- múltiplas vezes sem quebrar (re-aplicação após mudanças de migration).
+
+drop policy if exists "public read pilots" on pilots;
 create policy "public read pilots" on pilots for select using (true);
+drop policy if exists "public insert pilots" on pilots;
 create policy "public insert pilots" on pilots for insert with check (true);
+drop policy if exists "public update pilots" on pilots;
 create policy "public update pilots" on pilots for update using (true);
 
+drop policy if exists "public read live_sessions" on live_sessions;
 create policy "public read live_sessions" on live_sessions for select using (true);
+drop policy if exists "public insert live_sessions" on live_sessions;
 create policy "public insert live_sessions" on live_sessions for insert with check (true);
+drop policy if exists "public update live_sessions" on live_sessions;
 create policy "public update live_sessions" on live_sessions for update using (true);
 
+drop policy if exists "public read live_samples" on live_samples;
 create policy "public read live_samples" on live_samples for select using (true);
+drop policy if exists "public insert live_samples" on live_samples;
 create policy "public insert live_samples" on live_samples for insert with check (true);
 
+drop policy if exists "public read live_laps" on live_laps;
 create policy "public read live_laps" on live_laps for select using (true);
+drop policy if exists "public insert live_laps" on live_laps;
 create policy "public insert live_laps" on live_laps for insert with check (true);
+
+drop policy if exists "public read live_messages" on live_messages;
+create policy "public read live_messages" on live_messages for select using (true);
+drop policy if exists "public insert live_messages" on live_messages;
+create policy "public insert live_messages" on live_messages for insert with check (true);
+drop policy if exists "public update live_messages" on live_messages;
+create policy "public update live_messages" on live_messages for update using (true);
 
 -- =====================
 -- Limpeza automática (opcional)
@@ -143,5 +240,7 @@ create index if not exists idx_leaderboard_track on leaderboard_entries(track_id
 
 alter table leaderboard_entries enable row level security;
 
+drop policy if exists "public read leaderboard" on leaderboard_entries;
 create policy "public read leaderboard" on leaderboard_entries for select using (true);
+drop policy if exists "public insert leaderboard" on leaderboard_entries;
 create policy "public insert leaderboard" on leaderboard_entries for insert with check (true);

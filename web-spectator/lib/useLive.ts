@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { getSupabase } from './supabase';
-import { LiveLap, LiveSample, LiveSessionInfo } from './liveTypes';
+import { LiveLap, LiveMessage, LiveSample, LiveSessionInfo, MessageSeverity } from './liveTypes';
 
 /**
  * Hook que assina uma live session pelo código.
@@ -32,6 +32,7 @@ export type LiveState =
       info: LiveSessionInfo;
       samples: LiveSample[];
       laps: LiveLap[];
+      messages: LiveMessage[];
     };
 
 function mapSessionRow(row: any): LiveSessionInfo {
@@ -61,6 +62,14 @@ function mapSample(row: any): LiveSample {
     lapElapsedMs: row.lap_elapsed_ms ?? undefined,
     bestLapMs: row.best_lap_ms ?? null,
     deltaVsRefMs: row.delta_vs_ref_ms ?? null,
+    currentSectorIdx:
+      row.current_sector_idx !== null && row.current_sector_idx !== undefined
+        ? (row.current_sector_idx as 0 | 1 | 2)
+        : null,
+    currentSectorElapsedMs: row.current_sector_elapsed_ms ?? null,
+    s1Ms: row.s1_ms ?? null,
+    s2Ms: row.s2_ms ?? null,
+    s3Ms: row.s3_ms ?? null,
   };
 }
 
@@ -69,6 +78,20 @@ function mapLap(row: any): LiveLap {
     lapNumber: row.lap_number,
     durationMs: row.duration_ms,
     finishedAt: new Date(row.finished_at).getTime(),
+    s1Ms: row.s1_ms ?? null,
+    s2Ms: row.s2_ms ?? null,
+    s3Ms: row.s3_ms ?? null,
+  };
+}
+
+function mapMessage(row: any): LiveMessage {
+  return {
+    id: row.id,
+    severity: row.severity as MessageSeverity,
+    text: row.text,
+    sentAt: new Date(row.sent_at).getTime(),
+    ackedAt: row.acked_at ? new Date(row.acked_at).getTime() : null,
+    sentBy: row.sent_by ?? null,
   };
 }
 
@@ -106,8 +129,8 @@ export function useLive(code: string | null): LiveState {
       }
       const info = mapSessionRow(sessionRow);
 
-      // 2. Histórico inicial — todos os samples + laps que já tem
-      const [samplesRes, lapsRes] = await Promise.all([
+      // 2. Histórico inicial — todos os samples + laps + mensagens que já tem
+      const [samplesRes, lapsRes, msgsRes] = await Promise.all([
         supabase
           .from('live_samples')
           .select('*')
@@ -118,16 +141,23 @@ export function useLive(code: string | null): LiveState {
           .select('*')
           .eq('live_session_id', info.id)
           .order('lap_number', { ascending: true }),
+        supabase
+          .from('live_messages')
+          .select('*')
+          .eq('live_session_id', info.id)
+          .order('sent_at', { ascending: true }),
       ]);
       if (cancelled) return;
       const initialSamples = (samplesRes.data ?? []).map(mapSample);
       const initialLaps = (lapsRes.data ?? []).map(mapLap);
+      const initialMessages = (msgsRes.data ?? []).map(mapMessage);
 
       setState({
         kind: info.endedAt ? 'ended' : 'live',
         info,
         samples: initialSamples,
         laps: initialLaps,
+        messages: initialMessages,
       });
 
       // 3. Realtime — escuta INSERTs nas duas tabelas filtrados por session.
@@ -164,6 +194,23 @@ export function useLive(code: string | null): LiveState {
             setState((prev) => {
               if (prev.kind !== 'live' && prev.kind !== 'ended') return prev;
               return { ...prev, laps: [...prev.laps, l] };
+            });
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'live_messages',
+            filter: `live_session_id=eq.${info.id}`,
+          },
+          (payload) => {
+            if (cancelled) return;
+            const m = mapMessage(payload.new);
+            setState((prev) => {
+              if (prev.kind !== 'live' && prev.kind !== 'ended') return prev;
+              return { ...prev, messages: [...prev.messages, m] };
             });
           }
         )

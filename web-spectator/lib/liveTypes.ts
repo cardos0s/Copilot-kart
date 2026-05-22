@@ -14,12 +14,21 @@ export type LiveSample = {
   lapElapsedMs?: number;
   bestLapMs?: number | null;
   deltaVsRefMs?: number | null;
+  // Setores — null quando o app não tem layout reference carregada
+  currentSectorIdx?: 0 | 1 | 2 | null;
+  currentSectorElapsedMs?: number | null;
+  s1Ms?: number | null;
+  s2Ms?: number | null;
+  s3Ms?: number | null;
 };
 
 export type LiveLap = {
   lapNumber: number;
   durationMs: number;
   finishedAt: number;
+  s1Ms?: number | null;
+  s2Ms?: number | null;
+  s3Ms?: number | null;
 };
 
 export type LiveSessionInfo = {
@@ -33,4 +42,15 @@ export type LiveSessionInfo = {
   referenceLapMs: number | null;
   startedAt: number;
   endedAt: number | null;
+};
+
+export type MessageSeverity = 'info' | 'warning' | 'critical';
+
+export type LiveMessage = {
+  id: number;
+  severity: MessageSeverity;
+  text: string;
+  sentAt: number;
+  ackedAt: number | null;
+  sentBy: string | null;
 };
