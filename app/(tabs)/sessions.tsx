@@ -1,8 +1,17 @@
-import { useCallback, useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { listSessions, Session, getLapsForSession } from '../../src/storage/db';
+import ReanimatedSwipeable, {
+  type SwipeableMethods,
+} from 'react-native-gesture-handler/ReanimatedSwipeable';
+import Animated, { interpolate, useAnimatedStyle } from 'react-native-reanimated';
+import {
+  listSessions,
+  Session,
+  getLapsForSession,
+  deleteSession,
+} from '../../src/storage/db';
 import { findTrackById } from '../../src/data/tracks';
 import { TrackSilhouette } from '../../src/components/TrackSilhouette';
 import { Card, DecorativeSplash, Icon, PillTabs } from '../../src/components/ui';
@@ -81,6 +90,30 @@ export default function Sessions() {
     });
   }, [items, filter]);
 
+  // Excluir sessão — pede confirmação porque é destrutivo + irrecuperável.
+  // O cascade do SQLite apaga as laps junto. Após excluir, recarrega a
+  // lista pra remover o item da UI.
+  const handleDelete = useCallback(
+    (sess: SessionWithStats) => {
+      Alert.alert(
+        'Excluir sessão?',
+        `${sess.trackName} · ${fmtDate(sess.startedAt)}\n\nEssa ação não pode ser desfeita. As ${sess.lapCount} volta(s) serão apagadas.`,
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Excluir',
+            style: 'destructive',
+            onPress: async () => {
+              await deleteSession(sess.id);
+              await load();
+            },
+          },
+        ]
+      );
+    },
+    [load]
+  );
+
   return (
     <View style={s.root}>
       <DecorativeSplash position="top-left" intensity="subtle" palette={['magenta', 'purple']} />
@@ -120,48 +153,113 @@ export default function Sessions() {
             </Text>
           </View>
         }
-        renderItem={({ item }) => <SessionRow item={item} onPress={() => router.push(`/session/${item.id}`)} />}
+        renderItem={({ item }) => (
+          <SessionRow
+            item={item}
+            onPress={() => router.push(`/session/${item.id}`)}
+            onDelete={() => handleDelete(item)}
+          />
+        )}
       />
     </View>
   );
 }
 
-function SessionRow({ item, onPress }: { item: SessionWithStats; onPress: () => void }) {
+function SessionRow({
+  item,
+  onPress,
+  onDelete,
+}: {
+  item: SessionWithStats;
+  onPress: () => void;
+  onDelete: () => void;
+}) {
   const track = item.trackId ? findTrackById(item.trackId) : null;
+  // Ref pro Swipeable — permite fechar programaticamente após o usuário
+  // tocar em "Excluir" (Alert vira modal: se cancelar, a row volta sozinha).
+  const swipeRef = useRef<SwipeableMethods>(null);
+
+  const handleDelete = () => {
+    // Fecha a row primeiro pra Alert não competir visualmente com swipe aberto.
+    swipeRef.current?.close();
+    onDelete();
+  };
+
   return (
-    <Card variant="elevated" padding="m" onPress={onPress}>
-      <View style={{ flexDirection: 'row', gap: spacing.m, alignItems: 'center' }}>
-        <View style={{ flex: 1 }}>
-          <Text style={s.rowTrack} numberOfLines={1}>
-            {track?.shortName ?? item.trackName}
-          </Text>
-          <Text style={s.rowDate}>
-            {fmtDate(item.startedAt)} · {fmtTime(item.startedAt)}
-          </Text>
-          <View style={{ marginTop: spacing.s }}>
-            <Text style={s.rowMetricLabel}>MELHOR VOLTA</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: spacing.s }}>
-              <Text style={[s.rowMetric, typography.mono]}>
-                {item.bestLapMs != null ? fmtLap(item.bestLapMs) : '—'}
-              </Text>
-              <Text style={s.rowLaps}>
-                {item.lapCount} {item.lapCount === 1 ? 'volta' : 'voltas'}
-              </Text>
+    <ReanimatedSwipeable
+      ref={swipeRef}
+      friction={2}
+      rightThreshold={48}
+      renderRightActions={(progress) => (
+        <RightDeleteAction progress={progress} onPress={handleDelete} />
+      )}
+      // overshootRight=false impede a row de continuar deslizando além do
+      // botão de delete — sensação mais firme, fim de curso claro.
+      overshootRight={false}
+    >
+      <Card variant="elevated" padding="m" onPress={onPress}>
+        <View style={{ flexDirection: 'row', gap: spacing.m, alignItems: 'center' }}>
+          <View style={{ flex: 1 }}>
+            <Text style={s.rowTrack} numberOfLines={1}>
+              {track?.shortName ?? item.trackName}
+            </Text>
+            <Text style={s.rowDate}>
+              {fmtDate(item.startedAt)} · {fmtTime(item.startedAt)}
+            </Text>
+            <View style={{ marginTop: spacing.s }}>
+              <Text style={s.rowMetricLabel}>MELHOR VOLTA</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: spacing.s }}>
+                <Text style={[s.rowMetric, typography.mono]}>
+                  {item.bestLapMs != null ? fmtLap(item.bestLapMs) : '—'}
+                </Text>
+                <Text style={s.rowLaps}>
+                  {item.lapCount} {item.lapCount === 1 ? 'volta' : 'voltas'}
+                </Text>
+              </View>
             </View>
           </View>
-        </View>
 
-        {item.bestSamples && item.bestSamples.length > 1 ? (
-          <View style={s.thumb}>
-            <TrackSilhouette samples={item.bestSamples} width={86} height={70} strokeWidth={2} />
-          </View>
-        ) : (
-          <View style={s.thumbEmpty}>
-            <Icon name="map" color={colors.textDim} size={24} />
-          </View>
-        )}
-      </View>
-    </Card>
+          {item.bestSamples && item.bestSamples.length > 1 ? (
+            <View style={s.thumb}>
+              <TrackSilhouette samples={item.bestSamples} width={86} height={70} strokeWidth={2} />
+            </View>
+          ) : (
+            <View style={s.thumbEmpty}>
+              <Icon name="map" color={colors.textDim} size={24} />
+            </View>
+          )}
+        </View>
+      </Card>
+    </ReanimatedSwipeable>
+  );
+}
+
+/**
+ * Ação revelada ao arrastar a row pra esquerda. Cresce conforme o swipe
+ * (`progress` vai de 0 → 1 conforme arrasta), ícone+texto entram com fade.
+ * Tap aciona o delete (passa pro pai, que mostra Alert).
+ */
+function RightDeleteAction({
+  progress,
+  onPress,
+}: {
+  progress: { value: number };
+  onPress: () => void;
+}) {
+  // Sliding effect — translada de fora pra dentro conforme arrasta. Sem
+  // isso a área fica plana e pouco satisfatória.
+  const containerStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: interpolate(progress.value, [0, 1], [80, 0]) }],
+    opacity: interpolate(progress.value, [0, 0.5, 1], [0, 0.6, 1]),
+  }));
+
+  return (
+    <Animated.View style={[s.swipeAction, containerStyle]}>
+      <Pressable onPress={onPress} style={s.swipeActionInner}>
+        <Icon name="trash" size={22} color="#fff" />
+        <Text style={s.swipeActionText}>Excluir</Text>
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -243,5 +341,31 @@ const s = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
     lineHeight: 19,
+  },
+
+  // ===== Swipe-to-delete =====
+  // Área vermelha que aparece ao arrastar a row pra esquerda. Largura
+  // ~88px = cabe ícone + label "Excluir" + respiro. Tap aciona o Alert
+  // de confirmação.
+  swipeAction: {
+    width: 88,
+    justifyContent: 'center',
+    paddingLeft: spacing.s,
+    // Pequeno gap visual entre a row e o botão — sem isso, encosta no card.
+  },
+  swipeActionInner: {
+    flex: 1,
+    backgroundColor: colors.danger,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  swipeActionText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
   },
 });

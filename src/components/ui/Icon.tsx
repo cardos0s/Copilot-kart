@@ -19,7 +19,8 @@ export type IconName =
   | 'edit'
   | 'check'
   | 'cloud-sync'
-  | 'arrow-right';
+  | 'arrow-right'
+  | 'trash';
 
 type Props = {
   name: IconName;
@@ -141,6 +142,17 @@ function paths(name: IconName, sp: any, color: string) {
       );
     case 'arrow-right':
       return <Path {...sp} d="M5 12h14M13 5l7 7-7 7" />;
+    case 'trash':
+      // Lixeira clássica — tampa + corpo + 2 linhas internas. Stroke-based
+      // pra combinar com o resto. viewBox 24x24.
+      return (
+        <>
+          <Path {...sp} d="M3 6h18" />
+          <Path {...sp} d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+          <Path {...sp} d="M19 6l-1.5 14a2 2 0 01-2 1.8H8.5a2 2 0 01-2-1.8L5 6" />
+          <Path {...sp} d="M10 11v6M14 11v6" />
+        </>
+      );
     default:
       return null;
   }

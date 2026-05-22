@@ -319,6 +319,12 @@ export async function getTrackHistory(
 
 export async function deleteSession(id: string): Promise<void> {
   const d = await db();
+  // FK ON DELETE CASCADE existe no schema, mas PRAGMA foreign_keys não tá
+  // explicitamente ON neste DB — então deletes em cascade NÃO disparam
+  // automaticamente. Deletamos manualmente em ordem (filhos antes do pai)
+  // pra garantir que não fica lap órfã. PBs/achievements referenciam por
+  // string session_id e ficam — não impactam o histórico visível.
+  await d.runAsync('DELETE FROM laps WHERE session_id = ?', id);
   await d.runAsync('DELETE FROM sessions WHERE id = ?', id);
 }
 
