@@ -120,7 +120,7 @@ export default function Recording() {
   const [liveStarting, setLiveStarting] = useState(false);
   const lastSampleIdxRef = useRef(0);
   const lastLapCountRef = useRef(0);
-  const { state, info, liveSamples, start, stop } = useLapRecorder();
+  const { state, info, liveSamples, start, stop, setReferenceMode } = useLapRecorder();
 
   // Carrega o layout escolhido (passado via params do picker) ou cai pro
   // default da pista. Sessão antiga sem layoutId continua puxando o default.
@@ -529,9 +529,17 @@ export default function Recording() {
   };
 
   const acc = accuracyLabel(info.lastAccuracy);
-  const deltaMs =
-    reference && info.bestLapMs !== null ? info.bestLapMs - reference.durationMs : null;
-  const currentLapMs = info.elapsedMs % 60000;
+  // Delta em tempo real estilo MyChron — vem do tracker no hook.
+  // Compara o ponto atual da pista contra o mesmo ponto da volta de
+  // referência (best ou previous, conforme info.referenceMode).
+  const liveDeltaMs = info.liveDeltaMs;
+  // Toggle do modo da referência — tap no rótulo "vs MELHOR"/"vs ANTERIOR"
+  const toggleRefMode = () => {
+    setReferenceMode(info.referenceMode === 'best' ? 'previous' : 'best');
+  };
+  // Tempo da volta atual em curso. Vem do hook (não do elapsedMs total).
+  // Fallback pro elapsed total quando ainda não fechou primeira volta.
+  const currentLapMs = info.currentLapElapsedMs ?? info.elapsedMs;
 
   if (state === 'idle') {
     return (
@@ -591,9 +599,37 @@ export default function Recording() {
         </View>
       </View>
 
-      {/* Hero — número gigante centralizado */}
+      {/* Hero — delta em tempo real estilo MyChron.
+       *
+       * 3 estados possíveis:
+       *   1. "NEW BEST!" — bateu PB nos últimos 4s (flash dourado/verde)
+       *   2. Delta ativo — tem referência E sample válido (-X.XXX em verde
+       *      ou +X.XXX em vermelho, gigante)
+       *   3. Sem delta — primeira volta sem referência ainda, ou sample
+       *      fora do traçado. Mostra cronômetro da volta atual.
+       *
+       * Embaixo do número: rótulo "vs MELHOR" / "vs ANTERIOR" tappable
+       * pra alternar o modo da referência.
+       */}
       <View style={s.recHero}>
-        {deltaMs !== null ? (
+        {info.justSetNewBest ? (
+          <>
+            <Text style={s.newBestLabel}>NEW BEST!</Text>
+            <Text
+              style={[
+                s.recHeroValue,
+                typography.mono,
+                {
+                  fontSize: isLandscape ? Math.min(width * 0.18, 180) : Math.min(width * 0.28, 110),
+                  color: colors.success,
+                },
+              ]}
+            >
+              {info.bestLapMs !== null ? fmtLap(info.bestLapMs) : '—'}
+            </Text>
+            <Text style={s.recHeroHint}>nova melhor volta da sessão</Text>
+          </>
+        ) : liveDeltaMs !== null ? (
           <>
             <Text style={s.recHeroLabel}>DELTA</Text>
             <Text
@@ -602,17 +638,24 @@ export default function Recording() {
                 typography.mono,
                 {
                   fontSize: isLandscape ? Math.min(width * 0.18, 180) : Math.min(width * 0.28, 110),
-                  color: deltaMs > 0 ? colors.danger : colors.success,
+                  color: liveDeltaMs > 0 ? colors.danger : colors.success,
                 },
               ]}
             >
-              {fmtDelta(deltaMs)}
+              {fmtDelta(liveDeltaMs)}
             </Text>
-            <Text style={s.recHeroHint}>vs referência da pista</Text>
+            <Pressable onPress={toggleRefMode} hitSlop={16}>
+              <Text style={s.refModeToggle}>
+                vs {info.referenceMode === 'best' ? 'MELHOR' : 'ANTERIOR'}
+                <Text style={s.refModeToggleHint}>  · toque pra alternar</Text>
+              </Text>
+            </Pressable>
           </>
         ) : (
           <>
-            <Text style={s.recHeroLabel}>VOLTA ATUAL</Text>
+            <Text style={s.recHeroLabel}>
+              {info.lapsCompleted === 0 ? 'PRIMEIRA VOLTA' : 'VOLTA ATUAL'}
+            </Text>
             <Text
               style={[
                 s.recHeroValue,
@@ -625,7 +668,11 @@ export default function Recording() {
             >
               {fmtTime(currentLapMs)}
             </Text>
-            <Text style={s.recHeroHint}>sem referência configurada</Text>
+            <Text style={s.recHeroHint}>
+              {info.lapsCompleted === 0
+                ? 'definindo referência…'
+                : 'sem sinal pra comparar — andando livre'}
+            </Text>
           </>
         )}
       </View>
@@ -1030,6 +1077,28 @@ const s = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
     marginTop: spacing.s,
+  },
+
+  newBestLabel: {
+    color: colors.success,
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 3,
+  },
+
+  refModeToggle: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+    marginTop: spacing.s,
+    textAlign: 'center',
+  },
+  refModeToggleHint: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.5,
   },
 
   recBottomBar: {

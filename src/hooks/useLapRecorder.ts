@@ -4,6 +4,7 @@ import * as TaskManager from 'expo-task-manager';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { GpsSample, LatLng } from '../lib/geometry';
 import { detectLaps, DetectedLap } from '../lib/lapDetector';
+import { DeltaTracker } from '../lib/realtimeDelta';
 
 const BG_TASK = 'KARTLAP_BG_LOCATION';
 
@@ -37,6 +38,8 @@ TaskManager.defineTask(BG_TASK, async ({ data, error }) => {
 
 export type RecorderState = 'idle' | 'requesting' | 'recording' | 'stopped';
 
+export type ReferenceMode = 'best' | 'previous';
+
 export type LiveInfo = {
   totalSamples: number;
   lastAccuracy: number;
@@ -47,6 +50,28 @@ export type LiveInfo = {
   lapsCompleted: number;
   /** Tempo da melhor volta até agora, ms */
   bestLapMs: number | null;
+  /** Tempo da volta imediatamente anterior, ms. Vira null quando ainda
+   *  não há volta fechada. */
+  previousLapMs: number | null;
+  /** Tempo decorrido desde o início da volta ATUAL (em curso). Zera ao
+   *  cruzar a linha de chegada. null quando ainda não entrou em ritmo. */
+  currentLapElapsedMs: number | null;
+  /**
+   * Delta em tempo real no ponto atual da pista, comparado contra a
+   * referência ativa (best ou previous, depende de `referenceMode`).
+   *
+   * Negativo = mais rápido que a referência no mesmo ponto = VERDE.
+   * Positivo = mais lento = VERMELHO.
+   * null = sem referência ainda, ou sample fora do traçado, ou map
+   *        matching falhou. UI cai pra mostrar o cronômetro nu.
+   */
+  liveDeltaMs: number | null;
+  /** Modo atual da referência usada pelo liveDeltaMs. */
+  referenceMode: ReferenceMode;
+  /** True quando a última volta fechada virou nova melhor da sessão.
+   *  Vira false depois de 4s (resetado pelo próximo poll). Útil pra
+   *  flashar "NEW BEST!" sem precisar de timer na UI. */
+  justSetNewBest: boolean;
 };
 
 /** Volta pronta pra consumo — samples já recortados, duração calculada. */
@@ -97,6 +122,11 @@ export function useLapRecorder(options?: LapRecorderOptions) {
     isMoving: false,
     lapsCompleted: 0,
     bestLapMs: null,
+    previousLapMs: null,
+    currentLapElapsedMs: null,
+    liveDeltaMs: null,
+    referenceMode: 'best',
+    justSetNewBest: false,
   });
   /** Samples expostos pra UI (radar ao vivo). Decimados pra não re-render demais. */
   const [liveSamples, setLiveSamples] = useState<GpsSample[]>([]);
@@ -108,6 +138,22 @@ export function useLapRecorder(options?: LapRecorderOptions) {
   const movingStartIdxRef = useRef<number>(-1);
   const targetReachedRef = useRef<boolean>(false);
 
+  // ===== Realtime delta (MyChron-style) =====
+  // O tracker é stateful — segura referência preparada + hint do último
+  // segmento matched. Vive em ref pra não re-criar a cada render.
+  const deltaTrackerRef = useRef<DeltaTracker>(new DeltaTracker());
+  // Modo de referência ativo (best=melhor da sessão, previous=volta anterior).
+  // Vive em ref pra que o poll leia o valor atual sem precisar de dep no
+  // useEffect (poll roda de 500ms em 500ms).
+  const refModeRef = useRef<ReferenceMode>('best');
+  // Marca qual volta (índice em laps[]) está carregada no tracker. Evita
+  // refazer o setReference toda iteração se nada mudou.
+  const trackerLoadedFromRef = useRef<{ mode: ReferenceMode; lapIdx: number } | null>(null);
+  // Conta de voltas no último poll — pra detectar "fechou nova volta".
+  const lastLapCountInPollRef = useRef<number>(0);
+  // Quando bateu PB, registra timestamp pra UI flashar 4s.
+  const newBestUntilRef = useRef<number>(0);
+
   const start = useCallback(async () => {
     setState('requesting');
     buf.samples = [];
@@ -115,6 +161,10 @@ export function useLapRecorder(options?: LapRecorderOptions) {
     lastDetectionRef.current = [];
     movingStartIdxRef.current = -1;
     targetReachedRef.current = false;
+    deltaTrackerRef.current.clear();
+    trackerLoadedFromRef.current = null;
+    lastLapCountInPollRef.current = 0;
+    newBestUntilRef.current = 0;
 
     const fg = await Location.requestForegroundPermissionsAsync();
     if (fg.status !== 'granted') {
@@ -167,12 +217,90 @@ export function useLapRecorder(options?: LapRecorderOptions) {
         options?.onTargetReached?.();
       }
 
-      // Melhor volta até agora
+      // Melhor + anterior + índice da PB ===========================
       let bestLapMs: number | null = null;
-      for (const lap of detection.laps) {
+      let bestLapIdx = -1;
+      for (let i = 0; i < detection.laps.length; i++) {
+        const lap = detection.laps[i];
         if (bestLapMs === null || lap.durationMs < bestLapMs) {
           bestLapMs = lap.durationMs;
+          bestLapIdx = i;
         }
+      }
+      const previousLapMs =
+        detection.laps.length > 0
+          ? detection.laps[detection.laps.length - 1].durationMs
+          : null;
+      const previousLapIdx = detection.laps.length - 1;
+
+      // ===== Delta em tempo real =====
+      const tracker = deltaTrackerRef.current;
+      const mode = refModeRef.current;
+
+      // Decide qual volta vai pro tracker como referência neste poll.
+      // 'best' usa a PB da sessão; 'previous' usa a última volta fechada
+      // (que pode ser igual à best quando bateu PB agora).
+      const refLapIdx = mode === 'best' ? bestLapIdx : previousLapIdx;
+
+      // Volta nova fechou desde o último poll? Trata 3 coisas:
+      //   1. Reseta o lap state do tracker (s volta a zero conceitualmente)
+      //   2. Se bateu PB, marca flash de "NEW BEST!" por 4s
+      //   3. Marca tracker como "precisa recarregar referência" — porque a
+      //      melhor mudou (e/ou a "anterior" mudou)
+      const closedNewLap = detection.laps.length > lastLapCountInPollRef.current;
+      if (closedNewLap) {
+        tracker.resetLap();
+        const last = detection.laps[detection.laps.length - 1];
+        const previousBest =
+          lastLapCountInPollRef.current > 0
+            ? Math.min(
+                ...detection.laps
+                  .slice(0, lastLapCountInPollRef.current)
+                  .map((l) => l.durationMs)
+              )
+            : Infinity;
+        if (last.durationMs < previousBest) {
+          newBestUntilRef.current = Date.now() + 4000;
+        }
+        // Força reload da referência no próximo bloco
+        trackerLoadedFromRef.current = null;
+      }
+      lastLapCountInPollRef.current = detection.laps.length;
+
+      // (Re)carrega a referência no tracker se mudou o modo ou o índice.
+      const loaded = trackerLoadedFromRef.current;
+      if (
+        refLapIdx >= 0 &&
+        (loaded === null || loaded.mode !== mode || loaded.lapIdx !== refLapIdx)
+      ) {
+        const refLap = detection.laps[refLapIdx];
+        const refSamples = all.slice(refLap.startIdx, refLap.endIdx + 1);
+        tracker.setReference(refSamples, refLap.durationMs);
+        trackerLoadedFromRef.current = { mode, lapIdx: refLapIdx };
+      } else if (refLapIdx < 0 && tracker.hasReference()) {
+        tracker.clear();
+        trackerLoadedFromRef.current = null;
+      }
+
+      // Calcula elapsed da volta ATUAL (em curso).
+      // tStartCurrentLap = primeiro sample após a última volta fechada,
+      //                    ou movingStartIdx se ainda não fechou nenhuma.
+      let currentLapElapsedMs: number | null = null;
+      if (last && detection.movingStartIdx >= 0) {
+        const startIdx =
+          detection.laps.length > 0
+            ? detection.laps[detection.laps.length - 1].endIdx + 1
+            : detection.movingStartIdx;
+        if (startIdx < all.length) {
+          currentLapElapsedMs = last.t - all[startIdx].t;
+        }
+      }
+
+      // Computa delta no último sample.
+      let liveDeltaMs: number | null = null;
+      if (last && currentLapElapsedMs !== null && tracker.hasReference()) {
+        const reading = tracker.compute(last, currentLapElapsedMs);
+        liveDeltaMs = reading.deltaMs;
       }
 
       setInfo({
@@ -183,6 +311,11 @@ export function useLapRecorder(options?: LapRecorderOptions) {
         isMoving: last ? last.speed > 5 : false,
         lapsCompleted: detection.laps.length,
         bestLapMs,
+        previousLapMs,
+        currentLapElapsedMs,
+        liveDeltaMs,
+        referenceMode: mode,
+        justSetNewBest: Date.now() < newBestUntilRef.current,
       });
 
       // Live samples pro radar: só expõe a partir de quando entrou em ritmo
@@ -249,5 +382,16 @@ export function useLapRecorder(options?: LapRecorderOptions) {
     };
   }, []);
 
-  return { state, info, liveSamples, start, stop };
+  /**
+   * Alterna o modo da referência usada pelo delta em tempo real.
+   * Aplicado imediatamente — o próximo poll (até 500ms) já reflete na UI.
+   */
+  const setReferenceMode = useCallback((mode: ReferenceMode) => {
+    refModeRef.current = mode;
+    // Força o tracker a recarregar — não temos como saber qual é o lap idx
+    // certo daqui, mas marcar como null faz o poll detectar e recarregar.
+    trackerLoadedFromRef.current = null;
+  }, []);
+
+  return { state, info, liveSamples, start, stop, setReferenceMode };
 }

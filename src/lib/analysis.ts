@@ -143,7 +143,7 @@ export function matchLapToReference(lap: LapRecord, ref: ReferenceLap): MatchedL
  * O `s` solicitado está sempre em [0, referenceLength); a função desloca
  * pra alinhar com o range real de pts antes de interpolar.
  */
-function interpolateTimeAtS(matched: MatchedLap, s: number): number | null {
+export function interpolateTimeAtS(matched: MatchedLap, s: number): number | null {
   const pts = matched.points;
   if (pts.length < 2) return null;
 
