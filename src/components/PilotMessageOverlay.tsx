@@ -111,16 +111,13 @@ export function PilotMessageOverlay({ message, onDismiss }: PilotMessageOverlayP
   const backdropStyle = useAnimatedStyle(() => ({
     opacity: progress.value,
   }));
-  const textStyle = useAnimatedStyle(() => ({
-    opacity: progress.value,
-    transform: [
-      // Sobe de 0.92 → 1.0 na entrada (escala). Sem rotate ou bounce —
-      // piloto não precisa de spectacle, precisa LER.
-      {
-        scale: 0.92 + progress.value * 0.08,
-      },
-    ],
-  }));
+  // Antes textStyle animava opacity do conteúdo. Removido: em Android,
+  // dois useAnimatedStyle compartilhando o mesmo SharedValue em views
+  // diferentes podem ter sync issues. O texto agora renderiza com
+  // opacidade SÓLIDA (1) — a transição visual fica só no backdrop, que é
+  // suficiente: o piloto vê a tela "ganhar cor" e o texto já chega
+  // legível dentro dela.
+
 
   if (!snapshot) return null;
 
@@ -134,11 +131,10 @@ export function PilotMessageOverlay({ message, onDismiss }: PilotMessageOverlayP
         ]}
       />
 
-      {/* Envolve TUDO num Animated.View — mais robusto no Android que
-       * Animated.Text com transform. Reanimated 4 às vezes não anima
-       * Text individual direito; um View pai com scale/opacity funciona
-       * em qualquer plataforma. */}
-      <Animated.View style={[s.contentBox, textStyle]}>
+      {/* ContentBox = View regular (não Animated). Sem animação no
+       * conteúdo de texto — só o backdrop anima. Texto fica sempre
+       * sólido pra evitar qualquer issue de animação no Android. */}
+      <View style={s.contentBox}>
         <Text style={[s.kicker, { color: severityText(snapshot.severity) }]}>
           {severityKicker(snapshot.severity)}
         </Text>
@@ -157,45 +153,52 @@ export function PilotMessageOverlay({ message, onDismiss }: PilotMessageOverlayP
             </Text>
           </View>
         )}
-      </Animated.View>
+      </View>
     </View>
   );
 }
 
 const s = StyleSheet.create({
+  // Sem zIndex/elevation — a ordem no JSX já garante que esse overlay
+  // renderiza ACIMA do LapResultOverlay (vem depois dele no return).
+  // elevation tinha potencial de criar artifacts de compositing no Android.
   absoluteFill: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    // zIndex 10 = vai por cima do LapResultOverlay (sem zIndex = 0).
-    // Mensagem da equipe é mais importante que celebração automática.
-    zIndex: 10,
-    elevation: 10,
   },
+  // contentBox = mesmo posicionamento absoluto que o backdrop, mas com
+  // alignItems/justifyContent pra centralizar texto. Não usa flex:1 porque
+  // child flex:1 dentro de View position:absolute estava colapsando pra
+  // height 0 em alguns layouts Android.
   contentBox: {
-    flex: 1,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.xl,
   },
   kicker: {
     fontSize: 14,
-    fontWeight: '900',
-    letterSpacing: 4,
+    fontWeight: '800',
+    letterSpacing: 3,
     marginBottom: spacing.m,
     opacity: 0.85,
+    textAlign: 'center',
   },
   bigText: {
-    // FontSize moderado pra não depender de adjustsFontSizeToFit (que tem
-    // comportamento errático no Android com letterSpacing negativo).
-    // 72px com letterSpacing -2 → "BOX AGORA" cabe em ~700px (qualquer
-    // landscape de celular). Quem decidir um texto mais longo via input
-    // custom (24 chars) também cabe.
-    fontSize: 72,
-    fontWeight: '900',
-    letterSpacing: -2,
+    // fontWeight 800 em vez de 900 — alguns fontes do Android não têm peso
+    // 900 e caem pra normal. 800 é mais portável.
+    // letterSpacing 0 — qualquer valor negativo pode renderizar texto
+    // colapsado em Android dependendo do font fallback.
+    fontSize: 64,
+    fontWeight: '800',
+    letterSpacing: 0,
     textAlign: 'center',
     includeFontPadding: false,
   },
