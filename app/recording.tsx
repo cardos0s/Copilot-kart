@@ -541,6 +541,22 @@ export default function Recording() {
   // Fallback pro elapsed total quando ainda não fechou primeira volta.
   const currentLapMs = info.currentLapElapsedMs ?? info.elapsedMs;
 
+  // HUD font sizes — pensado pra cockpit:
+  //   - Delta ~64px landscape / ~56px portrait: legível com capacete a 60cm
+  //     da tela mas NÃO domina o visual. Antes era 180px (90% da tela).
+  //   - KM/H um pouco menor que delta, suficiente pra ler de relance.
+  //   - Tempo da volta atual ainda menor — info secundária.
+  // Cap em valores absolutos pra não explodir em tablet/iPad.
+  const deltaFontSize = isLandscape
+    ? Math.min(width * 0.075, 68)
+    : Math.min(width * 0.13, 56);
+  const kmhFontSize = isLandscape
+    ? Math.min(width * 0.06, 52)
+    : Math.min(width * 0.11, 44);
+  const lapFontSize = isLandscape
+    ? Math.min(width * 0.04, 32)
+    : Math.min(width * 0.08, 28);
+
   if (state === 'idle') {
     return (
       <IdleView
@@ -599,96 +615,126 @@ export default function Recording() {
         </View>
       </View>
 
-      {/* Hero — delta em tempo real estilo MyChron.
+      {/* HUD compacto estilo MyChron.
        *
-       * 3 estados possíveis:
-       *   1. "NEW BEST!" — bateu PB nos últimos 4s (flash dourado/verde)
-       *   2. Delta ativo — tem referência E sample válido (-X.XXX em verde
-       *      ou +X.XXX em vermelho, gigante)
-       *   3. Sem delta — primeira volta sem referência ainda, ou sample
-       *      fora do traçado. Mostra cronômetro da volta atual.
+       * Princípio: piloto olha de relance (0.3s) e volta pra pista. Nada
+       * gigante dominando, nada que peça leitura cuidadosa. 3 blocos médios
+       * lado a lado:
        *
-       * Embaixo do número: rótulo "vs MELHOR" / "vs ANTERIOR" tappable
-       * pra alternar o modo da referência.
+       *   [ DELTA -0.180 ]  [ 56 km/h ]  [ V3 · 00:42 ]
+       *
+       * O delta tem a cor (verde/vermelho) — captação periférica. KM/H em
+       * letras grandes mas não dominantes. Tempo da volta atual + nº da
+       * volta juntos no terceiro bloco. Quando bate PB, o card do delta
+       * vira "NEW BEST!" em verde por 4s (sem mudar layout — só conteúdo).
+       *
+       * Abaixo: linha discreta "MELHOR 01:02.500 · vs MELHOR" tappable
+       * pra alternar referência. Quase invisível, mas acessível.
        */}
-      <View style={s.recHero}>
-        {info.justSetNewBest ? (
-          <>
-            <Text style={s.newBestLabel}>NEW BEST!</Text>
-            <Text
-              style={[
-                s.recHeroValue,
-                typography.mono,
-                {
-                  fontSize: isLandscape ? Math.min(width * 0.18, 180) : Math.min(width * 0.28, 110),
-                  color: colors.success,
-                },
-              ]}
-            >
-              {info.bestLapMs !== null ? fmtLap(info.bestLapMs) : '—'}
-            </Text>
-            <Text style={s.recHeroHint}>nova melhor volta da sessão</Text>
-          </>
-        ) : liveDeltaMs !== null ? (
-          <>
-            <Text style={s.recHeroLabel}>DELTA</Text>
-            <Text
-              style={[
-                s.recHeroValue,
-                typography.mono,
-                {
-                  fontSize: isLandscape ? Math.min(width * 0.18, 180) : Math.min(width * 0.28, 110),
-                  color: liveDeltaMs > 0 ? colors.danger : colors.success,
-                },
-              ]}
-            >
-              {fmtDelta(liveDeltaMs)}
-            </Text>
-            <Pressable onPress={toggleRefMode} hitSlop={16}>
-              <Text style={s.refModeToggle}>
-                vs {info.referenceMode === 'best' ? 'MELHOR' : 'ANTERIOR'}
-                <Text style={s.refModeToggleHint}>  · toque pra alternar</Text>
+      <View style={s.recHud}>
+        {/* Bloco 1: Delta (ou NEW BEST flash, ou tempo da volta como fallback) */}
+        <View style={s.hudBlock}>
+          {info.justSetNewBest ? (
+            <>
+              <Text style={[s.hudLabel, { color: colors.success }]}>NEW BEST</Text>
+              <Text
+                style={[
+                  s.hudValueBig,
+                  typography.mono,
+                  { color: colors.success, fontSize: deltaFontSize },
+                ]}
+              >
+                {info.bestLapMs !== null ? fmtLap(info.bestLapMs) : '—'}
               </Text>
-            </Pressable>
-          </>
-        ) : (
-          <>
-            <Text style={s.recHeroLabel}>
-              {info.lapsCompleted === 0 ? 'PRIMEIRA VOLTA' : 'VOLTA ATUAL'}
-            </Text>
-            <Text
-              style={[
-                s.recHeroValue,
-                typography.mono,
-                {
-                  fontSize: isLandscape ? Math.min(width * 0.18, 180) : Math.min(width * 0.28, 110),
-                  color: colors.textPrimary,
-                },
-              ]}
-            >
-              {fmtTime(currentLapMs)}
-            </Text>
-            <Text style={s.recHeroHint}>
-              {info.lapsCompleted === 0
-                ? 'definindo referência…'
-                : 'sem sinal pra comparar — andando livre'}
-            </Text>
-          </>
-        )}
+            </>
+          ) : liveDeltaMs !== null ? (
+            <>
+              <Text style={s.hudLabel}>DELTA</Text>
+              <Text
+                style={[
+                  s.hudValueBig,
+                  typography.mono,
+                  {
+                    color: liveDeltaMs > 0 ? colors.danger : colors.success,
+                    fontSize: deltaFontSize,
+                  },
+                ]}
+              >
+                {fmtDelta(liveDeltaMs)}
+              </Text>
+            </>
+          ) : (
+            <>
+              <Text style={s.hudLabel}>
+                {info.lapsCompleted === 0 ? 'AQUECENDO' : 'SEM SINAL'}
+              </Text>
+              <Text
+                style={[
+                  s.hudValueBig,
+                  typography.mono,
+                  { color: colors.textMuted, fontSize: deltaFontSize },
+                ]}
+              >
+                —
+              </Text>
+            </>
+          )}
+        </View>
+
+        {/* Bloco 2: KM/H — sempre presente, instinto do piloto */}
+        <View style={s.hudBlock}>
+          <Text style={s.hudLabel}>KM/H</Text>
+          <Text
+            style={[
+              s.hudValueBig,
+              typography.mono,
+              { color: colors.textPrimary, fontSize: kmhFontSize },
+            ]}
+          >
+            {info.lastSpeedKmh.toFixed(0)}
+          </Text>
+        </View>
+
+        {/* Bloco 3: Volta atual (nº + cronômetro) */}
+        <View style={s.hudBlock}>
+          <Text style={s.hudLabel}>VOLTA {info.lapsCompleted + 1}</Text>
+          <Text
+            style={[
+              s.hudValueMid,
+              typography.mono,
+              { color: colors.textPrimary, fontSize: lapFontSize },
+            ]}
+          >
+            {fmtTime(currentLapMs)}
+          </Text>
+        </View>
       </View>
 
-      {/* Bottom bar — stats + encerrar */}
-      <View style={s.recBottomBar}>
-        <StatBlock label="MELHOR" value={info.bestLapMs !== null ? fmtLap(info.bestLapMs) : '—'} tone="primary" />
-        <StatBlock label="VOLTAS" value={String(info.lapsCompleted)} />
-        <StatBlock label="TEMPO" value={fmtTime(info.elapsedMs)} />
-        <StatBlock label="KM/H" value={info.lastSpeedKmh.toFixed(0)} />
+      {/* Faixa inferior — pílulas pequenas: melhor + toggle de ref + encerrar.
+       * Tudo discreto. O piloto olha aqui só quando quer (no box, num
+       * momento de respiro). Encerrar fica destacado em vermelho porque é
+       * ação importante mas raramente acionada durante a volta. */}
+      <View style={s.recFooter}>
         <Pressable
-          style={({ pressed }) => [s.endBtn, pressed && { opacity: 0.8 }]}
+          onPress={toggleRefMode}
+          hitSlop={12}
+          style={({ pressed }) => [s.footerPill, pressed && { opacity: 0.7 }]}
+        >
+          <Text style={s.footerPillLabel}>MELHOR</Text>
+          <Text style={[s.footerPillValue, typography.mono]}>
+            {info.bestLapMs !== null ? fmtLap(info.bestLapMs) : '—'}
+          </Text>
+          <Text style={s.footerPillMeta}>
+            · vs {info.referenceMode === 'best' ? 'MELHOR' : 'ANTERIOR'}
+          </Text>
+        </Pressable>
+
+        <Pressable
+          style={({ pressed }) => [s.endBtnSmall, pressed && { opacity: 0.8 }]}
           onPress={handleFinish}
         >
-          <Icon name="stop" size={18} color={colors.textPrimary} />
-          <Text style={s.endBtnText}>Encerrar</Text>
+          <Icon name="stop" size={14} color={colors.textPrimary} />
+          <Text style={s.endBtnSmallText}>Encerrar</Text>
         </Pressable>
       </View>
 
@@ -765,33 +811,6 @@ export default function Recording() {
           </ScrollView>
         </View>
       </Modal>
-    </View>
-  );
-}
-
-function StatBlock({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone?: 'primary';
-}) {
-  return (
-    <View style={s.statBlock}>
-      <Text style={s.statLabel}>{label}</Text>
-      <Text
-        style={[
-          s.statValue,
-          typography.mono,
-          tone === 'primary' && { color: colors.primary },
-        ]}
-        numberOfLines={1}
-        adjustsFontSizeToFit
-      >
-        {value}
-      </Text>
     </View>
   );
 }
@@ -1055,97 +1074,96 @@ const s = StyleSheet.create({
   recGpsDot: { width: 8, height: 8, borderRadius: 4 },
   recGpsText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
 
-  recHero: {
+  // ===== HUD compacto =====
+  // Linha central de 3 blocos médios (delta, km/h, volta atual). Cada
+  // bloco respira com altura uniforme; labels minúsculas servem de
+  // âncora visual quando o número muda (delta oscila, km/h oscila).
+  recHud: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  recHeroLabel: {
-    color: colors.textMuted,
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 2,
-  },
-  recHeroValue: {
-    fontWeight: '900',
-    letterSpacing: -4,
-    includeFontPadding: false,
-    marginTop: spacing.s,
-  },
-  recHeroHint: {
-    color: colors.textMuted,
-    fontSize: 12,
-    fontWeight: '500',
-    marginTop: spacing.s,
-  },
-
-  newBestLabel: {
-    color: colors.success,
-    fontSize: 14,
-    fontWeight: '900',
-    letterSpacing: 3,
-  },
-
-  refModeToggle: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: '800',
-    letterSpacing: 1.5,
-    marginTop: spacing.s,
-    textAlign: 'center',
-  },
-  refModeToggleHint: {
-    color: colors.textMuted,
-    fontSize: 11,
-    fontWeight: '600',
-    letterSpacing: 0.5,
-  },
-
-  recBottomBar: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-around',
+    paddingVertical: spacing.s,
+  },
+  hudBlock: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 100,
+  },
+  hudLabel: {
+    color: colors.textMuted,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.8,
+  },
+  hudValueBig: {
+    fontWeight: '900',
+    letterSpacing: -2,
+    includeFontPadding: false,
+    marginTop: 2,
+  },
+  hudValueMid: {
+    fontWeight: '900',
+    letterSpacing: -1,
+    includeFontPadding: false,
+    marginTop: 2,
+  },
+
+  // ===== Footer =====
+  // Linha bem fina. Pílula de "MELHOR ... · vs MELHOR" tappable pra
+  // alternar referência; ao lado, botão Encerrar compacto. Tudo no nível
+  // de "info secundária" — não compete com o HUD central pela atenção.
+  recFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     gap: spacing.s,
     paddingVertical: spacing.s,
   },
-  statBlock: {
-    flex: 1,
-    paddingVertical: spacing.s,
-    paddingHorizontal: spacing.s,
+  footerPill: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 6,
+    paddingHorizontal: spacing.m,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
     backgroundColor: colors.surface,
-    borderRadius: radius.m,
     borderWidth: 1,
     borderColor: colors.border,
-    alignItems: 'center',
   },
-  statLabel: {
+  footerPillLabel: {
     color: colors.textMuted,
     fontSize: 9,
     fontWeight: '800',
     letterSpacing: 1.2,
   },
-  statValue: {
+  footerPillValue: {
     color: colors.textPrimary,
-    fontSize: 18,
+    fontSize: 13,
     fontWeight: '900',
     letterSpacing: -0.3,
-    marginTop: 2,
   },
-
-  endBtn: {
+  footerPillMeta: {
+    color: colors.textSecondary,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  endBtnSmall: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.s,
-    paddingHorizontal: spacing.l,
-    paddingVertical: 14,
-    borderRadius: radius.m,
+    gap: 6,
+    paddingHorizontal: spacing.m,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
     backgroundColor: colors.danger,
   },
-  endBtnText: {
+  endBtnSmallText: {
     color: colors.textPrimary,
-    fontSize: 14,
+    fontSize: 11,
     fontWeight: '800',
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
     textTransform: 'uppercase',
   },
 
