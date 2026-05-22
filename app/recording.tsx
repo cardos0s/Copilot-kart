@@ -234,6 +234,16 @@ export default function Recording() {
 
   // ===== Live broadcasting =====
 
+  /**
+   * Ativa live broadcast. Chamado pela tela de idle (antes da corrida)
+   * pra que QR já apareça pronto pra scan ANTES do cronômetro começar
+   * a contar. Não abre o modal automaticamente — QR aparece inline no
+   * idle, e o modal é só pra re-exibir grande durante a corrida
+   * (espectador que chegou tarde).
+   *
+   * Se chamado durante recording (legacy path), também não abre modal —
+   * tap no badge do top bar abre quando precisar.
+   */
   const handleStartLive = async () => {
     setLiveStarting(true);
     try {
@@ -245,7 +255,6 @@ export default function Recording() {
       setLive(info);
       lastSampleIdxRef.current = 0;
       lastLapCountRef.current = 0;
-      setLiveModalOpen(true);
     } catch (err: any) {
       Alert.alert(
         'Não foi possível ativar live',
@@ -610,6 +619,13 @@ export default function Recording() {
         },
       ]);
     } else {
+      // No idle: se usuário ativou "Compartilhar ao vivo" mas mudou de
+      // ideia, encerra a live session pra não deixar órfã no Supabase.
+      // Não-bloqueante — falha silenciosa não impede a navegação.
+      if (live) {
+        endLiveSession(live.code).catch(() => {});
+        setLive(null);
+      }
       router.replace('/');
     }
   };
@@ -647,6 +663,10 @@ export default function Recording() {
         onStart={handleStart}
         onCancel={handleCancel}
         isLandscape={isLandscape}
+        live={live}
+        liveStarting={liveStarting}
+        onEnableLive={handleStartLive}
+        onDisableLive={handleStopLive}
       />
     );
   }
@@ -690,25 +710,17 @@ export default function Recording() {
               </Text>
             </View>
           )}
-          {live ? (
+          {/* Badge de live — só aparece quando JÁ está ativo (ativação acontece
+           * antes do start, na tela idle). Tap re-abre o modal QR caso a
+           * equipe peça pra mostrar o código de novo. Botão de "ativar"
+           * removido do cockpit pra reduzir tempo de exposição/manuseio. */}
+          {live && (
             <Pressable
               onPress={() => setLiveModalOpen(true)}
               style={({ pressed }) => [s.liveBadge, pressed && { opacity: 0.7 }]}
             >
               <View style={s.liveDot} />
               <Text style={s.liveBadgeText}>{live.code}</Text>
-            </Pressable>
-          ) : (
-            <Pressable
-              onPress={handleStartLive}
-              disabled={liveStarting}
-              style={({ pressed }) => [
-                s.liveActivateBtn,
-                liveStarting && { opacity: 0.5 },
-                pressed && { opacity: 0.7 },
-              ]}
-            >
-              <Text style={s.liveActivateText}>📡</Text>
             </Pressable>
           )}
           <View style={s.recGpsBar}>
@@ -1073,6 +1085,10 @@ function IdleView({
   onStart,
   onCancel,
   isLandscape,
+  live,
+  liveStarting,
+  onEnableLive,
+  onDisableLive,
 }: {
   trackName: string;
   reference: TrackLayout | null;
@@ -1080,6 +1096,10 @@ function IdleView({
   onStart: () => void;
   onCancel: () => void;
   isLandscape: boolean;
+  live: LiveSessionInfo | null;
+  liveStarting: boolean;
+  onEnableLive: () => Promise<void> | void;
+  onDisableLive: () => Promise<void> | void;
 }) {
   const insets = useSafeAreaInsets();
   return (
@@ -1092,7 +1112,13 @@ function IdleView({
         <View style={s.iconBtn} />
       </View>
 
-      <View style={[s.idleBody, isLandscape && { flexDirection: 'row', gap: spacing.l }]}>
+      <ScrollView
+        contentContainerStyle={[
+          s.idleBody,
+          isLandscape && { flexDirection: 'row', gap: spacing.l },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={{ flex: 1 }}>
           <Text style={s.idleTrack}>{trackName}</Text>
           {reference && (
@@ -1104,6 +1130,21 @@ function IdleView({
               </View>
             </Card>
           )}
+
+          {/* Compartilhar ao vivo — toggle + QR antes de começar.
+            * A ideia é ativar AQUI, mostrar o QR pra equipe scanear no
+            * conforto da box, e SÓ DEPOIS apertar "Começar". Assim quando
+            * o cronômetro começa, a equipe já está conectada e não tem
+            * janela de "esperando spectator" com tempo correndo.
+            *
+            * Se tocar de novo (já ativo), pergunta se quer desativar. */}
+          <LiveTogglePanel
+            live={live}
+            liveStarting={liveStarting}
+            onEnable={onEnableLive}
+            onDisable={onDisableLive}
+          />
+
           <Card variant="default" padding="l" style={{ marginTop: spacing.l }}>
             <Text style={s.instructionTitle}>Pronto pra correr?</Text>
             <Text style={s.instructionText}>
@@ -1133,8 +1174,113 @@ function IdleView({
             }
           />
         </View>
-      </View>
+      </ScrollView>
     </View>
+  );
+}
+
+/**
+ * Card "Compartilhar ao vivo" — toggle + QR inline.
+ *
+ * Estados:
+ *   - desligado: card discreto com switch OFF. Subtítulo explica o que é.
+ *   - conectando: switch animando, sem QR ainda.
+ *   - ativo: card destacado (border verde) com código grande + QR + link.
+ *     Tap no card pergunta se quer desativar.
+ *
+ * O switch visual é um Pressable com 2 estados — não usa o Switch nativo
+ * pra manter o look custom do app.
+ */
+function LiveTogglePanel({
+  live,
+  liveStarting,
+  onEnable,
+  onDisable,
+}: {
+  live: LiveSessionInfo | null;
+  liveStarting: boolean;
+  onEnable: () => Promise<void> | void;
+  onDisable: () => Promise<void> | void;
+}) {
+  const handleTap = () => {
+    if (liveStarting) return;
+    if (live) {
+      Alert.alert(
+        'Desativar transmissão?',
+        `Quem tá com o código ${live.code} vai perder o sinal.`,
+        [
+          { text: 'Manter ativo', style: 'cancel' },
+          { text: 'Desativar', style: 'destructive', onPress: () => onDisable() },
+        ]
+      );
+    } else {
+      onEnable();
+    }
+  };
+
+  const isOn = !!live;
+
+  return (
+    <Pressable onPress={handleTap} disabled={liveStarting}>
+      <Card
+        variant={isOn ? 'glow' : 'default'}
+        padding="m"
+        style={{
+          marginTop: spacing.l,
+          ...(isOn && { borderColor: colors.success, borderWidth: 1 }),
+        }}
+      >
+        <View style={s.liveRowHead}>
+          <View style={{ flex: 1 }}>
+            <Text style={[s.liveRowTitle, isOn && { color: colors.success }]}>
+              📡 Compartilhar ao vivo
+            </Text>
+            <Text style={s.liveRowSub}>
+              {liveStarting
+                ? 'Conectando ao servidor…'
+                : isOn
+                  ? 'Equipe pode acompanhar pelo navegador'
+                  : 'Ativa antes pra equipe estar pronta no início'}
+            </Text>
+          </View>
+          <View
+            style={[
+              s.liveToggleTrack,
+              isOn && { backgroundColor: colors.success },
+              liveStarting && { opacity: 0.5 },
+            ]}
+          >
+            <View
+              style={[
+                s.liveToggleThumb,
+                isOn && { alignSelf: 'flex-end' },
+              ]}
+            />
+          </View>
+        </View>
+
+        {isOn && live && (
+          <View style={s.liveActiveBox}>
+            <View style={s.liveQrInline}>
+              <QRCode
+                value={`https://copilot-mu-eight.vercel.app/live/${live.code}`}
+                size={140}
+                backgroundColor="#fff"
+                color="#000"
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.liveCodeLabel}>CÓDIGO</Text>
+              <Text style={[s.liveCodeInline, typography.mono]}>{live.code}</Text>
+              <Text style={s.liveUrlInline}>copilot-mu-eight.vercel.app</Text>
+              <Text style={s.liveHintInline}>
+                A equipe entra como "Equipe" no site e usa esse código.
+              </Text>
+            </View>
+          </View>
+        )}
+      </Card>
+    </Pressable>
   );
 }
 
@@ -1151,7 +1297,86 @@ const s = StyleSheet.create({
     paddingBottom: spacing.m,
   },
   idleTitle: { color: colors.textPrimary, fontSize: 13, fontWeight: '800', letterSpacing: 1.5 },
-  idleBody: { flex: 1 },
+  // flexGrow ao invés de flex pra funcionar como contentContainerStyle de
+  // ScrollView (idleBody virou scrollable depois de adicionar o card de
+  // live com QR — conteúdo pode passar da viewport em portrait).
+  // Padding horizontal vem do idleRoot (que envolve o ScrollView), então
+  // aqui não duplicar.
+  idleBody: { flexGrow: 1 },
+
+  // ===== Live toggle panel (no idle) =====
+  liveRowHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.m,
+  },
+  liveRowTitle: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  liveRowSub: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  // Switch custom — track + thumb, 2 estados (on/off via alignSelf do thumb)
+  liveToggleTrack: {
+    width: 44,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 2,
+    justifyContent: 'center',
+  },
+  liveToggleThumb: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: colors.textPrimary,
+  },
+  // Conteúdo expandido quando live tá ativo: QR + código + url
+  liveActiveBox: {
+    flexDirection: 'row',
+    gap: spacing.m,
+    marginTop: spacing.m,
+    paddingTop: spacing.m,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    alignItems: 'flex-start',
+  },
+  liveQrInline: {
+    backgroundColor: '#fff',
+    padding: 8,
+    borderRadius: 10,
+  },
+  liveCodeLabel: {
+    color: colors.textMuted,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+  },
+  liveCodeInline: {
+    color: colors.success,
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: 2,
+    marginTop: 2,
+  },
+  liveUrlInline: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  liveHintInline: {
+    color: colors.textMuted,
+    fontSize: 11,
+    marginTop: spacing.s,
+    lineHeight: 15,
+  },
   idleTrack: { color: colors.textPrimary, fontSize: 22, fontWeight: '800', letterSpacing: -0.3 },
 
   refLabel: { color: colors.primary, fontSize: 10, fontWeight: '800', letterSpacing: 1.5 },
@@ -1276,20 +1501,6 @@ const s = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.5,
   },
-  liveActivateBtn: {
-    paddingHorizontal: spacing.m,
-    paddingVertical: 6,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  liveActivateText: {
-    color: colors.textSecondary,
-    fontSize: 11,
-    fontWeight: '700',
-  },
-
   liveModalOverlay: {
     flex: 1,
     backgroundColor: colors.overlay,
