@@ -134,38 +134,30 @@ export function PilotMessageOverlay({ message, onDismiss }: PilotMessageOverlayP
         ]}
       />
 
-      <View style={s.contentBox}>
-        <Animated.Text
-          style={[
-            s.kicker,
-            { color: severityText(snapshot.severity) },
-            textStyle,
-          ]}
-        >
+      {/* Envolve TUDO num Animated.View — mais robusto no Android que
+       * Animated.Text com transform. Reanimated 4 às vezes não anima
+       * Text individual direito; um View pai com scale/opacity funciona
+       * em qualquer plataforma. */}
+      <Animated.View style={[s.contentBox, textStyle]}>
+        <Text style={[s.kicker, { color: severityText(snapshot.severity) }]}>
           {severityKicker(snapshot.severity)}
-        </Animated.Text>
+        </Text>
 
-        <Animated.Text
+        <Text
           numberOfLines={2}
-          adjustsFontSizeToFit
-          style={[
-            s.bigText,
-            typography.mono,
-            { color: severityText(snapshot.severity) },
-            textStyle,
-          ]}
+          style={[s.bigText, { color: severityText(snapshot.severity) }]}
         >
           {snapshot.text.toUpperCase()}
-        </Animated.Text>
+        </Text>
 
         {snapshot.sentBy && (
-          <Animated.View style={[s.byPill, textStyle]}>
+          <View style={s.byPill}>
             <Text style={[s.byText, { color: severityText(snapshot.severity) }]}>
               {snapshot.sentBy}
             </Text>
-          </Animated.View>
+          </View>
         )}
-      </View>
+      </Animated.View>
     </View>
   );
 }
@@ -196,9 +188,14 @@ const s = StyleSheet.create({
     opacity: 0.85,
   },
   bigText: {
-    fontSize: 110,
+    // FontSize moderado pra não depender de adjustsFontSizeToFit (que tem
+    // comportamento errático no Android com letterSpacing negativo).
+    // 72px com letterSpacing -2 → "BOX AGORA" cabe em ~700px (qualquer
+    // landscape de celular). Quem decidir um texto mais longo via input
+    // custom (24 chars) também cabe.
+    fontSize: 72,
     fontWeight: '900',
-    letterSpacing: -4,
+    letterSpacing: -2,
     textAlign: 'center',
     includeFontPadding: false,
   },
