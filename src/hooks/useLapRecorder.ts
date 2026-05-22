@@ -40,6 +40,44 @@ export type RecorderState = 'idle' | 'requesting' | 'recording' | 'stopped';
 
 export type ReferenceMode = 'best' | 'previous';
 
+/**
+ * Snapshot da volta que acabou de fechar. Exposto no LiveInfo por uma
+ * janela curta (~1s) após cada cruzamento da linha de chegada, depois
+ * volta a null.
+ *
+ * É a fonte que alimenta o overlay animado de GANHOU/PERDEU na tela do
+ * kart. O componente de UI captura esse dado em estado local quando
+ * lapNumber muda e roda a animação independente (3s) — então não importa
+ * se o hook nulifica antes do fim da animação.
+ *
+ * deltaVsRefMs é calculado contra a referência ATIVA NO MOMENTO em que
+ * a volta fechou (best ou previous, conforme referenceMode). Pra primeira
+ * volta da sessão, não há referência prévia → deltaVsRefMs é null e
+ * isPb é true automaticamente.
+ */
+export type ClosedLapInfo = {
+  /** 1-indexed (igual ao que o piloto enxerga: "L 1", "L 2"). */
+  lapNumber: number;
+  durationMs: number;
+  /** Volta - referenciaAtiva. Negativo = ganhou tempo, positivo = perdeu. */
+  deltaVsRefMs: number | null;
+  /** Nova melhor volta da sessão. Sempre true na 1ª volta. */
+  isPb: boolean;
+  /** Modo de referência no momento do fechamento. */
+  referenceMode: ReferenceMode;
+};
+
+/**
+ * Tempos S1/S2/S3 — quando algum é null, ainda não fechou aquele setor.
+ * Setores são definidos em fração da pista (1/3 e 2/3 da polyline de
+ * referência do layout). Quando uma volta fecha, S3 fica preenchido.
+ */
+export type SectorTimes = {
+  s1Ms: number | null;
+  s2Ms: number | null;
+  s3Ms: number | null;
+};
+
 export type LiveInfo = {
   totalSamples: number;
   lastAccuracy: number;
@@ -72,6 +110,36 @@ export type LiveInfo = {
    *  Vira false depois de 4s (resetado pelo próximo poll). Útil pra
    *  flashar "NEW BEST!" sem precisar de timer na UI. */
   justSetNewBest: boolean;
+  /**
+   * Snapshot da última volta fechada — exposto por ~1s após o cruzamento,
+   * depois volta a null. Dispara o overlay GANHOU/PERDEU na UI (que tem
+   * animação própria de 3s — não depende dessa janela).
+   *
+   * Null fora da janela e antes da 1ª volta. lapNumber mudando entre
+   * polls é o sinal pra UI animar.
+   */
+  lastClosedLap: ClosedLapInfo | null;
+
+  // ===== Sectors (S1/S2/S3) =====
+  // Setores geográficos: 1/3 e 2/3 da polyline de referência do layout.
+  // Só preenchem quando setLayoutReference foi chamado (i.e., a pista tem
+  // referência salva). Sem layout ref → todos os campos abaixo ficam null.
+
+  /** Setor onde o piloto está AGORA: 0 (S1), 1 (S2), 2 (S3) ou null. */
+  currentSectorIdx: 0 | 1 | 2 | null;
+  /** Tempo decorrido no setor ATUAL (não na volta inteira). null se não há ref. */
+  currentSectorElapsedMs: number | null;
+  /** Tempos S1/S2/S3 da volta em curso, parciais. Cada um vira número
+   *  no momento que o piloto cruza o limite geográfico do setor. S3 só
+   *  preenche quando a volta fecha (vai pro lastClosedLapSectors). */
+  currentSectors: SectorTimes;
+  /** Tempos S1/S2/S3 da última volta fechada. Preenche quando lapsCompleted
+   *  incrementa. Null antes da 1ª volta ou se não havia layout ref. */
+  lastClosedLapSectors: SectorTimes | null;
+  /** Melhor S1, S2, S3 observados na sessão (campos independentes — podem
+   *  vir de voltas diferentes). Pra destacar "PB do setor" mesmo quando a
+   *  volta inteira não é PB. */
+  bestSectors: SectorTimes;
 };
 
 /** Volta pronta pra consumo — samples já recortados, duração calculada. */
@@ -127,6 +195,12 @@ export function useLapRecorder(options?: LapRecorderOptions) {
     liveDeltaMs: null,
     referenceMode: 'best',
     justSetNewBest: false,
+    lastClosedLap: null,
+    currentSectorIdx: null,
+    currentSectorElapsedMs: null,
+    currentSectors: { s1Ms: null, s2Ms: null, s3Ms: null },
+    lastClosedLapSectors: null,
+    bestSectors: { s1Ms: null, s2Ms: null, s3Ms: null },
   });
   /** Samples expostos pra UI (radar ao vivo). Decimados pra não re-render demais. */
   const [liveSamples, setLiveSamples] = useState<GpsSample[]>([]);
@@ -153,6 +227,32 @@ export function useLapRecorder(options?: LapRecorderOptions) {
   const lastLapCountInPollRef = useRef<number>(0);
   // Quando bateu PB, registra timestamp pra UI flashar 4s.
   const newBestUntilRef = useRef<number>(0);
+  // Snapshot da última volta fechada + janela de exposição. A UI tem 1s
+  // pra capturar (o overlay roda animação local de 3s sem depender da
+  // janela), depois lastClosedLap volta a null. Janela curta evita que
+  // a celebração se "duplique" se o hook receber re-render por outro
+  // motivo (mudança de modo, etc).
+  const closedLapDataRef = useRef<ClosedLapInfo | null>(null);
+  const closedLapClearAtRef = useRef<number>(0);
+
+  // ===== Sectors =====
+  // Tracker separado, carregado com a referência do LAYOUT (não da sessão).
+  // Setores são geográficos: 1/3 e 2/3 da polyline da ref do layout. Não
+  // mexem com PB/anterior da sessão. Reutiliza o DeltaTracker só pela
+  // projeção (descarta o deltaMs interno — usamos apenas sNormalized).
+  const layoutTrackerRef = useRef<DeltaTracker>(new DeltaTracker());
+  // Timestamps de quando o piloto cruzou os limites geográficos. Resetado
+  // a cada volta nova. [s1End_ts, s2End_ts] — s3End é o end-of-lap.
+  const sectorBoundaryTsRef = useRef<[number | null, number | null]>([null, null]);
+  // Melhores S1, S2, S3 vistos na sessão (atualizados a cada lap close).
+  const bestSectorsRef = useRef<{ s1: number | null; s2: number | null; s3: number | null }>({
+    s1: null,
+    s2: null,
+    s3: null,
+  });
+  // Setores da última volta fechada. Compartilhado com lastClosedLap mas
+  // tem ciclo próprio (não some após 1s — fica visível até a próxima volta).
+  const lastClosedLapSectorsRef = useRef<SectorTimes | null>(null);
 
   const start = useCallback(async () => {
     setState('requesting');
@@ -165,6 +265,14 @@ export function useLapRecorder(options?: LapRecorderOptions) {
     trackerLoadedFromRef.current = null;
     lastLapCountInPollRef.current = 0;
     newBestUntilRef.current = 0;
+    closedLapDataRef.current = null;
+    closedLapClearAtRef.current = 0;
+    // NÃO chama layoutTrackerRef.current.clear() — quem chamou setLayoutReference
+    // antes do start() perderia a ref. Só reseta o estado da volta (hint, lastS).
+    layoutTrackerRef.current.resetLap();
+    sectorBoundaryTsRef.current = [null, null];
+    bestSectorsRef.current = { s1: null, s2: null, s3: null };
+    lastClosedLapSectorsRef.current = null;
 
     const fg = await Location.requestForegroundPermissionsAsync();
     if (fg.status !== 'granted') {
@@ -251,17 +359,68 @@ export function useLapRecorder(options?: LapRecorderOptions) {
       if (closedNewLap) {
         tracker.resetLap();
         const last = detection.laps[detection.laps.length - 1];
+        // Voltas que existiam ANTES desta fechar — base pra calcular delta
+        // contra a referência "antiga" (a que estava ativa enquanto piloto
+        // andava esta volta). Senão, numa PB, delta vs best daria 0 (porque
+        // a própria volta vira a nova best).
+        const priorLaps = detection.laps.slice(0, lastLapCountInPollRef.current);
         const previousBest =
-          lastLapCountInPollRef.current > 0
-            ? Math.min(
-                ...detection.laps
-                  .slice(0, lastLapCountInPollRef.current)
-                  .map((l) => l.durationMs)
-              )
+          priorLaps.length > 0
+            ? Math.min(...priorLaps.map((l) => l.durationMs))
             : Infinity;
-        if (last.durationMs < previousBest) {
+        const isPb = last.durationMs < previousBest;
+        if (isPb) {
           newBestUntilRef.current = Date.now() + 4000;
         }
+
+        // Computa delta vs referência ATIVA no momento (best ou previous).
+        // null quando não há volta prévia (1ª volta da sessão).
+        let deltaVsRefMs: number | null = null;
+        if (priorLaps.length > 0) {
+          const priorRefMs =
+            mode === 'best'
+              ? previousBest
+              : priorLaps[priorLaps.length - 1].durationMs;
+          deltaVsRefMs = last.durationMs - priorRefMs;
+        }
+
+        closedLapDataRef.current = {
+          lapNumber: detection.laps.length,
+          durationMs: last.durationMs,
+          deltaVsRefMs,
+          isPb,
+          referenceMode: mode,
+        };
+        // Janela de 1s pra UI capturar — overlay tem animação local de 3s
+        // a partir do momento em que vê o novo lapNumber.
+        closedLapClearAtRef.current = Date.now() + 1000;
+
+        // ===== Finaliza setores da volta que acabou de fechar =====
+        // Reconstrói S1/S2/S3 a partir dos timestamps de cruzamento de
+        // limite + start/end da volta. Só finaliza se conseguimos marcar
+        // OS DOIS limites (S1 end e S2 end). Senão, o layout ref pode não
+        // estar carregado ou GPS perdeu samples nos pontos críticos.
+        const lapStartT = last.startedAt;
+        const lapEndT = last.startedAt + last.durationMs;
+        const s1EndT = sectorBoundaryTsRef.current[0];
+        const s2EndT = sectorBoundaryTsRef.current[1];
+        if (s1EndT !== null && s2EndT !== null) {
+          const s1 = s1EndT - lapStartT;
+          const s2 = s2EndT - s1EndT;
+          const s3 = lapEndT - s2EndT;
+          lastClosedLapSectorsRef.current = { s1Ms: s1, s2Ms: s2, s3Ms: s3 };
+          // Atualiza melhores da sessão (campos independentes — best de cada
+          // setor pode vir de voltas diferentes).
+          const best = bestSectorsRef.current;
+          if (best.s1 === null || s1 < best.s1) best.s1 = s1;
+          if (best.s2 === null || s2 < best.s2) best.s2 = s2;
+          if (best.s3 === null || s3 < best.s3) best.s3 = s3;
+        }
+        // Reset pro próximo lap. Layout tracker também reseta hint pra
+        // recomeçar a busca do começo da polyline.
+        sectorBoundaryTsRef.current = [null, null];
+        layoutTrackerRef.current.resetLap();
+
         // Força reload da referência no próximo bloco
         trackerLoadedFromRef.current = null;
       }
@@ -303,6 +462,83 @@ export function useLapRecorder(options?: LapRecorderOptions) {
         liveDeltaMs = reading.deltaMs;
       }
 
+      // ===== Sectors: projeta sample atual no layout ref, atualiza =====
+      // Layout tracker projeta o ponto atual contra a polyline da referência
+      // do layout. sNormalized indica progresso geográfico [0..1] — usamos
+      // pra detectar quando o piloto cruzou 1/3 e 2/3 da pista.
+      //
+      // Diferente do delta tracker (que usa session PB), este usa o LAYOUT
+      // reference. Setores não mudam com PB — são geográficos.
+      let sNormForSector: number | null = null;
+      if (last && layoutTrackerRef.current.hasReference()) {
+        // compute() aceita lapElapsedMs mas só usamos sNormalized — passa 0.
+        const reading = layoutTrackerRef.current.compute(last, 0);
+        sNormForSector = reading.sNormalized;
+      }
+
+      // Recompute lapStart pra setores (mesma lógica do currentLapElapsedMs).
+      // Setores precisam do timestamp do 1º sample da volta atual pra
+      // calcular S1 = (s1End_ts - lapStart_ts).
+      let currentLapStartT: number | null = null;
+      if (last && detection.movingStartIdx >= 0) {
+        const startIdx =
+          detection.laps.length > 0
+            ? detection.laps[detection.laps.length - 1].endIdx + 1
+            : detection.movingStartIdx;
+        if (startIdx < all.length) {
+          currentLapStartT = all[startIdx].t;
+        }
+      }
+
+      // Marca cruzamento de limite (1/3 e 2/3). Só marca uma vez por volta
+      // — se sNormForSector oscilar perto do limite, o primeiro >= já fixou.
+      if (last && sNormForSector !== null && currentLapStartT !== null) {
+        if (sNormForSector >= 1 / 3 && sectorBoundaryTsRef.current[0] === null) {
+          sectorBoundaryTsRef.current[0] = last.t;
+        }
+        if (sNormForSector >= 2 / 3 && sectorBoundaryTsRef.current[1] === null) {
+          sectorBoundaryTsRef.current[1] = last.t;
+        }
+      }
+
+      // Setor atual + tempo decorrido nele.
+      let currentSectorIdx: 0 | 1 | 2 | null = null;
+      let currentSectorElapsedMs: number | null = null;
+      if (sNormForSector !== null) {
+        if (sNormForSector < 1 / 3) currentSectorIdx = 0;
+        else if (sNormForSector < 2 / 3) currentSectorIdx = 1;
+        else currentSectorIdx = 2;
+      }
+      if (last && currentSectorIdx !== null && currentLapStartT !== null) {
+        const s1EndT = sectorBoundaryTsRef.current[0];
+        const s2EndT = sectorBoundaryTsRef.current[1];
+        if (currentSectorIdx === 0) {
+          currentSectorElapsedMs = last.t - currentLapStartT;
+        } else if (currentSectorIdx === 1 && s1EndT !== null) {
+          currentSectorElapsedMs = last.t - s1EndT;
+        } else if (currentSectorIdx === 2 && s2EndT !== null) {
+          currentSectorElapsedMs = last.t - s2EndT;
+        }
+      }
+
+      // Parciais S1/S2 da volta em curso (S3 só preenche quando fecha →
+      // vai pro lastClosedLapSectors).
+      const s1EndT = sectorBoundaryTsRef.current[0];
+      const s2EndT = sectorBoundaryTsRef.current[1];
+      const currentSectors: SectorTimes = {
+        s1Ms:
+          s1EndT !== null && currentLapStartT !== null
+            ? s1EndT - currentLapStartT
+            : null,
+        s2Ms: s1EndT !== null && s2EndT !== null ? s2EndT - s1EndT : null,
+        s3Ms: null,
+      };
+
+      // lastClosedLap só fica não-null por ~1s após o fechamento. Suficiente
+      // pra UI capturar via useEffect e arrancar a animação local.
+      const lastClosedLap =
+        Date.now() < closedLapClearAtRef.current ? closedLapDataRef.current : null;
+
       setInfo({
         totalSamples: all.length,
         lastAccuracy: last?.accuracy ?? 0,
@@ -316,6 +552,16 @@ export function useLapRecorder(options?: LapRecorderOptions) {
         liveDeltaMs,
         referenceMode: mode,
         justSetNewBest: Date.now() < newBestUntilRef.current,
+        lastClosedLap,
+        currentSectorIdx,
+        currentSectorElapsedMs,
+        currentSectors,
+        lastClosedLapSectors: lastClosedLapSectorsRef.current,
+        bestSectors: {
+          s1Ms: bestSectorsRef.current.s1,
+          s2Ms: bestSectorsRef.current.s2,
+          s3Ms: bestSectorsRef.current.s3,
+        },
       });
 
       // Live samples pro radar: só expõe a partir de quando entrou em ritmo
@@ -393,5 +639,40 @@ export function useLapRecorder(options?: LapRecorderOptions) {
     trackerLoadedFromRef.current = null;
   }, []);
 
-  return { state, info, liveSamples, start, stop, setReferenceMode };
+  /**
+   * Define a referência geográfica usada pelo tracking de setores. Tipicamente
+   * chamado uma vez no início (quando a tela carrega o layout salvo da pista).
+   *
+   * Pode ser chamado antes ou depois de start(). Sem chamar isso, setores
+   * ficam todos null — a UI esconde a barra de setores e mostra só
+   * velocímetro + cronômetro + delta pill.
+   *
+   * Os limites geográficos S1/S2/S3 são 1/3 e 2/3 da polyline da ref (por
+   * distância acumulada). Independente da PB da sessão — setores não se
+   * movem quando o piloto bate volta nova.
+   */
+  const setLayoutReference = useCallback(
+    (samples: GpsSample[], durationMs: number) => {
+      layoutTrackerRef.current.setReference(samples, durationMs);
+    },
+    []
+  );
+
+  /** Limpa a referência de layout — usado quando o usuário desassocia a
+   *  pista. Setores voltam a null. */
+  const clearLayoutReference = useCallback(() => {
+    layoutTrackerRef.current.clear();
+    sectorBoundaryTsRef.current = [null, null];
+  }, []);
+
+  return {
+    state,
+    info,
+    liveSamples,
+    start,
+    stop,
+    setReferenceMode,
+    setLayoutReference,
+    clearLayoutReference,
+  };
 }

@@ -6,6 +6,7 @@ import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { useLapRecorder } from '../src/hooks/useLapRecorder';
 import { listLayoutsForTrack, saveLayout } from '../src/storage/db';
 import { polylineLength, GpsSample } from '../src/lib/geometry';
+import { LapResultOverlay } from '../src/components/LapResultOverlay';
 import { colors, spacing, radius, typography } from '../src/theme';
 
 /**
@@ -405,6 +406,24 @@ export default function RecordingReference() {
           </Pressable>
         )}
       </View>
+
+      {/* Overlay de celebração por volta completada — verde 3s. Não tem
+       * delta aqui (estamos GRAVANDO a referência, não comparando contra
+       * uma). Mostra "L 2/3 ✓" + tempo. Quando fecha a última volta do
+       * target, exibe o banner "REFERÊNCIA PRONTA" (igual conceito do
+       * "NOVA MELHOR VOLTA" da tela de race). */}
+      <LapResultOverlay
+        result={
+          info.lastClosedLap
+            ? {
+                variant: 'reference',
+                lapNumber: info.lastClosedLap.lapNumber,
+                totalLaps: targetLaps,
+                durationMs: info.lastClosedLap.durationMs,
+              }
+            : null
+        }
+      />
 
       {/* Overlay de transição auto pra cronometragem */}
       {transition && (

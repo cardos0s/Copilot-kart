@@ -53,14 +53,8 @@ import {
 import { polylineLength } from '../src/lib/geometry';
 import { LapRecord } from '../src/lib/analysis';
 import { Button, Card, Icon } from '../src/components/ui';
+import { LapResultOverlay } from '../src/components/LapResultOverlay';
 import { colors, radius, spacing, typography } from '../src/theme';
-
-function fmtTime(ms: number) {
-  const totalS = Math.floor(ms / 1000);
-  const m = Math.floor(totalS / 60);
-  const s = totalS % 60;
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-}
 
 function fmtLap(ms: number) {
   const totalS = ms / 1000;
@@ -69,8 +63,22 @@ function fmtLap(ms: number) {
   return `${String(m).padStart(2, '0')}:${s.toFixed(3).padStart(6, '0')}`;
 }
 
+/**
+ * Tempo curto pro cronômetro central do HUD: "34.872" quando <60s,
+ * "1:14.523" quando ≥60s. Kart médio fica entre 30-90s/volta — quase
+ * sempre cabe na forma curta, que é menos visualmente "pesada" que
+ * o "00:34.872" tradicional.
+ */
+function fmtLapShort(ms: number) {
+  const totalS = ms / 1000;
+  if (totalS < 60) return totalS.toFixed(3);
+  const m = Math.floor(totalS / 60);
+  const s = totalS - m * 60;
+  return `${m}:${s.toFixed(3).padStart(6, '0')}`;
+}
+
 function fmtDelta(ms: number) {
-  const sign = ms >= 0 ? '+' : '-';
+  const sign = ms >= 0 ? '+' : '−'; // U+2212 mesmo width do '+'
   const abs = Math.abs(ms / 1000);
   return `${sign}${abs.toFixed(3)}`;
 }
@@ -120,7 +128,16 @@ export default function Recording() {
   const [liveStarting, setLiveStarting] = useState(false);
   const lastSampleIdxRef = useRef(0);
   const lastLapCountRef = useRef(0);
-  const { state, info, liveSamples, start, stop, setReferenceMode } = useLapRecorder();
+  const {
+    state,
+    info,
+    liveSamples,
+    start,
+    stop,
+    setReferenceMode,
+    setLayoutReference,
+    clearLayoutReference,
+  } = useLapRecorder();
 
   // Carrega o layout escolhido (passado via params do picker) ou cai pro
   // default da pista. Sessão antiga sem layoutId continua puxando o default.
@@ -139,6 +156,19 @@ export default function Recording() {
       }
     })();
   }, [params.trackId, params.layoutId]);
+
+  // Alimenta o tracker de setores com a referência geográfica do layout.
+  // Tem que rodar SEPARADO do useLapRecorder porque o layout pode chegar
+  // depois (efeito async acima). Quando reference muda → recarrega o tracker;
+  // quando vira null → limpa (setores somem da UI). Setores são geográficos
+  // (1/3 e 2/3 da polyline), não dependem da PB da sessão.
+  useEffect(() => {
+    if (reference && reference.samples.length >= 5 && reference.durationMs > 0) {
+      setLayoutReference(reference.samples, reference.durationMs);
+    } else {
+      clearLayoutReference();
+    }
+  }, [reference, setLayoutReference, clearLayoutReference]);
 
   /**
    * Idle detection — quando o piloto encosta no box, fica parado e quer
@@ -541,21 +571,16 @@ export default function Recording() {
   // Fallback pro elapsed total quando ainda não fechou primeira volta.
   const currentLapMs = info.currentLapElapsedMs ?? info.elapsedMs;
 
-  // HUD font sizes — pensado pra cockpit:
-  //   - Delta ~64px landscape / ~56px portrait: legível com capacete a 60cm
-  //     da tela mas NÃO domina o visual. Antes era 180px (90% da tela).
-  //   - KM/H um pouco menor que delta, suficiente pra ler de relance.
-  //   - Tempo da volta atual ainda menor — info secundária.
-  // Cap em valores absolutos pra não explodir em tablet/iPad.
-  const deltaFontSize = isLandscape
-    ? Math.min(width * 0.075, 68)
-    : Math.min(width * 0.13, 56);
-  const kmhFontSize = isLandscape
-    ? Math.min(width * 0.06, 52)
-    : Math.min(width * 0.11, 44);
-  const lapFontSize = isLandscape
-    ? Math.min(width * 0.04, 32)
-    : Math.min(width * 0.08, 28);
+  // HUD font sizes — pensado pra cockpit, layout 50/50 velocímetro + crono.
+  //   - hudFontSize: ~140px landscape / ~96px portrait. Bem grande, mas
+  //     dois números só (não 3 blocos competindo). Cabe "34.872" e "96"
+  //     respirando.
+  //   - hudLabelGap controla o espaço entre o label pequeno e o número.
+  // Cap em valores absolutos pra não explodir em tablet/iPad em landscape
+  // muito largo.
+  const hudFontSize = isLandscape
+    ? Math.min(width * 0.14, 160)
+    : Math.min(width * 0.22, 96);
 
   if (state === 'idle') {
     return (
@@ -578,15 +603,37 @@ export default function Recording() {
         { paddingTop: insets.top, paddingBottom: insets.bottom },
       ]}
     >
-      {/* Top bar — minimalista */}
+      {/* Top bar — calmo.
+       *
+       * Esquerda: X (cancel/discard) · REC ● · L N (volta atual)
+       * Direita:  BEST 00:47.281 · live/activate · GPS ±Xm
+       *
+       * Tudo pequeno: no cockpit, o piloto não lê isso durante a volta.
+       * Serve pra checagem rápida no box ou em retas longas.
+       */}
       <View style={s.recTopBar}>
-        <Pressable hitSlop={12} onPress={handleCancel} style={s.iconBtn}>
-          <Text style={s.close}>✕</Text>
-        </Pressable>
-        <Text style={s.recTrackName} numberOfLines={1}>
-          {params.trackName ?? 'AO VIVO'}
-        </Text>
-        <View style={s.recTopActions}>
+        <View style={s.recTopGroup}>
+          <Pressable hitSlop={12} onPress={handleCancel} style={s.iconBtn}>
+            <Text style={s.close}>✕</Text>
+          </Pressable>
+          <View style={s.recBadge}>
+            <View style={s.recDot} />
+            <Text style={s.recBadgeText}>REC</Text>
+          </View>
+          <Text style={[s.lapCounter, typography.mono]}>
+            L {info.lapsCompleted + 1}
+          </Text>
+        </View>
+
+        <View style={s.recTopGroup}>
+          {info.bestLapMs !== null && (
+            <View style={s.bestBadge}>
+              <Text style={s.bestBadgeLabel}>BEST</Text>
+              <Text style={[s.bestBadgeValue, typography.mono]}>
+                {fmtLap(info.bestLapMs)}
+              </Text>
+            </View>
+          )}
           {live ? (
             <Pressable
               onPress={() => setLiveModalOpen(true)}
@@ -605,7 +652,7 @@ export default function Recording() {
                 pressed && { opacity: 0.7 },
               ]}
             >
-              <Text style={s.liveActivateText}>📡 Ao vivo</Text>
+              <Text style={s.liveActivateText}>📡</Text>
             </Pressable>
           )}
           <View style={s.recGpsBar}>
@@ -615,119 +662,99 @@ export default function Recording() {
         </View>
       </View>
 
-      {/* HUD compacto estilo MyChron.
+      {/* HUD calmo — velocímetro + cronômetro, 50/50.
        *
-       * Princípio: piloto olha de relance (0.3s) e volta pra pista. Nada
-       * gigante dominando, nada que peça leitura cuidadosa. 3 blocos médios
-       * lado a lado:
+       * Princípio: piloto olha de relance, dois números grossos pretos
+       * (fundo preto, números brancos), sem cor competindo pela atenção.
+       * Cor só aparece nos momentos certos:
+       *   - Pill de delta embaixo (verde se ganhando, vermelho se perdendo)
+       *   - Overlay de GANHOU/PERDEU quando fecha volta (3s, anima por
+       *     cima do HUD inteiro)
        *
-       *   [ DELTA -0.180 ]  [ 56 km/h ]  [ V3 · 00:42 ]
-       *
-       * O delta tem a cor (verde/vermelho) — captação periférica. KM/H em
-       * letras grandes mas não dominantes. Tempo da volta atual + nº da
-       * volta juntos no terceiro bloco. Quando bate PB, o card do delta
-       * vira "NEW BEST!" em verde por 4s (sem mudar layout — só conteúdo).
-       *
-       * Abaixo: linha discreta "MELHOR 01:02.500 · vs MELHOR" tappable
-       * pra alternar referência. Quase invisível, mas acessível.
+       * O delta em tempo real vai pro pill discreto no rodapé. O destaque
+       * permanente da tela são velo + crono — o que o piloto precisa
+       * pra dirigir, não pra analisar.
        */}
       <View style={s.recHud}>
-        {/* Bloco 1: Delta (ou NEW BEST flash, ou tempo da volta como fallback) */}
-        <View style={s.hudBlock}>
-          {info.justSetNewBest ? (
-            <>
-              <Text style={[s.hudLabel, { color: colors.success }]}>NEW BEST</Text>
-              <Text
-                style={[
-                  s.hudValueBig,
-                  typography.mono,
-                  { color: colors.success, fontSize: deltaFontSize },
-                ]}
-              >
-                {info.bestLapMs !== null ? fmtLap(info.bestLapMs) : '—'}
-              </Text>
-            </>
-          ) : liveDeltaMs !== null ? (
-            <>
-              <Text style={s.hudLabel}>DELTA</Text>
-              <Text
-                style={[
-                  s.hudValueBig,
-                  typography.mono,
-                  {
-                    color: liveDeltaMs > 0 ? colors.danger : colors.success,
-                    fontSize: deltaFontSize,
-                  },
-                ]}
-              >
-                {fmtDelta(liveDeltaMs)}
-              </Text>
-            </>
-          ) : (
-            <>
-              <Text style={s.hudLabel}>
-                {info.lapsCompleted === 0 ? 'AQUECENDO' : 'SEM SINAL'}
-              </Text>
-              <Text
-                style={[
-                  s.hudValueBig,
-                  typography.mono,
-                  { color: colors.textMuted, fontSize: deltaFontSize },
-                ]}
-              >
-                —
-              </Text>
-            </>
-          )}
-        </View>
-
-        {/* Bloco 2: KM/H — sempre presente, instinto do piloto */}
         <View style={s.hudBlock}>
           <Text style={s.hudLabel}>KM/H</Text>
           <Text
             style={[
               s.hudValueBig,
               typography.mono,
-              { color: colors.textPrimary, fontSize: kmhFontSize },
+              { color: colors.textPrimary, fontSize: hudFontSize },
             ]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
           >
             {info.lastSpeedKmh.toFixed(0)}
           </Text>
         </View>
 
-        {/* Bloco 3: Volta atual (nº + cronômetro) */}
         <View style={s.hudBlock}>
-          <Text style={s.hudLabel}>VOLTA {info.lapsCompleted + 1}</Text>
+          <Text style={s.hudLabel}>VOLTA</Text>
           <Text
             style={[
-              s.hudValueMid,
+              s.hudValueBig,
               typography.mono,
-              { color: colors.textPrimary, fontSize: lapFontSize },
+              { color: colors.textPrimary, fontSize: hudFontSize },
             ]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
           >
-            {fmtTime(currentLapMs)}
+            {fmtLapShort(currentLapMs)}
           </Text>
         </View>
       </View>
 
-      {/* Faixa inferior — pílulas pequenas: melhor + toggle de ref + encerrar.
-       * Tudo discreto. O piloto olha aqui só quando quer (no box, num
-       * momento de respiro). Encerrar fica destacado em vermelho porque é
-       * ação importante mas raramente acionada durante a volta. */}
+      {/* Footer — delta pill tappável (esquerda) + Encerrar (direita).
+       *
+       * Pill de delta:
+       *   - Tap alterna entre Δ MELHOR (vs PB) e Δ ANTERIOR (vs volta
+       *     anterior). Útil quando muda setup/pneu: PB vira inválida e
+       *     piloto compara só contra a volta de antes.
+       *   - Cor segue sinal: verde (ganhando) ou vermelho (perdendo).
+       *     Fundo escuro, número colorido — discreto, não pisca.
+       *   - Sem referência ainda: pill some inteiro (1ª volta da sessão).
+       *
+       * Encerrar fica pequeno e à direita. Cancelar (descarta) continua no
+       * X do topo. Dois caminhos, mesma confirmação.
+       */}
       <View style={s.recFooter}>
-        <Pressable
-          onPress={toggleRefMode}
-          hitSlop={12}
-          style={({ pressed }) => [s.footerPill, pressed && { opacity: 0.7 }]}
-        >
-          <Text style={s.footerPillLabel}>MELHOR</Text>
-          <Text style={[s.footerPillValue, typography.mono]}>
-            {info.bestLapMs !== null ? fmtLap(info.bestLapMs) : '—'}
-          </Text>
-          <Text style={s.footerPillMeta}>
-            · vs {info.referenceMode === 'best' ? 'MELHOR' : 'ANTERIOR'}
-          </Text>
-        </Pressable>
+        {liveDeltaMs !== null ? (
+          <Pressable
+            onPress={toggleRefMode}
+            hitSlop={12}
+            style={({ pressed }) => [s.deltaPill, pressed && { opacity: 0.7 }]}
+          >
+            <View
+              style={[
+                s.deltaPillDot,
+                { backgroundColor: liveDeltaMs > 0 ? colors.danger : colors.success },
+              ]}
+            />
+            <Text
+              style={[
+                s.deltaPillValue,
+                typography.mono,
+                { color: liveDeltaMs > 0 ? colors.danger : colors.success },
+              ]}
+            >
+              {fmtDelta(liveDeltaMs)}
+            </Text>
+            <Text style={s.deltaPillMeta}>
+              Δ {info.referenceMode === 'best' ? 'MELHOR' : 'ANTERIOR'}
+            </Text>
+          </Pressable>
+        ) : (
+          // Placeholder mantém o slot ocupado pra layout não saltar quando
+          // o delta começar a aparecer (lap 2+).
+          <View style={s.deltaPillPlaceholder}>
+            <Text style={s.deltaPillPlaceholderText}>
+              {info.lapsCompleted === 0 ? 'aquecendo…' : 'sem sinal'}
+            </Text>
+          </View>
+        )}
 
         <Pressable
           style={({ pressed }) => [s.endBtnSmall, pressed && { opacity: 0.8 }]}
@@ -737,6 +764,48 @@ export default function Recording() {
           <Text style={s.endBtnSmallText}>Encerrar</Text>
         </Pressable>
       </View>
+
+      {/* Painel de setores — só aparece quando há ref de layout carregada.
+       * Sem ref geográfica, não dá pra dividir em S1/S2/S3 — esconde o
+       * painel inteiro pra não ocupar espaço inútil.
+       *
+       * Linha 1: barra com 3 segmentos. Cada um colorido por estado:
+       *   - pending (cinza fino): setor ainda não alcançado nesta volta
+       *   - active (amarelo): setor em que o piloto está agora
+       *   - sector-pb (roxo): setor fechado MAIS RÁPIDO que o melhor da
+       *     sessão até esse ponto → nova best do setor
+       *   - completed-first (verde): setor fechado mas é a 1ª volta (sem
+       *     melhor anterior pra comparar)
+       *   - completed-slower (cinza): setor fechado mais lento que o melhor
+       *
+       * Linha 2: tempos em mono — "S1 12.481" / "S2 —" / etc. Mostra parcial
+       * em tempo real do setor atual (S1 cresce enquanto o piloto tá nele).
+       */}
+      {info.currentSectorIdx !== null && (
+        <SectorPanel
+          currentSectorIdx={info.currentSectorIdx}
+          currentSectorElapsedMs={info.currentSectorElapsedMs}
+          currentSectors={info.currentSectors}
+          bestSectors={info.bestSectors}
+        />
+      )}
+
+      {/* Overlay GANHOU/PERDEU — anima 3s por cima de tudo quando volta
+       * fecha. Pointer-events=none lá dentro, então não bloqueia toques
+       * em Encerrar/X mesmo durante a animação. */}
+      <LapResultOverlay
+        result={
+          info.lastClosedLap
+            ? {
+                variant: 'race',
+                lapNumber: info.lastClosedLap.lapNumber,
+                durationMs: info.lastClosedLap.durationMs,
+                deltaVsRefMs: info.lastClosedLap.deltaVsRefMs,
+                isPb: info.lastClosedLap.isPb,
+              }
+            : null
+        }
+      />
 
       {/* Idle prompt — overlay quando piloto fica parado por 30s+ */}
       {idlePrompt && (
@@ -811,6 +880,123 @@ export default function Recording() {
           </ScrollView>
         </View>
       </Modal>
+    </View>
+  );
+}
+
+/**
+ * Painel de setores S1/S2/S3 — barra com 3 segmentos + tempos parciais.
+ *
+ * Mostrado abaixo do footer principal quando há referência de layout
+ * carregada (sem ela, não há divisão geográfica possível).
+ *
+ * Cada segmento exibe um de 5 estados visuais:
+ *   - PENDING (cinza fino): setor ainda não alcançado neste volta
+ *   - ACTIVE (amarelo, levemente animado pela cor): piloto está aqui agora
+ *   - SECTOR_PB (roxo): setor fechado MAIS rápido que melhor da sessão
+ *   - COMPLETED_FIRST (verde): setor fechado, é a 1ª volta (sem comparar)
+ *   - COMPLETED_SLOWER (cinza claro): setor fechado mais lento que best
+ *
+ * O tempo do setor atual cresce em tempo real (parcial). Tempos de
+ * setores anteriores ficam congelados conforme o piloto avança.
+ */
+type SectorState = 'pending' | 'active' | 'sector-pb' | 'completed-first' | 'completed-slower';
+
+function sectorState(
+  slotIdx: 0 | 1 | 2,
+  currentSectorIdx: 0 | 1 | 2,
+  currentSectorMs: number | null,
+  bestSectorMs: number | null
+): SectorState {
+  if (currentSectorMs === null) {
+    // Não fechou ainda. Active se for o atual, pending se for futuro.
+    if (slotIdx === currentSectorIdx) return 'active';
+    return 'pending';
+  }
+  // Setor fechou nesta volta. Compara contra a melhor da sessão.
+  if (bestSectorMs === null) return 'completed-first';
+  if (currentSectorMs <= bestSectorMs) return 'sector-pb';
+  return 'completed-slower';
+}
+
+function sectorBgColor(state: SectorState): string {
+  switch (state) {
+    case 'pending':
+      return colors.surface;
+    case 'active':
+      return colors.warning;
+    case 'sector-pb':
+      // Roxo magenta — convenção motorsport pra "sector best"
+      return colors.accentMagenta ?? '#B833FF';
+    case 'completed-first':
+      return colors.success;
+    case 'completed-slower':
+      return colors.textMuted;
+  }
+}
+
+function sectorTextColor(state: SectorState): string {
+  return state === 'pending' ? colors.textMuted : colors.textPrimary;
+}
+
+function SectorPanel({
+  currentSectorIdx,
+  currentSectorElapsedMs,
+  currentSectors,
+  bestSectors,
+}: {
+  currentSectorIdx: 0 | 1 | 2;
+  currentSectorElapsedMs: number | null;
+  currentSectors: { s1Ms: number | null; s2Ms: number | null; s3Ms: number | null };
+  bestSectors: { s1Ms: number | null; s2Ms: number | null; s3Ms: number | null };
+}) {
+  // Tempos a exibir por slot: setores fechados mostram tempo final,
+  // setor ATUAL mostra parcial crescendo (currentSectorElapsedMs), setores
+  // futuros mostram "—".
+  const slotMs: Array<number | null> = [
+    currentSectors.s1Ms ?? (currentSectorIdx === 0 ? currentSectorElapsedMs : null),
+    currentSectors.s2Ms ?? (currentSectorIdx === 1 ? currentSectorElapsedMs : null),
+    currentSectorIdx === 2 ? currentSectorElapsedMs : null,
+  ];
+  const bestArr = [bestSectors.s1Ms, bestSectors.s2Ms, bestSectors.s3Ms];
+  const closedArr = [currentSectors.s1Ms, currentSectors.s2Ms, currentSectors.s3Ms];
+
+  return (
+    <View style={s.sectorPanel}>
+      {/* Barra com 3 segmentos */}
+      <View style={s.sectorBar}>
+        {[0, 1, 2].map((idx) => {
+          const i = idx as 0 | 1 | 2;
+          const state = sectorState(i, currentSectorIdx, closedArr[i], bestArr[i]);
+          return (
+            <View
+              key={i}
+              style={[
+                s.sectorSegment,
+                { backgroundColor: sectorBgColor(state) },
+              ]}
+            />
+          );
+        })}
+      </View>
+
+      {/* Linha de tempos */}
+      <View style={s.sectorTimes}>
+        {[0, 1, 2].map((idx) => {
+          const i = idx as 0 | 1 | 2;
+          const state = sectorState(i, currentSectorIdx, closedArr[i], bestArr[i]);
+          const ms = slotMs[i];
+          const color = sectorTextColor(state);
+          return (
+            <View key={i} style={s.sectorTimeCell}>
+              <Text style={[s.sectorTimeLabel, { color }]}>S{i + 1}</Text>
+              <Text style={[s.sectorTimeValue, typography.mono, { color }]}>
+                {ms !== null ? fmtLapShort(ms) : '—'}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
     </View>
   );
 }
@@ -934,13 +1120,63 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
     height: 48,
   },
-  recTrackName: {
+  // Grupo de elementos da top bar (esquerda e direita). Usado pros 2
+  // lados: REC+lap counter no esquerdo, BEST+live+GPS no direito.
+  recTopGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.s,
+  },
+  // Badge "REC" — indicador estático de que está gravando. Dot vermelho
+  // + label, formato pill curto. Sem animação (piloto não precisa de
+  // pulse pra saber que tá gravando; o próprio HUD ativo já mostra).
+  recBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+    backgroundColor: colors.danger + '1A',
+    borderWidth: 1,
+    borderColor: colors.danger + '55',
+  },
+  recDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: colors.danger,
+  },
+  recBadgeText: {
+    color: colors.danger,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1.2,
+  },
+  lapCounter: {
     color: colors.textPrimary,
     fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  // Badge "BEST 00:47.281" — info secundária mas útil. Sem fundo, só
+  // label muted + valor mono pra contrastar com lap counter à esquerda.
+  bestBadge: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 5,
+  },
+  bestBadgeLabel: {
+    color: colors.textMuted,
+    fontSize: 9,
     fontWeight: '800',
-    letterSpacing: 1.5,
-    flex: 1,
-    textAlign: 'center',
+    letterSpacing: 1.2,
+  },
+  bestBadgeValue: {
+    color: colors.textPrimary,
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.3,
   },
   recGpsBar: {
     flexDirection: 'row',
@@ -952,11 +1188,6 @@ const s = StyleSheet.create({
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-  },
-  recTopActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
   },
   liveBadge: {
     flexDirection: 'row',
@@ -1074,10 +1305,11 @@ const s = StyleSheet.create({
   recGpsDot: { width: 8, height: 8, borderRadius: 4 },
   recGpsText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
 
-  // ===== HUD compacto =====
-  // Linha central de 3 blocos médios (delta, km/h, volta atual). Cada
-  // bloco respira com altura uniforme; labels minúsculas servem de
-  // âncora visual quando o número muda (delta oscila, km/h oscila).
+  // ===== HUD calmo =====
+  // 50/50 com KM/H à esquerda e VOLTA à direita. Os blocos crescem pra
+  // ocupar a altura disponível (flex 1 + alignItems center). Labels
+  // pequenos servem só pra "ancorar" o número quando o piloto olha de
+  // relance — o número em si é o foco.
   recHud: {
     flex: 1,
     flexDirection: 'row',
@@ -1086,33 +1318,27 @@ const s = StyleSheet.create({
     paddingVertical: spacing.s,
   },
   hudBlock: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 100,
   },
   hudLabel: {
     color: colors.textMuted,
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '800',
-    letterSpacing: 1.8,
+    letterSpacing: 2,
+    marginBottom: 4,
   },
   hudValueBig: {
     fontWeight: '900',
-    letterSpacing: -2,
+    letterSpacing: -4,
     includeFontPadding: false,
-    marginTop: 2,
-  },
-  hudValueMid: {
-    fontWeight: '900',
-    letterSpacing: -1,
-    includeFontPadding: false,
-    marginTop: 2,
   },
 
   // ===== Footer =====
-  // Linha bem fina. Pílula de "MELHOR ... · vs MELHOR" tappable pra
-  // alternar referência; ao lado, botão Encerrar compacto. Tudo no nível
-  // de "info secundária" — não compete com o HUD central pela atenção.
+  // Pill de delta tappável (esquerda) + Encerrar (direita). Pill segue
+  // a cor do delta (verde/vermelho no número e no dot) mas fundo cinza
+  // escuro — discreto, não compete com o HUD.
   recFooter: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1120,34 +1346,86 @@ const s = StyleSheet.create({
     gap: spacing.s,
     paddingVertical: spacing.s,
   },
-  footerPill: {
+  deltaPill: {
     flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 6,
+    alignItems: 'center',
+    gap: 8,
     paddingHorizontal: spacing.m,
-    paddingVertical: 6,
+    paddingVertical: 7,
     borderRadius: radius.pill,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
   },
-  footerPillLabel: {
-    color: colors.textMuted,
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 1.2,
+  deltaPillDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
   },
-  footerPillValue: {
-    color: colors.textPrimary,
-    fontSize: 13,
+  deltaPillValue: {
+    fontSize: 15,
     fontWeight: '900',
     letterSpacing: -0.3,
   },
-  footerPillMeta: {
+  deltaPillMeta: {
     color: colors.textSecondary,
     fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.5,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+  },
+  // Placeholder enquanto não há delta (1ª volta). Mesma altura do pill
+  // pra não deslocar o layout quando o delta aparecer.
+  deltaPillPlaceholder: {
+    paddingHorizontal: spacing.m,
+    paddingVertical: 7,
+    borderRadius: radius.pill,
+    backgroundColor: 'transparent',
+  },
+  deltaPillPlaceholderText: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
+    fontStyle: 'italic',
+  },
+
+  // ===== Sectors =====
+  // Painel embaixo do footer: barra fina com 3 segmentos + tempos parciais.
+  // Pintado em cores semânticas (roxo=sector PB, verde=1ª completed,
+  // amarelo=ativo, cinza=pending/slower).
+  sectorPanel: {
+    paddingTop: 4,
+    paddingBottom: 2,
+    gap: 4,
+  },
+  sectorBar: {
+    flexDirection: 'row',
+    gap: 4,
+    height: 5,
+  },
+  sectorSegment: {
+    flex: 1,
+    borderRadius: 2.5,
+  },
+  sectorTimes: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  sectorTimeCell: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'center',
+    gap: 5,
+  },
+  sectorTimeLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+  },
+  sectorTimeValue: {
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: -0.3,
   },
   endBtnSmall: {
     flexDirection: 'row',
