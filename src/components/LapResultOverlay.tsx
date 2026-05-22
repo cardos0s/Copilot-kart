@@ -94,6 +94,13 @@ export function LapResultOverlay({ result }: LapResultOverlayProps) {
   // Trajetória: 0 → 1 em FADE_IN, hold em 1, 1 → 0 em FADE_OUT.
   const progress = useSharedValue(0);
 
+  // Ref pra ID do timeout em vez de variável local na closure do effect.
+  // Permite que o timeout sobreviva quando o effect re-roda por re-render
+  // do parent (que acontece a cada 500ms do poll do GPS no recording.tsx).
+  // Sem isso: 1ª run agenda timeout → 2ª run cleanup cancela → snapshot
+  // fica preso visível pra sempre.
+  const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     if (!result) return;
     // Mesmo lapNumber → já animamos esse, ignora (re-render por outro motivo).
@@ -109,11 +116,25 @@ export function LapResultOverlay({ result }: LapResultOverlayProps) {
         withTiming(0, { duration: FADE_OUT_MS, easing: Easing.in(Easing.cubic) })
       )
     );
-    // Limpa o snapshot um tiquinho depois do fim da animação pra desmontar
-    // o overlay (libera GPU). Levemente acima de TOTAL_MS pra dar margem.
-    const t = setTimeout(() => setSnapshot(null), TOTAL_MS + 80);
-    return () => clearTimeout(t);
+    // Limpa timeout anterior se ainda tava pending (caso raro: nova volta
+    // antes da animação da anterior terminar). Daí agenda o novo.
+    if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+    dismissTimerRef.current = setTimeout(() => {
+      setSnapshot(null);
+      dismissTimerRef.current = null;
+    }, TOTAL_MS + 80);
+    // SEM cleanup que cancela o timer — o timer precisa sobreviver às
+    // re-runs do effect causadas por re-renders do parent. Só limpa em
+    // unmount real do componente (handled abaixo num useEffect separado).
   }, [result, progress]);
+
+  // Cleanup no unmount — cancela timeout pendente pra não chamar setState
+  // num componente desmontado (warning do RN).
+  useEffect(() => {
+    return () => {
+      if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+    };
+  }, []);
 
   // === Estilos animados ===
   const backdropStyle = useAnimatedStyle(() => ({

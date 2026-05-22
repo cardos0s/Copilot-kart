@@ -85,6 +85,20 @@ export function PilotMessageOverlay({ message, onDismiss }: PilotMessageOverlayP
   const lastSeenIdRef = useRef<number | null>(null);
   const progress = useSharedValue(0);
 
+  // Ref pro onDismiss porque o parent re-renderiza a cada poll do GPS e
+  // provavelmente não memoiza o handler. Sem ref, mudança de função
+  // dispara re-run do effect e cancela o setTimeout.
+  const onDismissRef = useRef(onDismiss);
+  useEffect(() => {
+    onDismissRef.current = onDismiss;
+  }, [onDismiss]);
+
+  // Ref pro timer de dismiss em vez de variável local da closure. Permite
+  // que o timer sobreviva às re-runs do effect (parent re-renderiza a
+  // cada 500ms do poll do GPS). Sem isso o cleanup cancela o timer,
+  // snapshot nunca é limpo, e texto fica fantasma sobre o HUD.
+  const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     if (!message) return;
     if (lastSeenIdRef.current === message.id) return; // mesma msg, ignora
@@ -101,12 +115,22 @@ export function PilotMessageOverlay({ message, onDismiss }: PilotMessageOverlayP
       )
     );
 
-    const t = setTimeout(() => {
+    if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+    dismissTimerRef.current = setTimeout(() => {
       setSnapshot(null);
-      onDismiss?.(msgId);
+      onDismissRef.current?.(msgId);
+      dismissTimerRef.current = null;
     }, TOTAL_MS + 80);
-    return () => clearTimeout(t);
-  }, [message, onDismiss, progress]);
+    // SEM cleanup que cancela o timer — ele precisa sobreviver às re-runs.
+    // Unmount real é tratado num useEffect separado abaixo.
+  }, [message, progress]);
+
+  // Cleanup no unmount real — evita setState em componente desmontado.
+  useEffect(() => {
+    return () => {
+      if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+    };
+  }, []);
 
   const backdropStyle = useAnimatedStyle(() => ({
     opacity: progress.value,
