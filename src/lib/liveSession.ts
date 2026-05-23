@@ -30,6 +30,9 @@ export type LiveSample = {
   s1Ms?: number | null;
   s2Ms?: number | null;
   s3Ms?: number | null;
+  // Altitude (GPS + barômetro). Pra elevation profile + 3D viewer.
+  altitude?: number | null;
+  altitudeAccuracy?: number | null;
 };
 
 export type LiveLap = {
@@ -180,6 +183,8 @@ export async function publishSample(sessionId: string, sample: LiveSample): Prom
     s1_ms: sample.s1Ms ?? null,
     s2_ms: sample.s2Ms ?? null,
     s3_ms: sample.s3Ms ?? null,
+    altitude: sample.altitude ?? null,
+    altitude_accuracy: sample.altitudeAccuracy ?? null,
   });
   if (error && __DEV__) console.warn('[liveSession] publishSample error:', error.message);
 }
@@ -405,6 +410,8 @@ function mapSampleRow(row: any): LiveSample {
     s1Ms: row.s1_ms ?? null,
     s2Ms: row.s2_ms ?? null,
     s3Ms: row.s3_ms ?? null,
+    altitude: row.altitude ?? null,
+    altitudeAccuracy: row.altitude_accuracy ?? null,
   };
 }
 

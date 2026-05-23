@@ -28,6 +28,10 @@ export type LapRecord = {
   samples: GpsSample[];
   startedAt: number;
   durationMs: number;
+  /** Samples IMU (50Hz, accel + gyro) sincronizados em timestamp com os
+   *  GPS samples. Opcional pra retro-compatibilidade — voltas antigas
+   *  gravadas sem IMU ficam undefined. */
+  imuSamples?: import('./geometry').ImuSample[];
 };
 
 export type MatchedLap = {

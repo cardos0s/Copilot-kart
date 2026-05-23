@@ -101,6 +101,9 @@ function toLapRecord(lap: RecordedLap, sessionId: string, index: number): LapRec
     samples: lap.samples,
     startedAt: lap.startedAt,
     durationMs: lap.durationMs,
+    // IMU pode vir vazio (sensor falhou, app em background sem foreground
+    // ativo, etc) — só passa se tem dado real.
+    imuSamples: lap.imuSamples.length > 0 ? lap.imuSamples : undefined,
   };
 }
 
@@ -308,6 +311,8 @@ export default function Recording() {
             s1Ms: info.currentSectors.s1Ms,
             s2Ms: info.currentSectors.s2Ms,
             s3Ms: info.currentSectors.s3Ms,
+            altitude: s.altitude ?? null,
+            altitudeAccuracy: s.altitudeAccuracy ?? null,
           });
         } catch {
           /* engole — não pode quebrar gravação se realtime falhar */

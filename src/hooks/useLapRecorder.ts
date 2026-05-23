@@ -2,14 +2,23 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
-import { GpsSample, LatLng } from '../lib/geometry';
+import { Accelerometer, Gyroscope } from 'expo-sensors';
+import { GpsSample, ImuSample, LatLng } from '../lib/geometry';
 import { detectLaps, DetectedLap } from '../lib/lapDetector';
 import { DeltaTracker } from '../lib/realtimeDelta';
 
 const BG_TASK = 'KARTLAP_BG_LOCATION';
 
-type Buffer = { samples: GpsSample[] };
-const buf: Buffer = (globalThis as any).__kartlapBuf ?? { samples: [] };
+// IMU update rate em ms. 20ms = 50Hz — suficiente pra capturar rotação de
+// spin (durações típicas 200-800ms) sem virar mar de dados (50 amostras/s
+// vs 10 do GPS = 5x mais por volta de 50s ≈ 2500 samples IMU/volta).
+const IMU_UPDATE_MS = 20;
+
+type Buffer = { samples: GpsSample[]; imu: ImuSample[] };
+const buf: Buffer = (globalThis as any).__kartlapBuf ?? { samples: [], imu: [] };
+// Garante que a versão velha do buffer (sem imu) seja migrada — apps em
+// dev podem ter o objeto cacheado de um reload anterior.
+if (!buf.imu) buf.imu = [];
 (globalThis as any).__kartlapBuf = buf;
 
 TaskManager.defineTask(BG_TASK, async ({ data, error }) => {
@@ -32,9 +41,70 @@ TaskManager.defineTask(BG_TASK, async ({ data, error }) => {
       speed: loc.coords.speed ?? 0,
       accuracy: loc.coords.accuracy ?? 999,
       heading: loc.coords.heading ?? undefined,
+      altitude: loc.coords.altitude ?? undefined,
+      altitudeAccuracy: loc.coords.altitudeAccuracy ?? undefined,
     });
   }
 });
+
+/**
+ * Estado e subscriptions ativas dos sensores IMU. Buffer paralelo ao GPS
+ * mas com timestamps próprios (relógio do device).
+ *
+ * Estratégia: usamos os listeners "globais" do expo-sensors que rodam no
+ * native side enquanto a app está em foreground. Em background, IMU para
+ * — diferente do GPS via TaskManager. Aceitável porque a tela de gravação
+ * fica em landscape acordada (KeepAwake).
+ */
+let accelSub: { remove: () => void } | null = null;
+let gyroSub: { remove: () => void } | null = null;
+// Buffer temporário pra juntar samples de accel e gyro do mesmo "frame"
+// (chegam separados via callbacks distintos do expo-sensors). Quando
+// um par é completo, emite ImuSample no buf.imu.
+const pendingImu: { accel: ImuSample['accel'] | null; gyro: ImuSample['gyro'] | null } = {
+  accel: null,
+  gyro: null,
+};
+
+function startImuCapture() {
+  // Idempotente — se já tá rodando, não duplica subscription.
+  if (accelSub || gyroSub) return;
+  Accelerometer.setUpdateInterval(IMU_UPDATE_MS);
+  Gyroscope.setUpdateInterval(IMU_UPDATE_MS);
+  accelSub = Accelerometer.addListener(({ x, y, z }) => {
+    pendingImu.accel = { x, y, z };
+    flushImu();
+  });
+  gyroSub = Gyroscope.addListener(({ x, y, z }) => {
+    pendingImu.gyro = { x, y, z };
+    flushImu();
+  });
+}
+
+function flushImu() {
+  // Espera ter ambos accel e gyro pra emitir uma amostra completa. Numa
+  // taxa de 50Hz, os dois chegam em poucos ms de diferença — o pareamento
+  // funciona bem na prática. Se um lado atrasar, o sample emite quando
+  // ambos atualizarem (timestamp do momento da emissão).
+  if (pendingImu.accel && pendingImu.gyro) {
+    buf.imu.push({
+      t: Date.now(),
+      accel: pendingImu.accel,
+      gyro: pendingImu.gyro,
+    });
+    pendingImu.accel = null;
+    pendingImu.gyro = null;
+  }
+}
+
+function stopImuCapture() {
+  accelSub?.remove();
+  gyroSub?.remove();
+  accelSub = null;
+  gyroSub = null;
+  pendingImu.accel = null;
+  pendingImu.gyro = null;
+}
 
 export type RecorderState = 'idle' | 'requesting' | 'recording' | 'stopped';
 
@@ -145,6 +215,10 @@ export type LiveInfo = {
 /** Volta pronta pra consumo — samples já recortados, duração calculada. */
 export type RecordedLap = {
   samples: GpsSample[];
+  /** Samples da IMU recortados pra mesma janela de tempo da volta.
+   *  Tipicamente 50Hz, ~2500 samples por volta de 50s. Usado pra
+   *  detecção de spin e replay 3D pós-sessão. Vazio se IMU falhou. */
+  imuSamples: ImuSample[];
   durationMs: number;
   startedAt: number;
 };
@@ -153,6 +227,8 @@ export type RecordedLap = {
 export type RecordingResult = {
   /** Todas as amostras capturadas, em ordem cronológica. */
   allSamples: GpsSample[];
+  /** Todas as amostras IMU capturadas, em ordem cronológica. */
+  allImuSamples: ImuSample[];
   /** Voltas fechadas, já recortadas e com duração. */
   laps: RecordedLap[];
   /** Índice em allSamples onde o piloto entrou em ritmo. -1 se nunca entrou. */
@@ -208,6 +284,10 @@ export function useLapRecorder(options?: LapRecorderOptions) {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTRef = useRef<number>(0);
   const allSamplesRef = useRef<GpsSample[]>([]);
+  // Buffer paralelo de IMU samples. Cresce mais rápido (50Hz vs 10Hz GPS)
+  // mas é local — não publica em realtime (sobrecarga de rede). Stop()
+  // recorta esses por timestamp pra cada lap.
+  const allImuRef = useRef<ImuSample[]>([]);
   const lastDetectionRef = useRef<DetectedLap[]>([]);
   const movingStartIdxRef = useRef<number>(-1);
   const targetReachedRef = useRef<boolean>(false);
@@ -257,7 +337,9 @@ export function useLapRecorder(options?: LapRecorderOptions) {
   const start = useCallback(async () => {
     setState('requesting');
     buf.samples = [];
+    buf.imu = [];
     allSamplesRef.current = [];
+    allImuRef.current = [];
     lastDetectionRef.current = [];
     movingStartIdxRef.current = -1;
     targetReachedRef.current = false;
@@ -300,15 +382,25 @@ export function useLapRecorder(options?: LapRecorderOptions) {
       activityType: Location.ActivityType.AutomotiveNavigation,
     });
 
+    // IMU em paralelo ao GPS. Roda só em foreground; em background o
+    // expo-sensors não recebe callbacks (limitação Android/iOS). Pra
+    // tela de cockpit isso é OK — ela mantém-se acordada via KeepAwake.
+    startImuCapture();
+
     startTRef.current = Date.now();
     setState('recording');
     setLiveSamples([]);
 
     pollRef.current = setInterval(() => {
-      // Drena buffer
+      // Drena buffer GPS
       if (buf.samples.length > 0) {
         allSamplesRef.current.push(...buf.samples);
         buf.samples = [];
+      }
+      // Drena buffer IMU (50Hz × 500ms = ~25 samples por poll)
+      if (buf.imu.length > 0) {
+        allImuRef.current.push(...buf.imu);
+        buf.imu = [];
       }
       const all = allSamplesRef.current;
       const last = all[all.length - 1];
@@ -586,16 +678,22 @@ export function useLapRecorder(options?: LapRecorderOptions) {
     } catch (e) {
       console.warn('stop:', e);
     }
+    stopImuCapture();
     deactivateKeepAwake('copilot-recording');
 
     // Última drenagem do buffer — pode ter samples chegando entre o poll
-    // anterior e agora.
+    // anterior e agora. GPS + IMU.
     if (buf.samples.length > 0) {
       allSamplesRef.current.push(...buf.samples);
       buf.samples = [];
     }
+    if (buf.imu.length > 0) {
+      allImuRef.current.push(...buf.imu);
+      buf.imu = [];
+    }
 
     const allSamples = allSamplesRef.current;
+    const allImuSamples = allImuRef.current;
     setState('stopped');
 
     // Detecção final com os samples completos, incluindo o que chegou na
@@ -604,14 +702,23 @@ export function useLapRecorder(options?: LapRecorderOptions) {
 
     // Materializa as voltas: aqui sim copiamos slices, porque é uma vez só
     // no fim da gravação. O consumidor recebe voltas prontas pra persistir.
-    const laps: RecordedLap[] = detection.laps.map((lap) => ({
-      samples: allSamples.slice(lap.startIdx, lap.endIdx + 1),
-      durationMs: lap.durationMs,
-      startedAt: lap.startedAt,
-    }));
+    // IMU é recortada por TIMESTAMP (não por índice — escalas diferentes,
+    // 50Hz vs 10Hz). startedAt vem do GPS sample inicial da volta, lapEnd
+    // = startedAt + durationMs. Pega tudo da IMU nessa janela.
+    const laps: RecordedLap[] = detection.laps.map((lap) => {
+      const lapEndT = lap.startedAt + lap.durationMs;
+      const imuSlice = allImuSamples.filter((s) => s.t >= lap.startedAt && s.t <= lapEndT);
+      return {
+        samples: allSamples.slice(lap.startIdx, lap.endIdx + 1),
+        imuSamples: imuSlice,
+        durationMs: lap.durationMs,
+        startedAt: lap.startedAt,
+      };
+    });
 
     return {
       allSamples,
+      allImuSamples,
       laps,
       movingStartIdx: detection.movingStartIdx,
       startFinishLine: detection.startFinishLine,
@@ -624,6 +731,7 @@ export function useLapRecorder(options?: LapRecorderOptions) {
       Location.hasStartedLocationUpdatesAsync(BG_TASK).then((started) => {
         if (started) Location.stopLocationUpdatesAsync(BG_TASK).catch(() => {});
       });
+      stopImuCapture();
       deactivateKeepAwake('copilot-recording');
     };
   }, []);

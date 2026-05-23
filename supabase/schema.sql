@@ -72,6 +72,10 @@ alter table live_samples add column if not exists current_sector_elapsed_ms int;
 alter table live_samples add column if not exists s1_ms int;
 alter table live_samples add column if not exists s2_ms int;
 alter table live_samples add column if not exists s3_ms int;
+-- Altitude do GPS — quando disponível. Usado pelo viewer 3D pra
+-- elevation profile. accuracy vertical separada.
+alter table live_samples add column if not exists altitude real;
+alter table live_samples add column if not exists altitude_accuracy real;
 
 create table if not exists live_laps (
   id bigserial primary key,

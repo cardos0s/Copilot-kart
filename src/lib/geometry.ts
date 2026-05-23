@@ -18,6 +18,28 @@ export type GpsSample = {
   speed: number;    // m/s (vindo do GPS)
   accuracy: number; // metros
   heading?: number; // graus, 0 = norte
+  altitude?: number;         // metros sobre nível do mar (quando disponível)
+  altitudeAccuracy?: number; // precisão vertical em metros
+};
+
+/**
+ * Sample da IMU (Inertial Measurement Unit). Capturado pelo expo-sensors
+ * a ~50Hz em paralelo com o GPS (10Hz). Frequência alta porque mudanças
+ * de rotação acontecem muito mais rápido que o GPS pode capturar.
+ *
+ * Eixos (Android/iOS convergem com expo-sensors após calibração interna):
+ *   - x: pra direita do celular
+ *   - y: pra cima (na orientação portrait); em landscape vira "pra frente"
+ *   - z: saindo da tela (perpendicular)
+ *
+ * accel: m/s². Sem subtrair gravidade — pra detectar movimento total.
+ *   App pode subtrair ~9.8 do eixo apontado pra baixo se quiser linear-only.
+ * gyro: rad/s (yaw rate = z na maioria das orientações de cockpit).
+ */
+export type ImuSample = {
+  t: number; // timestamp ms — alinhado com o relógio dos GpsSamples
+  accel: { x: number; y: number; z: number };
+  gyro: { x: number; y: number; z: number };
 };
 
 export type LocalSample = GpsSample & { x: number; y: number };

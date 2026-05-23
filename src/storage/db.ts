@@ -184,6 +184,21 @@ async function db() {
       }
       await dbInstance.execAsync('PRAGMA user_version = 2');
     }
+
+    // Migration v2 → v3: laps ganham coluna imu_samples_json pra guardar
+    // o stream da IMU (accel + gyro a ~50Hz). Pra voltas antigas o campo
+    // fica NULL — readers tratam null como "sem dado IMU".
+    const v3 = await dbInstance.getFirstAsync<{ user_version: number }>(
+      'PRAGMA user_version'
+    );
+    if ((v3?.user_version ?? 0) < 3) {
+      try {
+        await dbInstance.execAsync('ALTER TABLE laps ADD COLUMN imu_samples_json TEXT');
+      } catch {
+        // Coluna já existe — segue.
+      }
+      await dbInstance.execAsync('PRAGMA user_version = 3');
+    }
   }
   return dbInstance;
 }
@@ -334,14 +349,22 @@ export async function deleteSession(id: string): Promise<void> {
 
 export async function saveLap(lap: LapRecord): Promise<void> {
   const d = await db();
+  // imu_samples_json é null quando o lap foi gravado sem IMU (lap antigo
+  // ou IMU falhou). JSON.stringify de undefined gera "undefined" como
+  // string — proteção explícita pra mandar null real.
+  const imuJson =
+    lap.imuSamples && lap.imuSamples.length > 0
+      ? JSON.stringify(lap.imuSamples)
+      : null;
   await d.runAsync(
-    `INSERT INTO laps (id, session_id, started_at, duration_ms, samples_json)
-     VALUES (?, ?, ?, ?, ?)`,
+    `INSERT INTO laps (id, session_id, started_at, duration_ms, samples_json, imu_samples_json)
+     VALUES (?, ?, ?, ?, ?, ?)`,
     lap.id,
     lap.sessionId,
     lap.startedAt,
     lap.durationMs,
-    JSON.stringify(lap.samples)
+    JSON.stringify(lap.samples),
+    imuJson
   );
 }
 
@@ -352,7 +375,8 @@ export async function getLapsForSession(sessionId: string): Promise<LapRecord[]>
             session_id as sessionId,
             started_at as startedAt,
             duration_ms as durationMs,
-            samples_json
+            samples_json,
+            imu_samples_json
      FROM laps
      WHERE session_id = ?
      ORDER BY started_at ASC`,
@@ -364,6 +388,7 @@ export async function getLapsForSession(sessionId: string): Promise<LapRecord[]>
     startedAt: r.startedAt,
     durationMs: r.durationMs,
     samples: JSON.parse(r.samples_json) as GpsSample[],
+    imuSamples: r.imu_samples_json ? JSON.parse(r.imu_samples_json) : undefined,
   }));
 }
 
