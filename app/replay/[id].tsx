@@ -1,35 +1,33 @@
 /**
- * Replay 3D da sessão — visualização pós-pista com react-three-fiber.
+ * Replay 2D top-down da sessão — rendering via react-native-svg.
  *
- * Funcionalidades:
- *   - Renderiza todas as voltas como polylines coloridas sobre uma "pista"
- *     plana. PB destacada (verde brilhante), outras voltas em cinza/azul
- *     diferenciadas por matiz.
- *   - Kartzinho 3D (cuboide simples) anima ao longo de uma volta
- *     escolhida (ou da PB se "todas" estiver selecionado).
- *   - Marcadores de rodadas (spin events) nos pontos onde aconteceram —
- *     anéis vermelhos pulsantes na pista. Detector usa IMU quando há,
- *     senão fallback GPS-only.
- *   - Controles: play/pause, velocidade do replay (1x/2x/4x/8x), filtro
- *     de voltas, reset de câmera.
+ * Substituição da versão 3D anterior (expo-gl + react-three-fiber) que
+ * crashava nativamente em alguns devices. SVG é rock-solid em qualquer
+ * Android/iOS, custo zero de inicialização, suficiente pra visualizar
+ * o que importa: traçado, voltas comparativas, kart se movendo,
+ * marcadores de rodada.
  *
- * Coordenadas:
- *   - GPS lat/lng → projetado pra ENU local (metros) via makeLocalProjector
- *   - Three.js usa Y como "pra cima"; mapeamos GPS y (norte) → scene z,
- *     altitude → scene y. Resultado: olhar de cima vê a pista como um
- *     mapa, e altitude (pra pista plana de kart, ~constante) vira "subida"
- *     visível em terrenos com elevação.
+ * O que tem:
+ *   - Todas as voltas renderizadas como polylines coloridas. PB destacada
+ *     em verde brilhante, outras em cinza.
+ *   - Kart marker (círculo lime) anima no traçado da volta selecionada,
+ *     com pequena seta indicando direção (calculada do vetor entre
+ *     samples consecutivos).
+ *   - Marcadores vermelhos pulsantes nos pontos onde rolou rodada
+ *     (detectados via detectSpins — IMU se houver, fallback GPS).
+ *   - Filtro de voltas (Todas / Lap N) e controles play/pause/speed.
  *
- * Performance:
- *   - Polylines criadas uma vez via BufferGeometry; não recriadas a
- *     cada frame.
- *   - Kart animado em useFrame (60Hz idealmente) com índice interpolado
- *     entre samples por timestamp.
- *   - Decimação: se uma volta tem >300 samples, intervala — pra mobile
- *     GPU sobreviver.
+ * O que NÃO tem (vs versão 3D):
+ *   - Perspectiva 3D / câmera flyover → trade-off pela estabilidade
+ *   - Visualização de altitude
+ *   - Rotação do kart durante spin → ainda mostra o ponto, mas
+ *     o ícone do kart segue o traçado normalmente
+ *
+ * Re-introduzir 3D depois via Mapbox SDK (@rnmapbox/maps) que é mais
+ * robusto que expo-gl em devices variados.
  */
 
-import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -39,9 +37,11 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Canvas, useFrame } from '@react-three/fiber/native';
-import * as THREE from 'three';
-import { getLapsForSession, getSession } from '../../src/storage/db';
+import Svg, { Path, Circle, G, Line as SvgLine } from 'react-native-svg';
+import {
+  getLapsForSession,
+  getSession,
+} from '../../src/storage/db';
 import {
   makeLocalProjector,
   type GpsSample,
@@ -51,38 +51,132 @@ import { detectSpins, type SpinEvent } from '../../src/lib/spinDetector';
 import { colors, spacing, typography } from '../../src/theme';
 
 // ============================================================================
-// Tipos de dado preparado pra cena
+// Tipos
 // ============================================================================
 
 type SceneLap = {
   id: string;
-  index: number; // 0-based
-  number: number; // 1-based, pra UI
+  index: number;
+  number: number;
   durationMs: number;
   isPb: boolean;
-  /** Float32Array intercalado [x,y,z, x,y,z, ...] em metros desde origem. */
-  positions: Float32Array;
-  /** Timestamps alinhados com positions (1 timestamp por ponto). */
-  timestamps: number[];
-  /** Range de tempo da volta — pra mapear progresso 0..1 → t */
+  /** Pontos projetados em metros desde origem (x, y). */
+  points: Array<{ x: number; y: number; t: number }>;
   startT: number;
   endT: number;
 };
 
 type SceneData = {
   laps: SceneLap[];
-  /** Eventos de spin em coordenadas de cena (x,y,z) + dado original */
-  spins: Array<{ event: SpinEvent; pos: { x: number; z: number } }>;
-  /** Centro da pista (pra apontar câmera) */
-  center: { x: number; z: number };
-  /** Tamanho aproximado da pista (lado do bounding box) */
-  size: number;
-  /** Range de altitude vs base — pra normalizar eixo Y */
-  altitudeBase: number;
+  spins: Array<{ event: SpinEvent; pt: { x: number; y: number } }>;
+  /** Bounding box em metros pra escalar pro viewport. */
+  bbox: { minX: number; maxX: number; minY: number; maxY: number };
 };
 
 // ============================================================================
-// Página principal
+// Helpers
+// ============================================================================
+
+function fmtTime(ms: number): string {
+  if (ms < 60000) return (ms / 1000).toFixed(2);
+  const m = Math.floor(ms / 60000);
+  const s = (ms % 60000) / 1000;
+  return `${m}:${s.toFixed(2).padStart(5, '0')}`;
+}
+
+function buildScene(
+  rawLapsIn: Array<{
+    id: string;
+    samples: GpsSample[];
+    imuSamples?: ImuSample[];
+    durationMs: number;
+    startedAt: number;
+  }>
+): SceneData | null {
+  // Sanitiza voltas — filtra samples corrompidos antes de processar.
+  const rawLaps = rawLapsIn
+    .map((l) => ({
+      ...l,
+      samples: l.samples.filter(
+        (s) =>
+          Number.isFinite(s.lat) &&
+          Number.isFinite(s.lng) &&
+          Number.isFinite(s.t)
+      ),
+    }))
+    .filter((l) => l.samples.length >= 2);
+  if (rawLaps.length === 0) return null;
+
+  const origin = { lat: rawLaps[0].samples[0].lat, lng: rawLaps[0].samples[0].lng };
+  const projector = makeLocalProjector(origin);
+
+  const bestLap = rawLaps.reduce(
+    (b, l) => (l.durationMs < b.durationMs ? l : b),
+    rawLaps[0]
+  );
+
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  const sceneLaps: SceneLap[] = rawLaps.map((lap, idx) => {
+    // Decimação leve — se passa de 400, intervala. Pra SVG, perfil de
+    // 200-400 pontos por polyline é confortável.
+    const step = Math.max(1, Math.floor(lap.samples.length / 400));
+    const samples = lap.samples.filter((_, i) => i % step === 0);
+    const points = samples.map((s) => {
+      const xy = projector.toXY(s);
+      if (xy.x < minX) minX = xy.x;
+      if (xy.x > maxX) maxX = xy.x;
+      if (xy.y < minY) minY = xy.y;
+      if (xy.y > maxY) maxY = xy.y;
+      return { x: xy.x, y: xy.y, t: s.t };
+    });
+    return {
+      id: lap.id,
+      index: idx,
+      number: idx + 1,
+      durationMs: lap.durationMs,
+      isPb: lap.id === bestLap.id,
+      points,
+      startT: points[0].t,
+      endT: points[points.length - 1].t,
+    };
+  });
+
+  // Spins — detecta e projeta
+  const spins: SceneData['spins'] = [];
+  for (const lap of rawLaps) {
+    const events = detectSpins(lap.samples, lap.imuSamples);
+    for (const ev of events) {
+      const xy = projector.toXY({ lat: ev.lat, lng: ev.lng });
+      spins.push({ event: ev, pt: { x: xy.x, y: xy.y } });
+    }
+  }
+
+  return {
+    laps: sceneLaps,
+    spins,
+    bbox: { minX, maxX, minY, maxY },
+  };
+}
+
+/**
+ * Constrói o atributo `d` de um <Path> SVG a partir de pontos em XY.
+ * Aplica transform de XY→viewport.
+ */
+function pointsToPath(
+  points: Array<{ x: number; y: number }>,
+  tx: (x: number) => number,
+  ty: (y: number) => number
+): string {
+  if (points.length === 0) return '';
+  let d = `M ${tx(points[0].x).toFixed(1)} ${ty(points[0].y).toFixed(1)}`;
+  for (let i = 1; i < points.length; i++) {
+    d += ` L ${tx(points[i].x).toFixed(1)} ${ty(points[i].y).toFixed(1)}`;
+  }
+  return d;
+}
+
+// ============================================================================
+// Page
 // ============================================================================
 
 export default function ReplayScreen() {
@@ -93,16 +187,11 @@ export default function ReplayScreen() {
   const [scene, setScene] = useState<SceneData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [trackName, setTrackName] = useState<string>('—');
-
-  /** -1 = todas as voltas; >=0 = índice da volta selecionada (mostra essa apenas) */
   const [selectedLapIdx, setSelectedLapIdx] = useState<number>(-1);
   const [playing, setPlaying] = useState(true);
   const [speed, setSpeed] = useState<1 | 2 | 4 | 8>(2);
-  /** Progresso 0..1 dentro da volta sendo animada. useRef no kart pra evitar re-render. */
-  const progressRef = useRef(0);
-  const [displayProgress, setDisplayProgress] = useState(0);
+  const [progress, setProgress] = useState(0); // 0..1 dentro da volta ativa
 
-  // ===== Carrega + projeta samples na coord local =====
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
@@ -122,12 +211,11 @@ export default function ReplayScreen() {
           setError('Nenhuma volta gravada nessa sessão');
           return;
         }
-
         const built = buildScene(lapsRaw);
         if (cancelled) return;
         if (!built) {
           setError(
-            'Voltas dessa sessão não têm dados GPS suficientes pra renderizar em 3D (muito antigas ou corrompidas).'
+            'Voltas dessa sessão não têm dados GPS suficientes pra renderizar (muito antigas ou corrompidas).'
           );
           return;
         }
@@ -141,91 +229,77 @@ export default function ReplayScreen() {
     };
   }, [id]);
 
-  /** Volta ativa pro replay — selectedLapIdx ou PB se "todas". */
   const activeLap = useMemo(() => {
     if (!scene) return null;
     if (selectedLapIdx >= 0) return scene.laps[selectedLapIdx] ?? null;
     return scene.laps.find((l) => l.isPb) ?? scene.laps[0];
   }, [scene, selectedLapIdx]);
 
+  // Animação do progresso — useEffect com setInterval simples (60fps).
+  // SVG não tem useFrame, então rolamos no JS. Pra 200-400 samples cada,
+  // re-render a 60Hz é tranquilo no RN.
+  const lastTickRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!playing || !activeLap) {
+      lastTickRef.current = null;
+      return;
+    }
+    const tick = () => {
+      const now = Date.now();
+      if (lastTickRef.current === null) {
+        lastTickRef.current = now;
+        return;
+      }
+      const dt = now - lastTickRef.current;
+      lastTickRef.current = now;
+      const advance = (dt * speed) / activeLap.durationMs;
+      setProgress((p) => {
+        const next = p + advance;
+        return next >= 1 ? 0 : next;
+      });
+    };
+    const id = setInterval(tick, 16); // ~60Hz
+    return () => clearInterval(id);
+  }, [playing, activeLap, speed]);
+
+  // Reset progresso quando troca volta selecionada
+  useEffect(() => {
+    setProgress(0);
+    lastTickRef.current = null;
+  }, [selectedLapIdx]);
+
   if (error) {
     return (
-      <Center>
-        <Text style={s.errorTitle}>Replay indisponível</Text>
-        <Text style={s.errorBody}>{error}</Text>
-        <Pressable onPress={() => router.back()} style={s.backBtn}>
-          <Text style={s.backBtnText}>Voltar</Text>
-        </Pressable>
-      </Center>
+      <View style={s.centerRoot}>
+        <View style={s.centerBox}>
+          <Text style={s.errorTitle}>Replay indisponível</Text>
+          <Text style={s.errorBody}>{error}</Text>
+          <Pressable onPress={() => router.back()} style={s.backBtn}>
+            <Text style={s.backBtnText}>Voltar</Text>
+          </Pressable>
+        </View>
+      </View>
     );
   }
 
   if (!scene || !activeLap) {
     return (
-      <Center>
+      <View style={s.centerRoot}>
         <ActivityIndicator color={colors.primary} />
         <Text style={s.loadingText}>Preparando replay…</Text>
-      </Center>
+      </View>
     );
   }
 
   return (
     <View style={s.root}>
-      {/* Cena 3D — envolta em error boundary porque expo-gl em alguns
-       * Androids antigos falha ao inicializar contexto OpenGL (driver não
-       * suportado, etc) e cresharia o app inteiro sem captura. */}
-      <CanvasErrorBoundary
-        fallback={(err) => (
-          <View style={s.glFallback}>
-            <Text style={s.errorTitle}>Não consegui inicializar o 3D</Text>
-            <Text style={s.errorBody}>
-              Pode ser que esse aparelho não suporte expo-gl/OpenGL ES 2.0
-              direito, ou rodou sem memória. Detalhe técnico:{'\n\n'}
-              {err}
-            </Text>
-            <Pressable onPress={() => router.back()} style={s.backBtn}>
-              <Text style={s.backBtnText}>Voltar</Text>
-            </Pressable>
-          </View>
-        )}
-      >
-        <Canvas
-          camera={{
-            position: [scene.center.x, scene.size * 0.9, scene.center.z + scene.size * 0.6],
-            fov: 50,
-            near: 0.1,
-            far: scene.size * 10,
-          }}
-          gl={{ antialias: true }}
-          onCreated={({ camera }) => {
-            camera.lookAt(scene.center.x, 0, scene.center.z);
-          }}
-        >
-          <ambientLight intensity={0.6} />
-          <directionalLight position={[scene.size, scene.size, scene.size]} intensity={0.8} />
-          <Ground center={scene.center} size={scene.size * 3} />
-          {scene.laps.map((lap) => (
-            <LapLine
-              key={lap.id}
-              lap={lap}
-              visible={selectedLapIdx === -1 || selectedLapIdx === lap.index}
-              highlighted={
-                selectedLapIdx === -1 ? lap.isPb : selectedLapIdx === lap.index
-              }
-            />
-          ))}
-          {scene.spins.map((sp, i) => (
-            <SpinMarker key={i} pos={sp.pos} altitudeBase={scene.altitudeBase} />
-          ))}
-          <AnimatedKart
-            lap={activeLap}
-            playing={playing}
-            speed={speed}
-            progressRef={progressRef}
-            onProgress={setDisplayProgress}
-          />
-        </Canvas>
-      </CanvasErrorBoundary>
+      <ReplayCanvas
+        scene={scene}
+        activeLap={activeLap}
+        progress={progress}
+        selectedLapIdx={selectedLapIdx}
+        insets={insets}
+      />
 
       {/* Top bar */}
       <View style={[s.topBar, { paddingTop: insets.top + spacing.s }]}>
@@ -233,7 +307,7 @@ export default function ReplayScreen() {
           <Text style={s.iconBtnText}>✕</Text>
         </Pressable>
         <View style={{ flex: 1, alignItems: 'center' }}>
-          <Text style={s.topTitle}>REPLAY 3D</Text>
+          <Text style={s.topTitle}>REPLAY</Text>
           <Text style={s.topSub}>
             {trackName} · {scene.laps.length} volta(s)
             {scene.spins.length > 0 && ` · ${scene.spins.length} rodada(s)`}
@@ -242,7 +316,7 @@ export default function ReplayScreen() {
         <View style={s.iconBtn} />
       </View>
 
-      {/* Controle de voltas — chips horizontais */}
+      {/* Lap chips */}
       <View style={[s.lapBar, { top: insets.top + 60 }]}>
         <LapChip
           label="Todas"
@@ -260,7 +334,7 @@ export default function ReplayScreen() {
         ))}
       </View>
 
-      {/* Bottom controls — play/pause + speed + progresso */}
+      {/* Bottom controls */}
       <View style={[s.bottomBar, { paddingBottom: insets.bottom + spacing.m }]}>
         <View style={s.bottomRow}>
           <Pressable
@@ -273,11 +347,11 @@ export default function ReplayScreen() {
           <View style={{ flex: 1, marginHorizontal: spacing.m }}>
             <View style={s.progressTrack}>
               <View
-                style={[s.progressFill, { width: `${displayProgress * 100}%` }]}
+                style={[s.progressFill, { width: `${progress * 100}%` }]}
               />
             </View>
             <Text style={s.progressLabel}>
-              Volta {activeLap.number} · {fmtTime(displayProgress * activeLap.durationMs)} /{' '}
+              Volta {activeLap.number} · {fmtTime(progress * activeLap.durationMs)} /{' '}
               {fmtTime(activeLap.durationMs)}
             </Text>
           </View>
@@ -304,159 +378,155 @@ export default function ReplayScreen() {
 }
 
 // ============================================================================
-// Componentes 3D
+// Canvas SVG
 // ============================================================================
 
-function Ground({
-  center,
-  size,
+function ReplayCanvas({
+  scene,
+  activeLap,
+  progress,
+  selectedLapIdx,
+  insets,
 }: {
-  center: { x: number; z: number };
-  size: number;
+  scene: SceneData;
+  activeLap: SceneLap;
+  progress: number;
+  selectedLapIdx: number;
+  insets: { top: number; bottom: number; left: number; right: number };
 }) {
-  // Plano "chão" cinza escuro — referência visual da superfície.
-  return (
-    <mesh
-      rotation={[-Math.PI / 2, 0, 0]}
-      position={[center.x, -0.5, center.z]}
-    >
-      <planeGeometry args={[size, size]} />
-      <meshBasicMaterial color="#0F0F18" />
-    </mesh>
-  );
-}
+  // Viewport SVG — usa viewBox virtual com aspect ratio da pista.
+  // O React Native escala isso pro tamanho da View automaticamente.
+  const W = 1000;
+  const H = 700;
+  const PADDING = 60;
 
-function LapLine({
-  lap,
-  visible,
-  highlighted,
-}: {
-  lap: SceneLap;
-  visible: boolean;
-  highlighted: boolean;
-}) {
-  // Cria a THREE.Line completa imperativamente (geometria + material) e
-  // renderiza via <primitive>. Evita o JSX intrinsic <line> que em r3f v9
-  // colide com SVG <line> no React 19 — comportamento depende da ordem de
-  // tipos e pode crashar no runtime em certas builds.
-  const lineObject = useMemo(() => {
-    if (lap.positions.length < 6) return null; // <2 pontos = sem linha
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(lap.positions, 3));
-    const color = highlighted ? '#00FF88' : lap.isPb ? '#A8CC2E' : '#3A506B';
-    const mat = new THREE.LineBasicMaterial({ color, linewidth: highlighted ? 4 : 2 });
-    return new THREE.Line(geo, mat);
-  }, [lap.positions, highlighted, lap.isPb]);
+  const { tx, ty } = useMemo(() => {
+    const { minX, maxX, minY, maxY } = scene.bbox;
+    const dx = maxX - minX || 1;
+    const dy = maxY - minY || 1;
+    const scale = Math.min((W - PADDING * 2) / dx, (H - PADDING * 2) / dy);
+    const offsetX = (W - dx * scale) / 2;
+    const offsetY = (H - dy * scale) / 2;
+    return {
+      tx: (x: number) => offsetX + (x - minX) * scale,
+      // Inverte Y (norte vai pra cima no SVG, mas Y do SVG cresce pra baixo)
+      ty: (y: number) => H - (offsetY + (y - minY) * scale),
+    };
+  }, [scene.bbox]);
 
-  if (!visible || !lineObject) return null;
-  return <primitive object={lineObject} />;
-}
-
-function SpinMarker({
-  pos,
-  altitudeBase,
-}: {
-  pos: { x: number; z: number };
-  altitudeBase: number;
-}) {
-  // Anel vermelho pulsante no ponto do spin. Anima escala via useFrame.
-  const meshRef = useRef<THREE.Mesh>(null);
-  useFrame(({ clock }) => {
-    if (!meshRef.current) return;
-    const pulse = 1 + 0.15 * Math.sin(clock.elapsedTime * 3);
-    meshRef.current.scale.set(pulse, pulse, pulse);
-  });
-  return (
-    <mesh
-      ref={meshRef}
-      position={[pos.x, altitudeBase + 0.5, pos.z]}
-      rotation={[-Math.PI / 2, 0, 0]}
-    >
-      <ringGeometry args={[3, 4, 24]} />
-      <meshBasicMaterial color="#FF4757" transparent opacity={0.7} />
-    </mesh>
-  );
-}
-
-function AnimatedKart({
-  lap,
-  playing,
-  speed,
-  progressRef,
-  onProgress,
-}: {
-  lap: SceneLap;
-  playing: boolean;
-  speed: 1 | 2 | 4 | 8;
-  progressRef: React.MutableRefObject<number>;
-  onProgress: (p: number) => void;
-}) {
-  // Estado interno: posição + rotação calculadas a cada frame por interpolação
-  // linear entre samples adjacentes (baseado em progressRef → tempo → sample).
-  const meshRef = useRef<THREE.Mesh>(null);
-  const lastReportedProgressRef = useRef(0);
-
-  useFrame((_, dt) => {
-    if (!meshRef.current) return;
-
-    // Avança o progresso se está rodando. dt vem em segundos; multiplica
-    // por (speed * 1000) pra obter ms de "tempo de pista" virtual.
-    if (playing) {
-      const advanceMs = dt * 1000 * speed;
-      const dur = lap.endT - lap.startT;
-      progressRef.current += advanceMs / dur;
-      if (progressRef.current >= 1) progressRef.current = 0; // loop
-    }
-
-    const progress = progressRef.current;
-    const targetT = lap.startT + progress * (lap.endT - lap.startT);
-
-    // Encontra o sample mais próximo no array de timestamps (binary search
-    // seria mais rápido mas pra 500 samples linear é tranquilo).
+  // Posição interpolada do kart na volta ativa
+  const kart = useMemo(() => {
+    const targetT = activeLap.startT + progress * (activeLap.endT - activeLap.startT);
+    const pts = activeLap.points;
+    // Binary search seria mais rápido, mas pra 400 pontos linear é OK
     let idx = 0;
-    for (let i = 0; i < lap.timestamps.length - 1; i++) {
-      if (lap.timestamps[i] <= targetT && targetT <= lap.timestamps[i + 1]) {
+    for (let i = 0; i < pts.length - 1; i++) {
+      if (pts[i].t <= targetT && targetT <= pts[i + 1].t) {
         idx = i;
         break;
       }
     }
-    const t0 = lap.timestamps[idx];
-    const t1 = lap.timestamps[Math.min(idx + 1, lap.timestamps.length - 1)];
-    const alpha = t1 > t0 ? (targetT - t0) / (t1 - t0) : 0;
-
-    const i3 = idx * 3;
-    const j3 = Math.min((idx + 1) * 3, lap.positions.length - 3);
-    const x = lap.positions[i3] * (1 - alpha) + lap.positions[j3] * alpha;
-    const y = lap.positions[i3 + 1] * (1 - alpha) + lap.positions[j3 + 1] * alpha;
-    const z = lap.positions[i3 + 2] * (1 - alpha) + lap.positions[j3 + 2] * alpha;
-
-    meshRef.current.position.set(x, y + 1, z);
-
-    // Heading: direção do vetor (next - current) projetado em XZ.
-    const dx = lap.positions[j3] - lap.positions[i3];
-    const dz = lap.positions[j3 + 2] - lap.positions[i3 + 2];
-    if (dx !== 0 || dz !== 0) {
-      meshRef.current.rotation.y = Math.atan2(dx, dz);
-    }
-
-    // Reporta progresso pra UI uma vez por ~10% de mudança (evita re-render
-    // a cada frame — 60Hz × setState seria desastre).
-    if (Math.abs(progress - lastReportedProgressRef.current) > 0.005) {
-      lastReportedProgressRef.current = progress;
-      onProgress(progress);
-    }
-  });
+    const a = pts[idx];
+    const b = pts[Math.min(idx + 1, pts.length - 1)];
+    const dur = b.t - a.t;
+    const alpha = dur > 0 ? (targetT - a.t) / dur : 0;
+    const x = a.x * (1 - alpha) + b.x * alpha;
+    const y = a.y * (1 - alpha) + b.y * alpha;
+    // Heading do vetor entre samples
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    return { x, y, dx, dy };
+  }, [activeLap, progress]);
 
   return (
-    <mesh ref={meshRef}>
-      <boxGeometry args={[2, 1, 3]} />
-      <meshStandardMaterial color="#D4FF3A" emissive="#D4FF3A" emissiveIntensity={0.4} />
-    </mesh>
+    <View style={s.canvas}>
+      <Svg
+        width="100%"
+        height="100%"
+        viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="xMidYMid meet"
+      >
+        {/* Polylines de todas as voltas */}
+        {scene.laps.map((lap) => {
+          const visible = selectedLapIdx === -1 || selectedLapIdx === lap.index;
+          if (!visible) return null;
+          const highlighted =
+            selectedLapIdx === -1 ? lap.isPb : selectedLapIdx === lap.index;
+          const color = highlighted
+            ? '#00FF88'
+            : lap.isPb
+              ? '#A8CC2E'
+              : '#3A506B';
+          return (
+            <Path
+              key={lap.id}
+              d={pointsToPath(lap.points, tx, ty)}
+              stroke={color}
+              strokeWidth={highlighted ? 4 : 2}
+              strokeOpacity={highlighted ? 1 : 0.5}
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          );
+        })}
+
+        {/* Marcadores de spin */}
+        {scene.spins.map((sp, i) => (
+          <G key={i}>
+            <Circle
+              cx={tx(sp.pt.x)}
+              cy={ty(sp.pt.y)}
+              r={18}
+              fill="#FF4757"
+              fillOpacity={0.15}
+            />
+            <Circle
+              cx={tx(sp.pt.x)}
+              cy={ty(sp.pt.y)}
+              r={10}
+              stroke="#FF4757"
+              strokeWidth={2.5}
+              fill="none"
+            />
+          </G>
+        ))}
+
+        {/* Kart marker — círculo lime com setinha de direção */}
+        <G>
+          <Circle
+            cx={tx(kart.x)}
+            cy={ty(kart.y)}
+            r={14}
+            fill="#D4FF3A"
+            fillOpacity={0.25}
+          />
+          <Circle
+            cx={tx(kart.x)}
+            cy={ty(kart.y)}
+            r={7}
+            fill="#D4FF3A"
+            stroke="#08080C"
+            strokeWidth={2}
+          />
+          {/* Linha de direção — vetor até o próximo ponto */}
+          <SvgLine
+            x1={tx(kart.x)}
+            y1={ty(kart.y)}
+            x2={tx(kart.x + kart.dx * 3)}
+            y2={ty(kart.y + kart.dy * 3)}
+            stroke="#D4FF3A"
+            strokeWidth={2.5}
+            strokeLinecap="round"
+          />
+        </G>
+      </Svg>
+    </View>
   );
 }
 
 // ============================================================================
-// UI chips/buttons
+// UI bits
 // ============================================================================
 
 function LapChip({
@@ -473,11 +543,7 @@ function LapChip({
   return (
     <Pressable
       onPress={onPress}
-      style={[
-        s.chip,
-        active && s.chipActive,
-        pb && !active && s.chipPb,
-      ]}
+      style={[s.chip, active && s.chipActive, pb && !active && s.chipPb]}
     >
       <Text
         style={[
@@ -492,159 +558,13 @@ function LapChip({
   );
 }
 
-function Center({ children }: { children: React.ReactNode }) {
-  return (
-    <View style={s.centerRoot}>
-      <View style={s.centerBox}>{children}</View>
-    </View>
-  );
-}
-
-/**
- * ErrorBoundary específico pro Canvas 3D — captura erros de expo-gl,
- * three.js, ou shaders que cresham a render tree. Sem isso, qualquer
- * erro no GL contexto crasha a TELA INTEIRA (e às vezes o app inteiro
- * no Android antigo onde expo-gl init falha).
- *
- * Class component porque error boundaries em React 19 ainda precisam ser
- * componente de classe (não tem hook equivalente estável).
- */
-class CanvasErrorBoundary extends Component<
-  { children: ReactNode; fallback: (error: string) => ReactNode },
-  { error: string | null }
-> {
-  state = { error: null as string | null };
-  static getDerivedStateFromError(err: Error) {
-    return { error: err?.message ?? String(err) };
-  }
-  componentDidCatch(err: Error) {
-    if (__DEV__) console.warn('[Replay3D] Canvas crashou:', err);
-  }
-  render() {
-    if (this.state.error) return this.props.fallback(this.state.error);
-    return this.props.children;
-  }
-}
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-function fmtTime(ms: number): string {
-  if (ms < 60000) return (ms / 1000).toFixed(2);
-  const m = Math.floor(ms / 60000);
-  const s = (ms % 60000) / 1000;
-  return `${m}:${s.toFixed(2).padStart(5, '0')}`;
-}
-
-/**
- * Pré-processa todas as voltas: projeta GPS pra coord local, identifica PB,
- * detecta spins, calcula bbox da cena pra apontar câmera. Tudo uma vez só
- * no carregamento — não roda na renderização.
- */
-function buildScene(rawLapsIn: Array<{
-  id: string;
-  samples: GpsSample[];
-  imuSamples?: ImuSample[];
-  durationMs: number;
-  startedAt: number;
-}>): SceneData | null {
-  // Sanitiza voltas: descarta as que ficaram sem samples ou com lat/lng
-  // inválidos. Pode acontecer em voltas muito antigas ou corrompidas.
-  const rawLaps = rawLapsIn
-    .map((l) => ({
-      ...l,
-      samples: l.samples.filter(
-        (s) =>
-          Number.isFinite(s.lat) &&
-          Number.isFinite(s.lng) &&
-          Number.isFinite(s.t)
-      ),
-    }))
-    .filter((l) => l.samples.length >= 2);
-
-  if (rawLaps.length === 0) return null;
-
-  // Origem = primeiro sample da primeira volta (consistente entre runs).
-  const firstSample = rawLaps[0].samples[0];
-  const origin = { lat: firstSample.lat, lng: firstSample.lng };
-  const projector = makeLocalProjector(origin);
-
-  // PB
-  const bestLap = rawLaps.reduce((b, l) =>
-    l.durationMs < b.durationMs ? l : b
-  , rawLaps[0]);
-
-  // Coleta altitude pra normalizar baseline (subtrai mínima pra começar do 0)
-  const allAltitudes = rawLaps.flatMap((l) =>
-    l.samples.map((s) => s.altitude).filter((a): a is number => a != null)
-  );
-  const altitudeBase = allAltitudes.length > 0 ? Math.min(...allAltitudes) : 0;
-
-  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
-  const sceneLaps: SceneLap[] = rawLaps.map((lap, idx) => {
-    // Decimação suave — se passar de 400 samples, pula proporcionalmente.
-    const step = Math.max(1, Math.floor(lap.samples.length / 400));
-    const samples = lap.samples.filter((_, i) => i % step === 0);
-    const positions = new Float32Array(samples.length * 3);
-    const timestamps: number[] = [];
-    samples.forEach((s, i) => {
-      const xy = projector.toXY(s);
-      // GPS y (norte/sul em metros) → scene z. GPS x (leste/oeste) → scene x.
-      // Altitude (subtraindo baseline) → scene y. Amplificada 5× pra ser
-      // visualmente perceptível em pistas planas (kart varia 0-3m geralmente).
-      const altScene = ((s.altitude ?? altitudeBase) - altitudeBase) * 5;
-      positions[i * 3] = xy.x;
-      positions[i * 3 + 1] = altScene;
-      positions[i * 3 + 2] = xy.y;
-      timestamps.push(s.t);
-      if (xy.x < minX) minX = xy.x;
-      if (xy.x > maxX) maxX = xy.x;
-      if (xy.y < minZ) minZ = xy.y;
-      if (xy.y > maxZ) maxZ = xy.y;
-    });
-    return {
-      id: lap.id,
-      index: idx,
-      number: idx + 1,
-      durationMs: lap.durationMs,
-      isPb: lap.id === bestLap.id,
-      positions,
-      timestamps,
-      startT: timestamps[0],
-      endT: timestamps[timestamps.length - 1],
-    };
-  });
-
-  // Spins: detecta em cada volta + projeta pro espaço de cena.
-  const spins: SceneData['spins'] = [];
-  for (const lap of rawLaps) {
-    const events = detectSpins(lap.samples, lap.imuSamples);
-    for (const ev of events) {
-      const xy = projector.toXY({ lat: ev.lat, lng: ev.lng } as any);
-      spins.push({ event: ev, pos: { x: xy.x, z: xy.y } });
-    }
-  }
-
-  const centerX = (minX + maxX) / 2;
-  const centerZ = (minZ + maxZ) / 2;
-  const size = Math.max(maxX - minX, maxZ - minZ, 50); // mín 50m pra evitar zoom maluco
-
-  return {
-    laps: sceneLaps,
-    spins,
-    center: { x: centerX, z: centerZ },
-    size,
-    altitudeBase: 0, // já normalizado
-  };
-}
-
 // ============================================================================
 // Styles
 // ============================================================================
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#08080C' },
+  canvas: { flex: 1, backgroundColor: '#0F0F18' },
   centerRoot: {
     flex: 1,
     backgroundColor: '#08080C',
@@ -653,13 +573,6 @@ const s = StyleSheet.create({
   },
   centerBox: {
     alignItems: 'center',
-    padding: spacing.xl,
-  },
-  glFallback: {
-    flex: 1,
-    backgroundColor: '#08080C',
-    alignItems: 'center',
-    justifyContent: 'center',
     padding: spacing.xl,
   },
   loadingText: {

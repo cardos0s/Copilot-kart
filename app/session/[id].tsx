@@ -526,7 +526,7 @@ function SessionScreenInner() {
               onPress={() => router.push(`/replay/${id}` as any)}
               style={({ pressed }) => [s.replayBtn, pressed && { opacity: 0.7 }]}
             >
-              <Text style={s.replayBtnText}>Ver replay 3D</Text>
+              <Text style={s.replayBtnText}>Ver replay da sessão</Text>
             </Pressable>
           </View>
         )}
