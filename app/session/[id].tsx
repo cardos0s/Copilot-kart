@@ -497,7 +497,7 @@ function SessionScreenInner() {
             flutuante (AssistiveTouch-style) que aparece automaticamente em
             todas as telas. Mantemos só o atalho de comparar voltas. */}
         {!isSelectedReference && laps.length >= 2 && (
-          <View style={{ paddingHorizontal: spacing.l, marginTop: spacing.m }}>
+          <View style={{ paddingHorizontal: spacing.l, marginTop: spacing.m, gap: spacing.s }}>
             <Pressable
               onPress={() => {
                 const otherLap =
@@ -517,6 +517,18 @@ function SessionScreenInner() {
               style={({ pressed }) => [s.askAiBtn, pressed && { opacity: 0.7 }]}
             >
               <Text style={s.askAiBtnText}>Comparar com a melhor volta</Text>
+            </Pressable>
+
+            {/* Replay 3D — viewer com todas as voltas + kart animado +
+              * marcação de rodadas. Usa react-three-fiber, então abre tela
+              * dedicada (não inline) pra liberar tela inteira pro GL. */}
+            <Pressable
+              onPress={() =>
+                router.push({ pathname: '/replay/[id]' as any, params: { id } })
+              }
+              style={({ pressed }) => [s.replayBtn, pressed && { opacity: 0.7 }]}
+            >
+              <Text style={s.replayBtnText}>Ver replay 3D</Text>
             </Pressable>
           </View>
         )}
@@ -1322,6 +1334,20 @@ const s = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     letterSpacing: 0.2,
+  },
+  replayBtn: {
+    paddingVertical: 12,
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.primary + '55',
+    borderRadius: 12,
+  },
+  replayBtnText: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
 
   expandBtn: {
