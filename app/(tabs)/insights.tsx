@@ -1,10 +1,21 @@
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { computeSmartInsights, InsightsBundle, SmartInsight } from '../../src/lib/insights';
-import { Card, DecorativeSplash, Gauge, Icon } from '../../src/components/ui';
-import { colors, spacing, typography } from '../../src/theme';
+import { AiChatThreadSummary, listAiChatThreads } from '../../src/storage/db';
+import { getClient } from '../../src/lib/llm';
+import { Card, DecorativeSplash, Gauge, Icon, PillTabs } from '../../src/components/ui';
+import { colors, radius, spacing, typography } from '../../src/theme';
+
+type Tab = 'trends' | 'coach';
 
 function fmtLap(ms: number) {
   const totalS = ms / 1000;
@@ -13,7 +24,92 @@ function fmtLap(ms: number) {
   return `${String(m).padStart(2, '0')}:${s.toFixed(3).padStart(6, '0')}`;
 }
 
+function relativeTime(ms: number): string {
+  const diff = Date.now() - ms;
+  const min = Math.floor(diff / (1000 * 60));
+  if (min < 1) return 'agora';
+  if (min < 60) return `${min}min atrás`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h}h atrás`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d}d atrás`;
+  const date = new Date(ms);
+  return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
 export default function Insights() {
+  const insets = useSafeAreaInsets();
+  const [tab, setTab] = useState<Tab>('trends');
+
+  return (
+    <View style={s.root}>
+      <DecorativeSplash position="top-right" intensity="normal" />
+      <View style={{ paddingTop: insets.top + spacing.s, paddingHorizontal: spacing.l }}>
+        <Text style={s.title}>INSIGHTS</Text>
+        <View style={{ marginTop: spacing.m }}>
+          <PillTabs<Tab>
+            value={tab}
+            onChange={setTab}
+            options={[
+              { value: 'trends', label: 'Tendências' },
+              { value: 'coach', label: 'Coach IA' },
+            ]}
+          />
+        </View>
+      </View>
+      {tab === 'trends' ? <TrendsTab /> : <CoachTab />}
+    </View>
+  );
+}
+
+// ===== Quick actions (atalhos gamification) =====
+
+function QuickActions() {
+  const router = useRouter();
+  return (
+    <View style={s.quickActions}>
+      <QuickCard
+        label="Carreira"
+        emoji="◆"
+        onPress={() => router.push('/career' as any)}
+      />
+      <QuickCard
+        label="Desafios"
+        emoji="🔥"
+        onPress={() => router.push('/challenges' as any)}
+      />
+      <QuickCard
+        label="Recap"
+        emoji="✦"
+        onPress={() => router.push('/recap' as any)}
+      />
+    </View>
+  );
+}
+
+function QuickCard({
+  label,
+  emoji,
+  onPress,
+}: {
+  label: string;
+  emoji: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [s.quickCard, pressed && { opacity: 0.7 }]}
+    >
+      <Text style={s.quickEmoji}>{emoji}</Text>
+      <Text style={s.quickLabel}>{label}</Text>
+    </Pressable>
+  );
+}
+
+// ===== Aba Tendências =====
+
+function TrendsTab() {
   const insets = useSafeAreaInsets();
   const [bundle, setBundle] = useState<InsightsBundle | null>(null);
   const [loading, setLoading] = useState(true);
@@ -28,69 +124,179 @@ export default function Insights() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   return (
-    <View style={s.root}>
-      <DecorativeSplash position="top-right" intensity="normal" />
-      <ScrollView
-        contentContainerStyle={{
-          paddingTop: insets.top + spacing.s,
-          paddingBottom: 120,
-          paddingHorizontal: spacing.l,
-        }}
-        showsVerticalScrollIndicator={false}
-      >
-        <Text style={s.title}>INSIGHTS</Text>
-        <Text style={s.subtitle}>SEU DESEMPENHO · ÚLTIMAS 3 SESSÕES</Text>
+    <ScrollView
+      contentContainerStyle={{
+        paddingTop: spacing.m,
+        paddingBottom: insets.bottom + 120,
+        paddingHorizontal: spacing.l,
+      }}
+      showsVerticalScrollIndicator={false}
+    >
+      <QuickActions />
 
-        {loading ? (
-          <View style={s.loading}>
-            <ActivityIndicator color={colors.primary} size="large" />
-            <Text style={s.loadingText}>Analisando suas voltas…</Text>
+      <Text style={s.subtitle}>SEU DESEMPENHO · ÚLTIMAS 3 SESSÕES</Text>
+
+      {loading ? (
+        <View style={s.loading}>
+          <ActivityIndicator color={colors.primary} size="large" />
+          <Text style={s.loadingText}>Analisando suas voltas…</Text>
+        </View>
+      ) : !bundle ? null : bundle.stats.lapCount === 0 ? (
+        <EmptyView insights={bundle.insights} />
+      ) : (
+        <>
+          <View style={s.gaugeWrap}>
+            <Gauge value={bundle.score} size={200} thickness={14} />
           </View>
-        ) : !bundle ? null : bundle.stats.lapCount === 0 ? (
-          <EmptyView insights={bundle.insights} />
-        ) : (
-          <>
-            {/* Score Gauge */}
-            <View style={s.gaugeWrap}>
-              <Gauge value={bundle.score} size={200} thickness={14} />
-            </View>
 
-            {/* Score breakdown */}
-            <View style={s.breakdownRow}>
-              <BreakdownPill label="CONSISTÊNCIA" value={bundle.scoreBreakdown.consistency} />
-              <BreakdownPill label="PACE" value={bundle.scoreBreakdown.pace} />
-              <BreakdownPill label="VOLTA LIMPA" value={bundle.scoreBreakdown.cleanLap} />
-            </View>
+          <View style={s.breakdownRow}>
+            <BreakdownPill label="CONSISTÊNCIA" value={bundle.scoreBreakdown.consistency} />
+            <BreakdownPill label="PACE" value={bundle.scoreBreakdown.pace} />
+            <BreakdownPill label="VOLTA LIMPA" value={bundle.scoreBreakdown.cleanLap} />
+          </View>
 
-            {/* Stats principais */}
-            <View style={s.statsRow}>
-              <Stat
-                label="MELHOR"
-                value={bundle.stats.bestLapMs != null ? fmtLap(bundle.stats.bestLapMs) : '—'}
-                tone="primary"
-              />
-              <Stat
-                label="MÉDIA"
-                value={bundle.stats.avgLapMs != null ? fmtLap(bundle.stats.avgLapMs) : '—'}
-              />
-              <Stat label="VOLTAS" value={String(bundle.stats.lapCount)} />
-              {bundle.stats.peakKmh > 0 && (
-                <Stat label="PICO" value={`${bundle.stats.peakKmh.toFixed(0)} km/h`} tone="cyan" />
-              )}
-            </View>
+          <View style={s.statsRow}>
+            <Stat
+              label="MELHOR"
+              value={bundle.stats.bestLapMs != null ? fmtLap(bundle.stats.bestLapMs) : '—'}
+              tone="primary"
+            />
+            <Stat
+              label="MÉDIA"
+              value={bundle.stats.avgLapMs != null ? fmtLap(bundle.stats.avgLapMs) : '—'}
+            />
+            <Stat label="VOLTAS" value={String(bundle.stats.lapCount)} />
+            {bundle.stats.peakKmh > 0 && (
+              <Stat label="PICO" value={`${bundle.stats.peakKmh.toFixed(0)} km/h`} tone="cyan" />
+            )}
+          </View>
 
-            {/* Insights */}
-            <View style={{ marginTop: spacing.xl, gap: spacing.m }}>
-              {bundle.insights.map((ins, i) => (
-                <InsightCard key={i} ins={ins} />
-              ))}
-            </View>
-          </>
-        )}
-      </ScrollView>
-    </View>
+          <View style={{ marginTop: spacing.xl, gap: spacing.m }}>
+            {bundle.insights.map((ins, i) => (
+              <InsightCard key={i} ins={ins} />
+            ))}
+          </View>
+        </>
+      )}
+    </ScrollView>
   );
 }
+
+// ===== Aba Coach IA =====
+
+function CoachTab() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const [threads, setThreads] = useState<AiChatThreadSummary[] | null>(null);
+
+  const load = useCallback(async () => {
+    const t = await listAiChatThreads(50);
+    setThreads(t);
+  }, []);
+
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  if (threads === null) {
+    return (
+      <View style={[s.loading, { flex: 1 }]}>
+        <ActivityIndicator color={colors.primary} size="large" />
+      </View>
+    );
+  }
+
+  if (threads.length === 0) {
+    return (
+      <ScrollView
+        contentContainerStyle={{
+          paddingHorizontal: spacing.l,
+          paddingBottom: insets.bottom + 120,
+        }}
+      >
+        <View style={s.empty}>
+          <Icon name="bolt" size={48} color={colors.textDim} />
+          <Text style={s.emptyTitle}>Sem conversas ainda</Text>
+          <Text style={s.emptySub}>
+            Abra qualquer sessão, escolha uma volta e toque em "Perguntar pra IA" pra
+            começar. As conversas ficam aqui pra você reabrir depois.
+          </Text>
+        </View>
+      </ScrollView>
+    );
+  }
+
+  return (
+    <ScrollView
+      contentContainerStyle={{
+        paddingTop: spacing.m,
+        paddingBottom: insets.bottom + 120,
+        paddingHorizontal: spacing.l,
+        gap: spacing.s,
+      }}
+      showsVerticalScrollIndicator={false}
+    >
+      <Text style={s.subtitle}>CONVERSAS RECENTES</Text>
+      <View style={{ marginTop: spacing.m, gap: spacing.s }}>
+        {threads.map((t) => (
+          <ThreadCard
+            key={t.cacheKey}
+            thread={t}
+            onPress={() =>
+              router.push({
+                pathname: '/coach' as any,
+                params: { sessionId: t.sessionId, lapId: t.lapId },
+              })
+            }
+          />
+        ))}
+      </View>
+    </ScrollView>
+  );
+}
+
+function ThreadCard({
+  thread,
+  onPress,
+}: {
+  thread: AiChatThreadSummary;
+  onPress: () => void;
+}) {
+  const providerName = (() => {
+    try {
+      return getClient(thread.provider as any).meta.displayName;
+    } catch {
+      return thread.provider;
+    }
+  })();
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [s.threadCard, pressed && { opacity: 0.7 }]}
+    >
+      <View style={s.threadHeader}>
+        <Text style={s.threadTrack} numberOfLines={1}>
+          {thread.trackName ?? 'Sessão removida'}
+        </Text>
+        <Text style={s.threadTime}>{relativeTime(thread.updatedAt)}</Text>
+      </View>
+      <View style={s.threadMetaRow}>
+        {thread.lapDurationMs != null && (
+          <Text style={[s.threadLap, typography.mono]}>{fmtLap(thread.lapDurationMs)}</Text>
+        )}
+        <View style={s.threadProvider}>
+          <Text style={s.threadProviderText}>{providerName}</Text>
+        </View>
+        <Text style={s.threadMsgCount}>
+          {Math.max(0, Math.floor((thread.messageCount - 1) / 2))} pergunta{thread.messageCount > 3 ? 's' : ''}
+        </Text>
+      </View>
+      <Text style={s.threadPreview} numberOfLines={2}>
+        {thread.preview}
+      </Text>
+    </Pressable>
+  );
+}
+
+// ===== Componentes reutilizados (TrendsTab) =====
 
 function Stat({
   label,
@@ -114,7 +320,6 @@ function Stat({
 }
 
 function BreakdownPill({ label, value }: { label: string; value: number }) {
-  // Cor depende da nota
   const color =
     value >= 80 ? colors.success : value >= 60 ? colors.warning : colors.danger;
   return (
@@ -286,5 +491,87 @@ const s = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
     lineHeight: 19,
+  },
+
+  threadCard: {
+    padding: spacing.m,
+    borderRadius: radius.l,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 6,
+  },
+  threadHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.s,
+  },
+  threadTrack: {
+    flex: 1,
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  threadTime: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  threadMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.s,
+  },
+  threadLap: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  threadProvider: {
+    backgroundColor: colors.accentPurple + '22',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  threadProviderText: {
+    color: colors.accentPurple,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  threadMsgCount: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
+    marginLeft: 'auto',
+  },
+  threadPreview: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 4,
+  },
+
+  quickActions: {
+    flexDirection: 'row',
+    gap: spacing.s,
+    marginBottom: spacing.l,
+  },
+  quickCard: {
+    flex: 1,
+    padding: spacing.m,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.l,
+    alignItems: 'center',
+  },
+  quickEmoji: { fontSize: 22, marginBottom: 4 },
+  quickLabel: {
+    color: colors.textPrimary,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
 });

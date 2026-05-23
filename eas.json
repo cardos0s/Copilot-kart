@@ -18,10 +18,18 @@
       }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "ios": {
+        "resourceClass": "m-medium"
+      }
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "ios": {
+        "ascAppId": "PRECHEER_DEPOIS_DE_CRIAR_NO_APP_STORE_CONNECT",
+        "appleTeamId": "PREENCHER_DEPOIS"
+      }
+    }
   }
 }

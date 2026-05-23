@@ -6,7 +6,7 @@ import * as Location from 'expo-location';
 import Svg, { Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TRACKS, TrackRef, distanceKm, findTrackById } from '../src/data/tracks';
-import { getTrackReference, listTrackReferences, TrackReference, deleteTrackReference } from '../src/storage/db';
+import { listAllLayoutsGrouped, TrackLayout } from '../src/storage/db';
 import { getProfile } from '../src/storage/profile';
 import { TrackSilhouette } from '../src/components/TrackSilhouette';
 import { colors, spacing, radius, typography } from '../src/theme';
@@ -20,7 +20,10 @@ type TrackRow = {
   lat: number;
   lng: number;
   distanceKm: number | null;
-  reference: TrackReference | null;
+  /** Layout marcado como default (ou o mais recente). Null se a pista ainda não tem nenhum. */
+  defaultLayout: TrackLayout | null;
+  /** Quantos layouts essa pista tem ao todo — vira badge "N traçados" quando >1. */
+  layoutCount: number;
   isHome: boolean;
 };
 
@@ -64,16 +67,16 @@ export default function NewSession() {
   const [userLat, setUserLat] = useState<number | null>(null);
   const [userLng, setUserLng] = useState<number | null>(null);
   const [locating, setLocating] = useState(true);
-  const [references, setReferences] = useState<TrackReference[]>([]);
+  const [layoutsByTrack, setLayoutsByTrack] = useState<Map<string, TrackLayout[]>>(new Map());
   const [homeTrackId, setHomeTrackId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    const [refs, profile] = await Promise.all([
-      listTrackReferences(),
+    const [grouped, profile] = await Promise.all([
+      listAllLayoutsGrouped(),
       getProfile(),
     ]);
-    setReferences(refs);
+    setLayoutsByTrack(grouped);
     setHomeTrackId(profile?.homeTrackId ?? null);
     setLoading(false);
   }, []);
@@ -100,22 +103,28 @@ export default function NewSession() {
   }, []);
 
   const rows: TrackRow[] = useMemo(() => {
-    const refMap = new Map(references.map((r) => [r.trackId, r]));
-    const all = TRACKS.map<TrackRow>((t) => ({
-      id: t.id,
-      name: t.name,
-      shortName: t.shortName,
-      city: t.city,
-      state: t.state,
-      lat: t.lat,
-      lng: t.lng,
-      distanceKm:
-        userLat !== null && userLng !== null
-          ? distanceKm(userLat, userLng, t.lat, t.lng)
-          : null,
-      reference: refMap.get(t.id) ?? null,
-      isHome: t.id === homeTrackId,
-    }));
+    const all = TRACKS.map<TrackRow>((t) => {
+      const layouts = layoutsByTrack.get(t.id) ?? [];
+      // listAllLayoutsGrouped ordena: is_default DESC, recorded_at DESC.
+      // O primeiro é o default (se houver).
+      const defaultLayout = layouts[0] ?? null;
+      return {
+        id: t.id,
+        name: t.name,
+        shortName: t.shortName,
+        city: t.city,
+        state: t.state,
+        lat: t.lat,
+        lng: t.lng,
+        distanceKm:
+          userLat !== null && userLng !== null
+            ? distanceKm(userLat, userLng, t.lat, t.lng)
+            : null,
+        defaultLayout,
+        layoutCount: layouts.length,
+        isHome: t.id === homeTrackId,
+      };
+    });
 
     const q = query.trim().toLowerCase();
     const filtered = q
@@ -127,102 +136,30 @@ export default function NewSession() {
         )
       : all;
 
-    // Ordem: pista de casa → pistas com referência → resto (por distância se disponível)
+    // Ordem: pista de casa → pistas com layout → resto (por distância se disponível)
     return [...filtered].sort((a, b) => {
       if (a.isHome && !b.isHome) return -1;
       if (!a.isHome && b.isHome) return 1;
-      if (a.reference && !b.reference) return -1;
-      if (!a.reference && b.reference) return 1;
+      if (a.defaultLayout && !b.defaultLayout) return -1;
+      if (!a.defaultLayout && b.defaultLayout) return 1;
       if (a.distanceKm !== null && b.distanceKm !== null) {
         return a.distanceKm - b.distanceKm;
       }
       return 0;
     });
-  }, [query, userLat, userLng, references, homeTrackId]);
+  }, [query, userLat, userLng, layoutsByTrack, homeTrackId]);
 
+  // Tap em qualquer pista → leva pra tela de escolha de traçado. Ela cuida
+  // de todos os casos (0 layouts, 1 layout, N layouts, gravar novo). Esta
+  // tela aqui só descobre QUAL pista.
   const handleSelectTrack = (row: TrackRow) => {
-    if (row.reference) {
-      // Já tem referência: ação primária = correr. Android Alert tem limite
-      // de 3 botões, então "Apagar referência" mora no long-press.
-      Alert.alert(
-        row.shortName,
-        `Referência atual: ${formatLap(row.reference.durationMs)}`,
-        [
-          { text: 'Bora correr', onPress: () => startRace(row) },
-          { text: 'Regravar referência', onPress: () => startReference(row) },
-          { text: 'Cancelar', style: 'cancel' },
-        ]
-      );
-    } else {
-      // Sem referência — explica o fluxo antes
-      Alert.alert(
-        `Primeiro conhecer ${row.shortName}`,
-        'Para analisar suas voltas, preciso aprender a pista. Dê algumas voltas tranquilas e vou desenhar o traçado.',
-        [
-          { text: 'Agora não', style: 'cancel' },
-          { text: 'Começar reconhecimento', onPress: () => startReference(row) },
-        ]
-      );
-    }
-  };
-
-  const startReference = (row: TrackRow) => {
     router.push({
-      pathname: '/recording-reference',
+      pathname: '/track-layouts-picker' as any,
       params: {
         trackId: row.id,
         trackName: row.name,
       },
     });
-  };
-
-  /**
-   * Long-press na pista — abre menu de gerenciamento da referência (incluindo
-   * "Apagar"). Mantém o tap simples como ação primária (correr ou reconhecer).
-   */
-  const handleLongPressTrack = (row: TrackRow) => {
-    if (!row.reference) return; // sem ref, long-press não faz nada
-    Alert.alert(
-      `Gerenciar ${row.shortName}`,
-      `Referência atual: ${formatLap(row.reference.durationMs)}`,
-      [
-        {
-          text: 'Apagar referência',
-          style: 'destructive',
-          onPress: () => confirmDeleteReference(row),
-        },
-        { text: 'Regravar referência', onPress: () => startReference(row) },
-        { text: 'Cancelar', style: 'cancel' },
-      ]
-    );
-  };
-
-  const startRace = (row: TrackRow) => {
-    router.push({
-      pathname: '/recording',
-      params: {
-        trackId: row.id,
-        trackName: row.name,
-      },
-    });
-  };
-
-  const confirmDeleteReference = (row: TrackRow) => {
-    Alert.alert(
-      'Apagar referência?',
-      `A referência atual de ${row.shortName} será removida. Isso não apaga sessões anteriores.`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Apagar',
-          style: 'destructive',
-          onPress: async () => {
-            await deleteTrackReference(row.id);
-            await load();
-          },
-        },
-      ]
-    );
   };
 
   if (loading) {
@@ -263,19 +200,17 @@ export default function NewSession() {
             <Pressable
               key={row.id}
               onPress={() => handleSelectTrack(row)}
-              onLongPress={() => handleLongPressTrack(row)}
-              delayLongPress={400}
               style={({ pressed }) => [
                 s.row,
-                row.reference && s.rowReady,
+                row.defaultLayout && s.rowReady,
                 row.isHome && s.rowHome,
                 pressed && { opacity: 0.85 },
               ]}
             >
               <View style={s.iconBox}>
-                {row.reference && row.reference.samples.length > 2 ? (
+                {row.defaultLayout && row.defaultLayout.samples.length > 2 ? (
                   <TrackSilhouette
-                    samples={row.reference.samples}
+                    samples={row.defaultLayout.samples}
                     width={60}
                     height={44}
                     strokeColor={colors.primary}
@@ -297,11 +232,12 @@ export default function NewSession() {
                   {row.distanceKm !== null && ` · ${Math.round(row.distanceKm)} km`}
                 </Text>
                 <View style={s.rowStatus}>
-                  {row.reference ? (
+                  {row.defaultLayout ? (
                     <>
                       <View style={s.statusDot} />
                       <Text style={s.statusReady}>
-                        Referência {formatLap(row.reference.durationMs)}
+                        {formatLap(row.defaultLayout.durationMs)}
+                        {row.layoutCount > 1 && ` · ${row.layoutCount} traçados`}
                       </Text>
                     </>
                   ) : (

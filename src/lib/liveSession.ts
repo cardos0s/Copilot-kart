@@ -24,12 +24,43 @@ export type LiveSample = {
   lapElapsedMs?: number;
   bestLapMs?: number | null;
   deltaVsRefMs?: number | null;
+  // Setores — preenchidos só quando app tem layout reference carregada
+  currentSectorIdx?: 0 | 1 | 2 | null;
+  currentSectorElapsedMs?: number | null;
+  s1Ms?: number | null;
+  s2Ms?: number | null;
+  s3Ms?: number | null;
+  // Altitude (GPS + barômetro). Pra elevation profile + 3D viewer.
+  altitude?: number | null;
+  altitudeAccuracy?: number | null;
 };
 
 export type LiveLap = {
   lapNumber: number;
   durationMs: number;
   finishedAt: number;
+  // Setores da volta fechada (null se sem layout ref)
+  s1Ms?: number | null;
+  s2Ms?: number | null;
+  s3Ms?: number | null;
+};
+
+/**
+ * Mensagem da equipe pro piloto. Severidade controla a cor do overlay
+ * no app (info=verde, warning=amarelo, critical=vermelho).
+ *
+ * Texto livre limitado a 24 chars no UI da equipe — não validado aqui
+ * por simplicidade; quem renderiza decide o que cabe na tela do piloto.
+ */
+export type MessageSeverity = 'info' | 'warning' | 'critical';
+
+export type LiveMessage = {
+  id: number;
+  severity: MessageSeverity;
+  text: string;
+  sentAt: number;
+  ackedAt: number | null;
+  sentBy: string | null;
 };
 
 export type LiveSessionInfo = {
@@ -59,7 +90,7 @@ function generateCode(len = 6): string {
  * Upsert do registro de piloto no backend a partir do perfil local.
  * Retorna o id do piloto no Supabase (uuid).
  */
-async function ensurePilot(): Promise<string | null> {
+export async function ensurePilot(): Promise<string | null> {
   const supabase = getSupabase();
   if (!supabase) return null;
   const deviceId = await getDeviceId();
@@ -147,6 +178,13 @@ export async function publishSample(sessionId: string, sample: LiveSample): Prom
     lap_elapsed_ms: sample.lapElapsedMs ?? null,
     best_lap_ms: sample.bestLapMs ?? null,
     delta_vs_ref_ms: sample.deltaVsRefMs ?? null,
+    current_sector_idx: sample.currentSectorIdx ?? null,
+    current_sector_elapsed_ms: sample.currentSectorElapsedMs ?? null,
+    s1_ms: sample.s1Ms ?? null,
+    s2_ms: sample.s2Ms ?? null,
+    s3_ms: sample.s3Ms ?? null,
+    altitude: sample.altitude ?? null,
+    altitude_accuracy: sample.altitudeAccuracy ?? null,
   });
   if (error && __DEV__) console.warn('[liveSession] publishSample error:', error.message);
 }
@@ -159,8 +197,47 @@ export async function publishLap(sessionId: string, lap: LiveLap): Promise<void>
     lap_number: lap.lapNumber,
     duration_ms: lap.durationMs,
     finished_at: new Date(lap.finishedAt).toISOString(),
+    s1_ms: lap.s1Ms ?? null,
+    s2_ms: lap.s2Ms ?? null,
+    s3_ms: lap.s3Ms ?? null,
   });
   if (error && __DEV__) console.warn('[liveSession] publishLap error:', error.message);
+}
+
+/**
+ * Manda mensagem da equipe pro piloto. Insert simples em live_messages —
+ * o piloto recebe via realtime no canal `live:<sessionId>`.
+ *
+ * `sentBy` é só etiqueta de contexto (nome do coach, ex). Não é auth.
+ * Texto deve ser curto (24 chars no UI) mas DB não força — caller cuida.
+ */
+export async function publishMessage(
+  sessionId: string,
+  msg: { severity: MessageSeverity; text: string; sentBy?: string }
+): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  const { error } = await supabase.from('live_messages').insert({
+    live_session_id: sessionId,
+    severity: msg.severity,
+    text: msg.text,
+    sent_by: msg.sentBy ?? null,
+  });
+  if (error && __DEV__) console.warn('[liveSession] publishMessage error:', error.message);
+}
+
+/**
+ * Marca uma mensagem como reconhecida pelo piloto (renderizou). Útil pro
+ * histórico da equipe ver latência ou se a mensagem foi vista.
+ * Não-bloqueante — falha silenciosa.
+ */
+export async function ackMessage(messageId: number): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  await supabase
+    .from('live_messages')
+    .update({ acked_at: new Date().toISOString() })
+    .eq('id', messageId);
 }
 
 export async function loadLiveSessionByCode(code: string): Promise<{
@@ -203,10 +280,28 @@ export async function loadLiveSessionByCode(code: string): Promise<{
   return { session, recentSamples, laps };
 }
 
+/**
+ * Histórico de mensagens da sessão, ordem cronológica (mais antiga
+ * primeiro). Usado no debrief pós-sessão e como bootstrap quando a
+ * equipe abre o painel no meio de uma sessão em andamento.
+ */
+export async function loadMessages(sessionId: string): Promise<LiveMessage[]> {
+  const supabase = getSupabase();
+  if (!supabase) return [];
+  const { data } = await supabase
+    .from('live_messages')
+    .select('*')
+    .eq('live_session_id', sessionId)
+    .order('sent_at', { ascending: true });
+  return (data ?? []).map(mapMessageRow);
+}
+
 export type SubscribeCallbacks = {
   onSample?: (s: LiveSample) => void;
   onLap?: (l: LiveLap) => void;
   onSessionUpdate?: (info: LiveSessionInfo) => void;
+  /** Mensagem nova da equipe pro piloto (ou eco pra outros viewers). */
+  onMessage?: (m: LiveMessage) => void;
 };
 
 /**
@@ -257,6 +352,18 @@ export function subscribeLiveSession(
         callbacks.onSessionUpdate?.(mapSessionRow(payload.new));
       }
     )
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'live_messages',
+        filter: `live_session_id=eq.${sessionId}`,
+      },
+      (payload) => {
+        callbacks.onMessage?.(mapMessageRow(payload.new));
+      }
+    )
     .subscribe();
 
   return () => {
@@ -295,6 +402,16 @@ function mapSampleRow(row: any): LiveSample {
     lapElapsedMs: row.lap_elapsed_ms ?? undefined,
     bestLapMs: row.best_lap_ms ?? null,
     deltaVsRefMs: row.delta_vs_ref_ms ?? null,
+    currentSectorIdx:
+      row.current_sector_idx !== null && row.current_sector_idx !== undefined
+        ? (row.current_sector_idx as 0 | 1 | 2)
+        : null,
+    currentSectorElapsedMs: row.current_sector_elapsed_ms ?? null,
+    s1Ms: row.s1_ms ?? null,
+    s2Ms: row.s2_ms ?? null,
+    s3Ms: row.s3_ms ?? null,
+    altitude: row.altitude ?? null,
+    altitudeAccuracy: row.altitude_accuracy ?? null,
   };
 }
 
@@ -303,5 +420,19 @@ function mapLapRow(row: any): LiveLap {
     lapNumber: row.lap_number,
     durationMs: row.duration_ms,
     finishedAt: new Date(row.finished_at).getTime(),
+    s1Ms: row.s1_ms ?? null,
+    s2Ms: row.s2_ms ?? null,
+    s3Ms: row.s3_ms ?? null,
+  };
+}
+
+function mapMessageRow(row: any): LiveMessage {
+  return {
+    id: row.id,
+    severity: row.severity as MessageSeverity,
+    text: row.text,
+    sentAt: new Date(row.sent_at).getTime(),
+    ackedAt: row.acked_at ? new Date(row.acked_at).getTime() : null,
+    sentBy: row.sent_by ?? null,
   };
 }

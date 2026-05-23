@@ -2,26 +2,45 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ErrorBoundary } from '../../src/components/ErrorBoundary';
 import {
   getSession,
   getLapsForSession,
   Session,
-  getTrackReference,
-  TrackReference,
+  getDefaultLayoutForTrack,
+  getLayout,
+  TrackLayout,
 } from '../../src/storage/db';
-import { LapRecord, analyzeLap, cleanSamples, matchLapToReference } from '../../src/lib/analysis';
+import {
+  LapRecord,
+  analyzeLap,
+  cleanSamples,
+  matchLapToReference,
+  repairDegenerateTimestamps,
+} from '../../src/lib/analysis';
 import { buildReferenceLap } from '../../src/lib/geometry';
 import { Corner, describeSector, detectCorners } from '../../src/lib/corners';
 import { msToKmh, peakSpeedInSectorMs, peakSpeedMs } from '../../src/lib/speed';
-import { isAiEnabled, requestAiAnalysis } from '../../src/lib/aiAnalysis';
+import { consumePendingCelebration } from '../../src/lib/celebrationQueue';
+import {
+  Achievement,
+  Milestone,
+  levelForXp,
+  nextLevel,
+  xpProgressInLevel,
+} from '../../src/lib/gamification';
+import { PbUnlocked } from '../../src/components/celebrations/PbUnlocked';
+import { FloatingCoach } from '../../src/components/FloatingCoach';
+import { LevelUp } from '../../src/components/celebrations/LevelUp';
+import { AchievementUnlocked } from '../../src/components/celebrations/AchievementUnlocked';
 import { findTrackById } from '../../src/data/tracks';
 import {
   ColoredTrackPath,
@@ -42,7 +61,7 @@ import { colors, radius, spacing, typography } from '../../src/theme';
 // e a silhueta SVG com markers de eventos é mais legível pro caso de uso
 // de análise de volta (sem fotos de satélite a distrair).
 
-type ViewMode = 'comparar' | 'setores' | 'mapa' | 'ia';
+type ViewMode = 'comparar' | 'setores' | 'mapa';
 type ColorMode = 'delta' | 'speed';
 
 function fmtLap(ms: number) {
@@ -100,15 +119,77 @@ function percentile(values: number[], p: number) {
 }
 
 function SessionScreenInner() {
+  const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [session, setSession] = useState<Session | null>(null);
   const [laps, setLaps] = useState<LapRecord[]>([]);
-  const [reference, setReference] = useState<TrackReference | null>(null);
+  const [reference, setReference] = useState<TrackLayout | null>(null);
   const [selectedLapId, setSelectedLapId] = useState<string | null>(null);
   const [mode, setMode] = useState<ViewMode>('comparar');
   const [colorMode, setColorMode] = useState<ColorMode>('delta');
   const [focusedSectorIdx, setFocusedSectorIdx] = useState<number | null>(null);
+  const [mapFullscreen, setMapFullscreen] = useState(false);
   const [loading, setLoading] = useState(true);
+  // Fila de modais de celebração — ordem: PB → cada Achievement → Level Up.
+  // O modal ativo fica em `celebrationStep`; ao fechar, avança pro próximo.
+  type CelebrationStep =
+    | { kind: 'pb'; pb: Extract<Milestone, { kind: 'pb' }>; callouts: Array<{ id: string; icon: string; label: string }> }
+    | { kind: 'achievement'; achievement: Achievement; index: number; total: number }
+    | { kind: 'level'; levelUp: Extract<Milestone, { kind: 'level_up' }>; newXp: number };
+  const [celebrationQueue, setCelebrationQueue] = useState<CelebrationStep[]>([]);
+  const celebrationStep = celebrationQueue[0] ?? null;
+  const advanceCelebration = () => setCelebrationQueue((q) => q.slice(1));
+  // Quando true, pelo menos uma volta (ou a referência) teve timestamps
+  // degenerados e foi reparada com tempos lineares — mostra um aviso na UI
+  // pra deixar claro que os deltas por setor são aproximados.
+  const [approxTimestamps, setApproxTimestamps] = useState(false);
+
+  // Lê a queue de celebração na 1ª montagem e monta a fila de modais na
+  // ordem PB → Achievements → Level Up. Ao fechar cada um, avança.
+  useEffect(() => {
+    if (!id) return;
+    const pending = consumePendingCelebration(id);
+    if (!pending) return;
+    const queue: CelebrationStep[] = [];
+
+    const pb = pending.milestones.find((m) => m.kind === 'pb') as
+      | Extract<Milestone, { kind: 'pb' }>
+      | undefined;
+    if (pb) {
+      const callouts: Array<{ id: string; icon: string; label: string }> = [];
+      for (const m of pending.milestones) {
+        if (m.kind === 'sub_threshold') {
+          callouts.push({
+            id: `sub_${m.thresholdMs}`,
+            icon: '⚡',
+            label: `Sub-${Math.floor(m.thresholdMs / 1000)}s`,
+          });
+        } else if (m.kind === 'streak') {
+          callouts.push({ id: 'streak', icon: '🔥', label: `Streak ×${m.count}` });
+        }
+      }
+      callouts.push({ id: 'xp', icon: '◆', label: `+${pending.xpGained} XP` });
+      queue.push({ kind: 'pb', pb, callouts });
+    }
+
+    pending.achievements.forEach((ach, i) =>
+      queue.push({
+        kind: 'achievement',
+        achievement: ach,
+        index: i,
+        total: pending.achievements.length,
+      })
+    );
+
+    const levelUp = pending.milestones.find((m) => m.kind === 'level_up') as
+      | Extract<Milestone, { kind: 'level_up' }>
+      | undefined;
+    if (levelUp) {
+      queue.push({ kind: 'level', levelUp, newXp: pending.newXp });
+    }
+
+    setCelebrationQueue(queue);
+  }, [id]);
 
   // Sem lock de orientação aqui — a análise é vista no pit/em casa,
   // então respeitamos a rotação que o usuário escolher (portrait ou landscape).
@@ -122,19 +203,50 @@ function SessionScreenInner() {
       setLoading(true);
       const ses = await getSession(id);
       const lapsRaw = await getLapsForSession(id);
-      const cleanedLaps = lapsRaw.map((l) => ({
-        ...l,
-        samples: cleanSamples(l.samples, 10),
-      }));
 
-      let ref: TrackReference | null = null;
-      if (ses?.trackId) {
-        ref = await getTrackReference(ses.trackId);
+      // Prioriza o layout explicitamente gravado na sessão; se nada vier
+      // (sessões antigas pré-layout, ou sem trackId), cai pro default da pista.
+      let ref: TrackLayout | null = null;
+      if (ses?.layoutId) {
+        ref = await getLayout(ses.layoutId);
+      }
+      if (!ref && ses?.trackId) {
+        ref = await getDefaultLayoutForTrack(ses.trackId);
+      }
+
+      // Pipeline de cada volta: limpa por accuracy, depois detecta e repara
+      // timestamps degenerados. O reparo usa durationMs/startedAt salvos no
+      // banco (que vieram do lapDetector quando os t ainda eram válidos) pra
+      // sintetizar tempos linearmente espaçados. Sem isso, voltas antigas
+      // gravadas com loc.timestamp=0 mostravam "Confiança baixa 20/20" e
+      // todos os setores zerados.
+      let anyRepaired = false;
+      const cleanedLaps = lapsRaw.map((l) => {
+        const cleaned = cleanSamples(l.samples, 10);
+        const { samples: repairedSamples, repaired } = repairDegenerateTimestamps(
+          cleaned,
+          l.durationMs,
+          l.startedAt,
+        );
+        if (repaired) anyRepaired = true;
+        return { ...l, samples: repairedSamples };
+      });
+
+      if (ref && ref.samples.length >= 2) {
+        const { samples: repairedRefSamples, repaired } = repairDegenerateTimestamps(
+          ref.samples,
+          ref.durationMs,
+        );
+        if (repaired) {
+          anyRepaired = true;
+          ref = { ...ref, samples: repairedRefSamples };
+        }
       }
 
       setSession(ses);
       setLaps(cleanedLaps);
       setReference(ref);
+      setApproxTimestamps(anyRepaired);
       setLoading(false);
     })();
   }, [id]);
@@ -327,7 +439,14 @@ function SessionScreenInner() {
 
   return (
     <View style={s.root}>
-      <ScreenHeader title="ANÁLISE DE VOLTAS" subtitle={trackDisplayName} />
+      <ScreenHeader
+        title="ANÁLISE DE VOLTAS"
+        subtitle={
+          reference?.name
+            ? `${trackDisplayName} · ${reference.name}`
+            : trackDisplayName
+        }
+      />
 
       <ScrollView
         ref={mapScrollRef}
@@ -371,6 +490,44 @@ function SessionScreenInner() {
                 </Text>
               </View>
             </Card>
+          </View>
+        )}
+
+        {/* "Perguntar pra IA" foi removido — agora a função vive no botão
+            flutuante (AssistiveTouch-style) que aparece automaticamente em
+            todas as telas. Mantemos só o atalho de comparar voltas. */}
+        {!isSelectedReference && laps.length >= 2 && (
+          <View style={{ paddingHorizontal: spacing.l, marginTop: spacing.m, gap: spacing.s }}>
+            <Pressable
+              onPress={() => {
+                const otherLap =
+                  laps.find((l) => l.id !== selected.id && l.id === sessionBest.id) ??
+                  laps.find((l) => l.id !== selected.id);
+                if (!otherLap) return;
+                router.push({
+                  pathname: '/lap-compare' as any,
+                  params: {
+                    sessionA: id,
+                    lapA: selected.id,
+                    sessionB: id,
+                    lapB: otherLap.id,
+                  },
+                });
+              }}
+              style={({ pressed }) => [s.askAiBtn, pressed && { opacity: 0.7 }]}
+            >
+              <Text style={s.askAiBtnText}>Comparar com a melhor volta</Text>
+            </Pressable>
+
+            {/* Replay 3D — viewer com todas as voltas + kart animado +
+              * marcação de rodadas. Usa react-three-fiber, então abre tela
+              * dedicada (não inline) pra liberar tela inteira pro GL. */}
+            <Pressable
+              onPress={() => router.push(`/replay/${id}` as any)}
+              style={({ pressed }) => [s.replayBtn, pressed && { opacity: 0.7 }]}
+            >
+              <Text style={s.replayBtnText}>Ver replay da sessão</Text>
+            </Pressable>
           </View>
         )}
 
@@ -425,10 +582,22 @@ function SessionScreenInner() {
               { value: 'comparar', label: 'Comparar' },
               { value: 'setores', label: 'Setores' },
               { value: 'mapa', label: 'Mapa' },
-              { value: 'ia', label: 'Coach IA' },
             ]}
           />
         </View>
+
+        {approxTimestamps && (mode === 'setores' || mode === 'mapa') && (
+          <View style={s.approxBanner}>
+            <Text style={s.approxBannerTitle}>Tempos por setor aproximados</Text>
+            <Text style={s.approxBannerBody}>
+              A gravação dessa sessão salvou os pontos GPS sem timestamps válidos
+              (bug em versões antigas do app). Reconstruí os tempos de forma uniforme
+              pra liberar a análise, mas os deltas por setor não refletem onde você
+              realmente perdeu ou ganhou tempo dentro da volta. Gravações novas já
+              gravam timestamps corretos.
+            </Text>
+          </View>
+        )}
 
         {mode === 'comparar' && (
           <ComparePanel
@@ -465,20 +634,92 @@ function SessionScreenInner() {
             onColorModeChange={setColorMode}
             focusedSectorIdx={focusedSectorIdx}
             onClearFocus={() => setFocusedSectorIdx(null)}
+            onExpandRequest={() => setMapFullscreen(true)}
+            onOpenDetailedMap={() =>
+              router.push({
+                pathname: '/track-map' as any,
+                params: { sessionId: id, lapId: selected.id },
+              })
+            }
           />
         )}
 
-        {mode === 'ia' && (
-          <AiCoachPanel
-            sessionId={id}
-            selectedLap={selected}
-            analysis={analysis}
-            refDurationMs={refDurationMs}
-            trackName={session!.trackName}
-            isSelectedReference={isSelectedReference}
-          />
-        )}
       </ScrollView>
+
+      <Modal
+        visible={mapFullscreen}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setMapFullscreen(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: colors.bg }}>
+          <ScreenHeader
+            title="MAPA"
+            subtitle={`${trackDisplayName} · ${fmtLap(selected.durationMs)}`}
+            onBack={() => setMapFullscreen(false)}
+          />
+          <ScrollView contentContainerStyle={{ paddingBottom: spacing.huge }}>
+            <MapPanel
+              selected={selected}
+              sectors={sectors}
+              matchedCurrent={matchedCurrent}
+              refLap={refLap}
+              isSelectedReference={isSelectedReference}
+              maxAbsDelta={maxAbsDelta}
+              refSamples={refSamples}
+              corners={corners}
+              colorMode={colorMode}
+              onColorModeChange={setColorMode}
+              focusedSectorIdx={focusedSectorIdx}
+              onClearFocus={() => setFocusedSectorIdx(null)}
+              expanded
+            />
+          </ScrollView>
+        </View>
+      </Modal>
+
+      <PbUnlocked
+        visible={celebrationStep?.kind === 'pb'}
+        onClose={advanceCelebration}
+        onContinue={advanceCelebration}
+        durationMs={celebrationStep?.kind === 'pb' ? celebrationStep.pb.durationMs : 0}
+        deltaMs={celebrationStep?.kind === 'pb' ? celebrationStep.pb.deltaMs : null}
+        callouts={celebrationStep?.kind === 'pb' ? celebrationStep.callouts : []}
+      />
+      <AchievementUnlocked
+        visible={celebrationStep?.kind === 'achievement'}
+        onClose={advanceCelebration}
+        achievement={celebrationStep?.kind === 'achievement' ? celebrationStep.achievement : null}
+        currentIndex={celebrationStep?.kind === 'achievement' ? celebrationStep.index : 0}
+        totalCount={celebrationStep?.kind === 'achievement' ? celebrationStep.total : 0}
+      />
+      <FloatingCoach />
+      <LevelUp
+        visible={celebrationStep?.kind === 'level'}
+        onClose={advanceCelebration}
+        level={
+          celebrationStep?.kind === 'level'
+            ? celebrationStep.levelUp.to
+            : { index: 1, name: 'Cadete', threshold: 0, title: 'Cadete' }
+        }
+        xpCurrent={
+          celebrationStep?.kind === 'level'
+            ? xpProgressInLevel(celebrationStep.newXp).earned
+            : 0
+        }
+        xpNeeded={
+          celebrationStep?.kind === 'level'
+            ? xpProgressInLevel(celebrationStep.newXp).needed
+            : 0
+        }
+        unlocks={
+          celebrationStep?.kind === 'level'
+            ? [
+                { icon: '◆', title: 'Mais XP por sessão', subtitle: `Você agora ganha bônus por chegar ao nível ${celebrationStep.levelUp.to.name}` },
+              ]
+            : []
+        }
+      />
     </View>
   );
 }
@@ -525,11 +766,24 @@ function ComparePanel({
   if (sectors.length === 0) return null;
 
   const third = Math.ceil(sectors.length / 3);
+  // Agrupa os mini-setores em S1/S2/S3 (terços da pista). Setores inválidos
+  // (sec.valid === false) têm currentMs=0 e delta=0 — ignorá-los na soma
+  // evita mostrar "00:00.000" enganoso pro piloto quando o map-matching da
+  // volta atual saiu degenerado naquela região. Se TODOS os setores do
+  // terço são inválidos, devolvemos null e a UI renderiza "—".
   const groups = [0, 1, 2].map((g) => {
     const slice = sectors.slice(g * third, (g + 1) * third);
-    if (slice.length === 0) return { best: 0, current: 0, delta: 0 };
+    if (slice.length === 0) {
+      return { best: null as number | null, current: null as number | null, delta: null as number | null };
+    }
+    const validSlice = slice.filter((sec) => sec.valid !== false);
     const refSum = slice.reduce((a, sec) => a + (sec.referenceMs ?? 0), 0);
-    const curSum = slice.reduce((a, sec) => a + (sec.currentMs ?? 0), 0);
+    if (validSlice.length === 0) {
+      // Terço todo sem dados confiáveis — mostra "—" no atual e na diferença,
+      // mas ainda exibe o tempo da referência (esse é confiável).
+      return { best: refSum, current: null, delta: null };
+    }
+    const curSum = validSlice.reduce((a, sec) => a + (sec.currentMs ?? 0), 0);
     return { best: refSum, current: curSum, delta: curSum - refSum };
   });
 
@@ -552,11 +806,11 @@ function ComparePanel({
             weights={[1, 1.4, 1.4, 1]}
             cells={[
               { text: `S${i + 1}`, tone: 'muted', align: 'left' },
-              { text: fmtLap(g.best), tone: 'success', align: 'right' },
-              { text: fmtLap(g.current), tone: 'magenta', align: 'right' },
+              { text: g.best != null ? fmtLap(g.best) : '—', tone: 'success', align: 'right' },
+              { text: g.current != null ? fmtLap(g.current) : '—', tone: 'magenta', align: 'right' },
               {
-                text: fmtDelta(g.delta),
-                tone: g.delta > 0 ? 'danger' : 'success',
+                text: g.delta != null ? fmtDelta(g.delta) : '—',
+                tone: g.delta == null ? 'muted' : g.delta > 0 ? 'danger' : 'success',
                 align: 'right',
               },
             ]}
@@ -736,6 +990,9 @@ function MapPanel({
   onColorModeChange,
   focusedSectorIdx,
   onClearFocus,
+  expanded,
+  onExpandRequest,
+  onOpenDetailedMap,
 }: {
   selected: LapRecord;
   sectors: any[];
@@ -749,6 +1006,12 @@ function MapPanel({
   onColorModeChange: (m: ColorMode) => void;
   focusedSectorIdx: number | null;
   onClearFocus: () => void;
+  /** Quando true, o mapa toma o máximo de tela disponível (modo fullscreen). */
+  expanded?: boolean;
+  /** Se passado, mostra botão "Expandir" no header pra abrir versão fullscreen. */
+  onExpandRequest?: () => void;
+  /** Se passado, mostra botão pra abrir a tela detalhada (track-map.tsx). */
+  onOpenDetailedMap?: () => void;
 }) {
   const mapPoints = selected.samples.map((p) => ({ latitude: p.lat, longitude: p.lng }));
 
@@ -904,11 +1167,38 @@ function MapPanel({
 
   const focusedSector = focusedSectorIdx != null ? sectors[focusedSectorIdx] : null;
   const focusedLabel = focusedSector ? describeSector(focusedSector, corners) : null;
-  const { width } = Dimensions.get('window');
-  const trackSize = Math.min(width - spacing.l * 2, 380);
+  const { width, height } = Dimensions.get('window');
+  // Em modo fullscreen, o mapa ocupa o maior quadrado possível dentro da
+  // tela menos paddings e controles (~150px reservados pra toggle+legenda).
+  const trackSize = expanded
+    ? Math.min(width - spacing.l * 2, height - 200)
+    : Math.min(width - spacing.l * 2, 380);
 
   return (
     <View style={{ paddingHorizontal: spacing.l, paddingTop: spacing.l }}>
+      {(onExpandRequest || onOpenDetailedMap) && (
+        <View style={{ flexDirection: 'row', gap: spacing.s, justifyContent: 'flex-end', marginBottom: spacing.s }}>
+          {onOpenDetailedMap && (
+            <Pressable
+              onPress={onOpenDetailedMap}
+              style={({ pressed }) => [s.expandBtn, pressed && { opacity: 0.6 }]}
+              hitSlop={8}
+            >
+              <Text style={s.expandBtnText}>📐 Detalhado</Text>
+            </Pressable>
+          )}
+          {onExpandRequest && (
+            <Pressable
+              onPress={onExpandRequest}
+              style={({ pressed }) => [s.expandBtn, pressed && { opacity: 0.6 }]}
+              hitSlop={8}
+            >
+              <Text style={s.expandBtnText}>⛶ Tela cheia</Text>
+            </Pressable>
+          )}
+        </View>
+      )}
+
       {/* Color mode toggle */}
       {!isSelectedReference && (
         <>
@@ -991,159 +1281,6 @@ function MapPanel({
   );
 }
 
-function AiCoachPanel({
-  sessionId,
-  selectedLap,
-  analysis,
-  refDurationMs,
-  trackName,
-  isSelectedReference,
-}: {
-  sessionId: string | undefined;
-  selectedLap: LapRecord;
-  analysis: any;
-  refDurationMs: number;
-  trackName: string;
-  isSelectedReference: boolean;
-}) {
-  const [response, setResponse] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const aiOn = isAiEnabled();
-
-  // Reset quando muda a volta selecionada (chamada anterior não aplica mais)
-  useEffect(() => {
-    setResponse(null);
-    setError(null);
-  }, [selectedLap.id]);
-
-  const handleAnalyze = async () => {
-    if (!analysis) {
-      setError('Sem dados de análise pra essa volta. Tente outra.');
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const text = await requestAiAnalysis(
-        {
-          analysis,
-          lapDurationMs: selectedLap.durationMs,
-          referenceDurationMs: refDurationMs,
-          trackName,
-        },
-        { cacheKey: `${sessionId ?? 'sess'}:${selectedLap.id}` }
-      );
-      setResponse(text);
-    } catch (err: any) {
-      const code = err?.code;
-      const msg =
-        code === 'no_key'
-          ? 'A IA não está configurada — falta a API key do Claude no .env do app.'
-          : code === 'unauthorized'
-            ? 'API key inválida. Verifica no console.anthropic.com.'
-            : code === 'rate_limited'
-              ? 'Limite de uso atingido. Tenta de novo em alguns minutos.'
-              : code === 'network'
-                ? 'Sem internet. Conecta no Wi-Fi/4G e tenta de novo.'
-                : err?.message ?? 'Erro desconhecido.';
-      setError(msg);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (isSelectedReference) {
-    return (
-      <View style={{ paddingHorizontal: spacing.l, paddingTop: spacing.l }}>
-        <Card variant="glow" padding="l">
-          <Text style={s.refNoteTitle}>★ Melhor volta da sessão</Text>
-          <Text style={s.refNoteText}>
-            A IA analisa onde você perdeu tempo comparado à referência. Selecione outra
-            volta nos chips acima.
-          </Text>
-        </Card>
-      </View>
-    );
-  }
-
-  return (
-    <View style={{ paddingHorizontal: spacing.l, paddingTop: spacing.l }}>
-      <Card variant="elevated" padding="l">
-        <View style={s.aiHeader}>
-          <View style={s.aiBadge}>
-            <Text style={s.aiBadgeText}>IA</Text>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={s.aiTitle}>Coach IA</Text>
-            <Text style={s.aiSub}>
-              Análise personalizada da sua volta vs referência da pista, em PT-BR.
-            </Text>
-          </View>
-        </View>
-
-        {!aiOn && (
-          <View style={s.aiWarn}>
-            <Text style={s.aiWarnText}>
-              IA não configurada. Adicione EXPO_PUBLIC_ANTHROPIC_API_KEY no .env e rebuilde
-              o app.
-            </Text>
-          </View>
-        )}
-
-        {response && (
-          <View style={s.aiResponse}>
-            <Text style={s.aiResponseText}>{response}</Text>
-          </View>
-        )}
-
-        {error && (
-          <View style={s.aiError}>
-            <Text style={s.aiErrorText}>{error}</Text>
-          </View>
-        )}
-
-        {!response && (
-          <Pressable
-            onPress={handleAnalyze}
-            disabled={loading || !aiOn}
-            style={({ pressed }) => [
-              s.aiBtn,
-              (loading || !aiOn) && { opacity: 0.5 },
-              pressed && { opacity: 0.75 },
-            ]}
-          >
-            {loading ? (
-              <ActivityIndicator color={colors.textOnPrimary} />
-            ) : (
-              <Text style={s.aiBtnText}>
-                {error ? 'Tentar de novo' : 'Pedir análise da IA'}
-              </Text>
-            )}
-          </Pressable>
-        )}
-
-        {response && (
-          <Pressable
-            onPress={() => {
-              setResponse(null);
-              setError(null);
-            }}
-            style={({ pressed }) => [s.aiClear, pressed && { opacity: 0.6 }]}
-          >
-            <Text style={s.aiClearText}>Nova análise</Text>
-          </Pressable>
-        )}
-      </Card>
-
-      <Text style={s.aiHint}>
-        A análise consome ~$0.003 por chamada. Resultado é cacheado por volta.
-      </Text>
-    </View>
-  );
-}
-
 function LegendItem({ color, label }: { color: string; label: string }) {
   return (
     <View style={s.legendItem}>
@@ -1184,6 +1321,47 @@ const s = StyleSheet.create({
     fontWeight: '900',
     marginTop: 4,
     letterSpacing: -1,
+  },
+
+  askAiBtn: {
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  askAiBtnText: {
+    color: colors.accentPurple,
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  replayBtn: {
+    paddingVertical: 12,
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.primary + '55',
+    borderRadius: 12,
+  },
+  replayBtnText: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+
+  expandBtn: {
+    alignSelf: 'flex-end',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: spacing.s,
+  },
+  expandBtnText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '700',
   },
 
   lapChip: {
@@ -1314,6 +1492,28 @@ const s = StyleSheet.create({
     marginBottom: spacing.s,
     fontStyle: 'italic',
   },
+  approxBanner: {
+    marginHorizontal: spacing.l,
+    marginTop: spacing.m,
+    padding: spacing.m,
+    borderRadius: 10,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.warning + '55',
+  },
+  approxBannerTitle: {
+    color: colors.warning,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+    marginBottom: 4,
+    textTransform: 'uppercase',
+  },
+  approxBannerBody: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 17,
+  },
 
   modeExplain: {
     color: colors.textMuted,
@@ -1416,6 +1616,40 @@ const s = StyleSheet.create({
     lineHeight: 17,
     fontWeight: '600',
   },
+  aiContextChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: spacing.m,
+  },
+  aiContextChip: {
+    backgroundColor: colors.primaryGlow,
+    borderWidth: 1,
+    borderColor: colors.primary + '66',
+    paddingHorizontal: spacing.s,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  aiContextChipText: {
+    color: colors.primary,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  aiWarnBtn: {
+    alignSelf: 'flex-start',
+    marginTop: spacing.s,
+    paddingVertical: spacing.s,
+    paddingHorizontal: spacing.m,
+    borderRadius: 8,
+    backgroundColor: colors.warning,
+  },
+  aiWarnBtnText: {
+    color: colors.bg,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
 
   aiResponse: {
     padding: spacing.l,
@@ -1430,6 +1664,80 @@ const s = StyleSheet.create({
     fontSize: 14,
     lineHeight: 21,
     fontWeight: '500',
+  },
+
+  chatThread: {
+    gap: spacing.s,
+    marginBottom: spacing.m,
+  },
+  chatBubble: {
+    paddingVertical: spacing.m,
+    paddingHorizontal: spacing.m,
+    borderRadius: 12,
+    maxWidth: '88%',
+  },
+  chatBubbleAssistant: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.accentPurple + '55',
+  },
+  chatBubbleUser: {
+    alignSelf: 'flex-end',
+    backgroundColor: colors.primary,
+  },
+  chatBubbleText: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '500',
+  },
+  chatBubbleTextUser: {
+    color: colors.textOnPrimary,
+    fontWeight: '600',
+  },
+  chatBubbleLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.s,
+  },
+  chatBubbleLoadingText: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontStyle: 'italic',
+  },
+
+  chatInputRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: spacing.s,
+    marginTop: spacing.s,
+  },
+  chatInput: {
+    flex: 1,
+    minHeight: 42,
+    maxHeight: 120,
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    paddingHorizontal: spacing.m,
+    paddingVertical: spacing.s,
+    color: colors.textPrimary,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  chatSendBtn: {
+    paddingHorizontal: spacing.m,
+    height: 42,
+    justifyContent: 'center',
+    borderRadius: 10,
+    backgroundColor: colors.accentPurple,
+  },
+  chatSendBtnText: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    fontWeight: '800',
   },
 
   aiError: {

@@ -2,6 +2,9 @@ import { useCallback, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { clearProfile, getProfile, PilotProfile } from '../src/storage/profile';
+import { getStoredCredential } from '../src/storage/apiKey';
+import { getClient } from '../src/lib/llm';
+import { useCoachFloatingEnabled } from '../src/storage/preferences';
 import {
   BrandMark,
   Card,
@@ -21,6 +24,8 @@ const APP_VERSION = '0.1.0';
 export default function Settings() {
   const router = useRouter();
   const [profile, setProfile] = useState<PilotProfile | null>(null);
+  const [aiProviderLabel, setAiProviderLabel] = useState<string | null>(null);
+  const [coachFloatingEnabled, setCoachFloatingEnabled] = useCoachFloatingEnabled();
   const [state, setState] = useState<SettingsState>({
     unit: 'metric',
     notifications: true,
@@ -30,6 +35,9 @@ export default function Settings() {
   useFocusEffect(
     useCallback(() => {
       getProfile().then(setProfile);
+      getStoredCredential().then((c) =>
+        setAiProviderLabel(c ? getClient(c.provider).meta.displayName : null)
+      );
     }, [])
   );
 
@@ -98,6 +106,35 @@ export default function Settings() {
                 theme: p.theme === 'dark' ? 'track' : 'dark',
               }))
             }
+          />
+        </Card>
+
+        {/* Kart */}
+        <SectionLabel>KART</SectionLabel>
+        <Card variant="default" padding="none" style={s.sectionCard}>
+          <Row
+            label="Setups do kart"
+            value="Gerenciar"
+            onPress={() => router.push('/kart-setups' as any)}
+            chevron
+          />
+        </Card>
+
+        {/* IA */}
+        <SectionLabel>COACH IA</SectionLabel>
+        <Card variant="default" padding="none" style={s.sectionCard}>
+          <Row
+            label="Provider e API key"
+            value={aiProviderLabel ?? 'Não configurado'}
+            onPress={() => router.push('/ai-key' as any)}
+            chevron
+          />
+          <Divider />
+          <RowToggle
+            label="Botão flutuante"
+            sub="Aparece em todas as telas com insights novos"
+            value={coachFloatingEnabled}
+            onChange={setCoachFloatingEnabled}
           />
         </Card>
 

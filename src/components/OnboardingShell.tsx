@@ -80,7 +80,7 @@ export function OnboardingShell({
           >
             {continueLabel}
           </Text>
-          {!continueDisabled && <Text style={s.continueArrow}>→</Text>}
+          {/* arrow removida — preferência da pilota */}
         </Pressable>
       </View>
     </View>

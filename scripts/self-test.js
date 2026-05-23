@@ -337,7 +337,7 @@ const prompt = buildAnalysisPrompt({
   analysis: fakeAnalysis,
   lapDurationMs: 50000 + fakeAnalysis.totalDeltaMs,
   referenceDurationMs: 50000,
-  trackName: 'Kartódromo Leandro Melo',
+  trackName: 'Kartódromo Leandro Merlo',
 });
 
 console.log('--- SYSTEM ---');
@@ -346,3 +346,169 @@ console.log('\n--- USER ---');
 console.log(prompt.userPrompt);
 console.log('\n--- STATS ---');
 console.log('Estimated input tokens:', prompt.estimatedInputTokens);
+
+// ============================================================================
+// TESTE 3: DeltaTracker (realtime MyChron-style)
+//
+// Cenário: piloto faz volta de referência em ~36s. Depois faz a volta atual
+// 0.5s mais rápida UNIFORMEMENTE (multiplica todos os dts por 36/36.5).
+// Em qualquer ponto da pista, o delta esperado é proporcional ao progresso:
+//
+//   delta(s) ≈ - (s / totalLength) * 0.5s
+//
+// No meio da pista, delta ≈ -0.25s. No final, delta ≈ -0.5s.
+//
+// Implementação JS minimalista do tracker. Em produção usa a TS em
+// src/lib/realtimeDelta.ts — esse teste valida só a aritmética/lógica.
+// ============================================================================
+console.log('\n=== TESTE: DeltaTracker (realtime MyChron) ===\n');
+
+function makeRefLap(samples, origin) {
+  const proj = makeProjector(origin);
+  const points = samples.map((s) => ({ ...s, ...proj.toXY(s) }));
+  const cumulative = [0];
+  for (let i = 1; i < points.length; i++) {
+    const dx = points[i].x - points[i - 1].x;
+    const dy = points[i].y - points[i - 1].y;
+    cumulative.push(cumulative[i - 1] + Math.sqrt(dx * dx + dy * dy));
+  }
+  return {
+    points,
+    cumulativeDist: cumulative,
+    totalLength: cumulative[cumulative.length - 1] || 0,
+    origin,
+  };
+}
+
+function projectOnSegment(p, a, b) {
+  const abx = b.x - a.x;
+  const aby = b.y - a.y;
+  const lenSq = abx * abx + aby * aby;
+  if (lenSq === 0) {
+    const dx = p.x - a.x, dy = p.y - a.y;
+    return { dist: Math.sqrt(dx * dx + dy * dy), t: 0 };
+  }
+  const t = Math.max(0, Math.min(1, ((p.x - a.x) * abx + (p.y - a.y) * aby) / lenSq));
+  const projX = a.x + t * abx, projY = a.y + t * aby;
+  const dx = p.x - projX, dy = p.y - projY;
+  return { dist: Math.sqrt(dx * dx + dy * dy), t };
+}
+
+function matchPointToRef(p, ref) {
+  let bestDist = Infinity, bestS = 0;
+  for (let i = 0; i < ref.points.length - 1; i++) {
+    const a = ref.points[i], b = ref.points[i + 1];
+    const { dist, t } = projectOnSegment(p, a, b);
+    if (dist < bestDist) {
+      bestDist = dist;
+      const segLen = ref.cumulativeDist[i + 1] - ref.cumulativeDist[i];
+      bestS = ref.cumulativeDist[i] + t * segLen;
+    }
+  }
+  return { s: bestS, dist: bestDist };
+}
+
+// Mapeia cada sample da REF pro (s, tMs desde t0) — quando vamos interpolar.
+function buildRefMapping(refSamples, ref) {
+  const proj = makeProjector(ref.origin);
+  const t0 = refSamples[0].t;
+  return refSamples.map((s) => {
+    const xy = proj.toXY(s);
+    const m = matchPointToRef(xy, ref);
+    return { s: m.s, tMs: s.t - t0 };
+  });
+}
+
+function interpolateTimeAtS(mapping, s) {
+  if (mapping.length < 2) return null;
+  if (s <= mapping[0].s) return mapping[0].tMs;
+  if (s >= mapping[mapping.length - 1].s) return mapping[mapping.length - 1].tMs;
+  for (let i = 1; i < mapping.length; i++) {
+    if (mapping[i].s >= s) {
+      const a = mapping[i - 1], b = mapping[i];
+      const ratio = (s - a.s) / (b.s - a.s);
+      return a.tMs + ratio * (b.tMs - a.tMs);
+    }
+  }
+  return mapping[mapping.length - 1].tMs;
+}
+
+// Gera ref oval + atual oval mas TODOS os dts comprimidos por fator 0.985
+// (volta atual ~1.5% mais rápida no total).
+const refSamples = generateLap({
+  center: { lat: -23.7038, lng: -46.6988 },
+  startTime: 0,
+  noiseM: 0.2,
+});
+const refDurationMs = refSamples[refSamples.length - 1].t - refSamples[0].t;
+
+// Cria volta atual: mesma trajetória, todos os dts multiplicados por 0.985
+const SPEED_FACTOR = 0.985; // 1.5% mais rápido
+const curSamples = [];
+let curT = 0;
+for (let i = 0; i < refSamples.length; i++) {
+  const refSample = refSamples[i];
+  if (i > 0) {
+    const refDt = refSample.t - refSamples[i - 1].t;
+    curT += Math.round(refDt * SPEED_FACTOR);
+  }
+  curSamples.push({ ...refSample, t: curT });
+}
+
+const ref = makeRefLap(refSamples, { lat: refSamples[0].lat, lng: refSamples[0].lng });
+const mapping = buildRefMapping(refSamples, ref);
+
+console.log(`  Pista oval ~${ref.totalLength.toFixed(0)}m`);
+console.log(`  Ref: ${refDurationMs}ms · Atual: ${curSamples[curSamples.length - 1].t}ms`);
+console.log(`  Esperado delta final: ${curSamples[curSamples.length - 1].t - refDurationMs}ms (≈ -${(refDurationMs * (1 - SPEED_FACTOR)).toFixed(0)}ms)`);
+
+// Simula a tracking ao vivo: a cada sample, calcula delta.
+// Pega os deltas em ~25%, 50%, 75%, 100% da volta atual.
+const liveProj = makeProjector(ref.origin);
+const checkpoints = [0.25, 0.5, 0.75, 1.0];
+const checkIdxs = checkpoints.map((p) => Math.floor(p * (curSamples.length - 1)));
+const deltas = checkIdxs.map((idx) => {
+  const sample = curSamples[idx];
+  const xy = liveProj.toXY(sample);
+  const m = matchPointToRef(xy, ref);
+  const lapElapsed = sample.t - curSamples[0].t;
+  const tRefAtS = interpolateTimeAtS(mapping, m.s);
+  return tRefAtS === null ? null : lapElapsed - tRefAtS;
+});
+
+console.log('\n  Deltas ao longo da volta (delta = atual - ref no mesmo ponto):');
+checkpoints.forEach((p, i) => {
+  const d = deltas[i];
+  const sign = d >= 0 ? '+' : '-';
+  console.log(`    ${(p * 100).toFixed(0).padStart(3)}% pista → delta = ${sign}${Math.abs(d).toFixed(0)}ms`);
+});
+
+// Asserções:
+// 1. Todos os deltas devem ser negativos (volta atual é mais rápida).
+// 2. |delta| deve crescer monotonicamente (perda acumulada).
+// 3. Delta no final ≈ delta total esperado (tolerância ±50ms pra ruído de match).
+const expectedFinalMs = curSamples[curSamples.length - 1].t - refDurationMs;
+const lastDelta = deltas[deltas.length - 1];
+
+let ok = true;
+if (deltas.some((d) => d === null)) {
+  console.log('  ❌ Algum checkpoint teve match falhando');
+  ok = false;
+}
+if (deltas.some((d) => d > 0)) {
+  console.log('  ❌ Algum delta positivo (volta atual deveria ser sempre mais rápida)');
+  ok = false;
+}
+for (let i = 1; i < deltas.length; i++) {
+  if (Math.abs(deltas[i]) < Math.abs(deltas[i - 1]) - 30) {
+    console.log(`  ❌ |delta| diminuiu entre cp ${i - 1} e ${i} (deveria crescer monotonicamente)`);
+    ok = false;
+  }
+}
+if (Math.abs(lastDelta - expectedFinalMs) > 60) {
+  console.log(`  ❌ Delta final ${lastDelta}ms diverge >60ms do esperado ${expectedFinalMs}ms`);
+  ok = false;
+}
+
+if (!ok) process.exit(1);
+console.log('\n✅ DeltaTracker: deltas batem com a volta de referência, sem null, monotônicos\n');

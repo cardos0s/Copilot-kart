@@ -4,8 +4,9 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { useLapRecorder } from '../src/hooks/useLapRecorder';
-import { saveTrackReference } from '../src/storage/db';
+import { listLayoutsForTrack, saveLayout } from '../src/storage/db';
 import { polylineLength, GpsSample } from '../src/lib/geometry';
+import { LapResultOverlay } from '../src/components/LapResultOverlay';
 import { colors, spacing, radius, typography } from '../src/theme';
 
 /**
@@ -118,7 +119,12 @@ function LiveRadar({ samples }: { samples: GpsSample[] }) {
 }
 
 export default function RecordingReference() {
-  const params = useLocalSearchParams<{ trackId: string; trackName: string }>();
+  const params = useLocalSearchParams<{
+    trackId: string;
+    trackName: string;
+    /** Nome do layout a criar (ex: "Layout curto"). Se ausente, usa "Layout principal". */
+    layoutName?: string;
+  }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [targetLaps, setTargetLaps] = useState(3);
@@ -220,13 +226,20 @@ export default function RecordingReference() {
 
     const lengthM = polylineLength(best.samples);
 
-    await saveTrackReference({
+    // Cria sempre um layout NOVO em vez de substituir o existente. Se essa
+    // é a primeira referência da pista, marca como default automaticamente.
+    const existing = await listLayoutsForTrack(params.trackId!);
+    const isFirst = existing.length === 0;
+    const name = params.layoutName?.trim() || (isFirst ? 'Layout principal' : `Layout ${existing.length + 1}`);
+    await saveLayout({
+      id: `layout_${params.trackId}_${Date.now()}`,
       trackId: params.trackId!,
-      trackName: params.trackName!,
+      name,
       samples: best.samples,
       durationMs: best.durationMs,
       lengthM,
       recordedAt: Date.now(),
+      isDefault: isFirst,
     });
 
     // Em vez de Alert bloqueante, dispara o overlay de countdown — driver
@@ -381,7 +394,7 @@ export default function RecordingReference() {
             <Text style={s.primaryText}>
               {starting ? 'Abrindo GPS...' : 'Começar reconhecimento'}
             </Text>
-            {!starting && <Text style={s.primaryArrow}>→</Text>}
+            {/* arrow removida — preferência da pilota */}
           </Pressable>
         )}
         {state === 'recording' && (
@@ -393,6 +406,24 @@ export default function RecordingReference() {
           </Pressable>
         )}
       </View>
+
+      {/* Overlay de celebração por volta completada — verde 3s. Não tem
+       * delta aqui (estamos GRAVANDO a referência, não comparando contra
+       * uma). Mostra "L 2/3 ✓" + tempo. Quando fecha a última volta do
+       * target, exibe o banner "REFERÊNCIA PRONTA" (igual conceito do
+       * "NOVA MELHOR VOLTA" da tela de race). */}
+      <LapResultOverlay
+        result={
+          info.lastClosedLap
+            ? {
+                variant: 'reference',
+                lapNumber: info.lastClosedLap.lapNumber,
+                totalLaps: targetLaps,
+                durationMs: info.lastClosedLap.durationMs,
+              }
+            : null
+        }
+      />
 
       {/* Overlay de transição auto pra cronometragem */}
       {transition && (

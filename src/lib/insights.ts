@@ -244,7 +244,7 @@ function computeTrackTrends(
         title: `${trackName}: mais lento`,
         body: `Sua melhor volta subiu ${(deltaMs / 1000).toFixed(
           2
-        )}s vs sessão anterior (${fmtLap(previous.bestLap.durationMs)} → ${fmtLap(
+        )}s vs sessão anterior (de ${fmtLap(previous.bestLap.durationMs)} pra ${fmtLap(
           latest.bestLap.durationMs
         )}). Pode ser kart, pista ou pilotagem.`,
         sessionId: latest.session.id,

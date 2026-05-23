@@ -1,35 +1,53 @@
 /**
- * Análise de volta via Claude API.
+ * Coach IA via Claude/Gemini/OpenAI — análise inicial + follow-up em chat.
  *
- * Pega os dados estruturados que `buildAnalysisPrompt` monta (já com setores
- * agrupados em zonas, deltas calculados) e manda pra Anthropic Messages API.
- * Retorna o texto puro da resposta (já em PT-BR conforme o system prompt).
+ * Fluxo:
+ *  1. `requestAiAnalysis(input, opts)` faz a chamada inicial com o prompt
+ *     estruturado (setores, contexto do piloto, histórico) e devolve o
+ *     texto da resposta. Por baixo, salva a thread `[user, assistant]` no
+ *     cache em memória sob `cacheKey`.
+ *  2. `continueAiChat({cacheKey, userMessage})` empilha a próxima pergunta
+ *     do piloto, manda a thread inteira pro provider, devolve a resposta e
+ *     atualiza a thread no cache.
+ *  3. `getChatThread(cacheKey)` permite a UI ler o estado pra renderizar.
  *
- * Setup:
- *   1. Pega API key em https://console.anthropic.com (Settings → API Keys)
- *   2. Adiciona EXPO_PUBLIC_ANTHROPIC_API_KEY no .env
- *   3. Opcional: EXPO_PUBLIC_ANTHROPIC_MODEL pra trocar o modelo
+ * Setup: cada piloto cola a própria API key + escolhe o provider em
+ * Ajustes / Coach IA. Persistida via expo-secure-store (ver src/storage/apiKey.ts).
  *
- * ⚠️ A key fica embedded no APK (client-side). Pra MVP/uso pessoal é ok;
- * pra produção precisa de backend proxy.
+ * Independência de provider: as chamadas vão através de `getClient(provider).call(...)`
+ * — qualquer um dos três providers usa a mesma interface, sem `if`s aqui.
+ *
+ * Prompt caching: pedido ao client via `enableCaching: true`. Claude usa
+ * cache_control ephemeral, OpenAI faz cache automático em GPT-4o+, Gemini
+ * ignora (free tier compensa).
+ *
+ * ⚠️ A chamada sai direto do app (sem backend proxy). Cada usuário banca
+ * o próprio consumo; não temos jeito de aplicar rate-limit centralizado.
  */
 
 import { AnalysisInput, buildAnalysisPrompt } from './analysisPrompt';
+import { getStoredCredential } from '../storage/apiKey';
+import { getClient, LLMError } from './llm';
+import {
+  deleteAiChatThread,
+  getAiChatThread,
+  saveAiChatThread,
+} from '../storage/db';
 
-const API_URL = 'https://api.anthropic.com/v1/messages';
-const DEFAULT_MODEL = 'claude-sonnet-4-5';
-const MAX_TOKENS = 1024;
+// Limites altos pra não cortar resposta no meio. Gemini 2.5 Pro e Claude
+// Sonnet 4.6 raramente passam de 800 tokens nessa task, mas o teto generoso
+// evita corte em casos onde o coach se aprofunda numa explicação.
+const MAX_TOKENS_INITIAL = 2048;
+const MAX_TOKENS_FOLLOWUP = 1024;
 
-function getApiKey(): string | null {
-  return process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY ?? null;
-}
-
-function getModel(): string {
-  return process.env.EXPO_PUBLIC_ANTHROPIC_MODEL ?? DEFAULT_MODEL;
-}
-
+let aiEnabledFlag = false;
 export function isAiEnabled(): boolean {
-  return Boolean(getApiKey());
+  return aiEnabledFlag;
+}
+export async function refreshAiEnabled(): Promise<boolean> {
+  const c = await getStoredCredential();
+  aiEnabledFlag = Boolean(c);
+  return aiEnabledFlag;
 }
 
 export type AiErrorCode =
@@ -39,7 +57,8 @@ export type AiErrorCode =
   | 'rate_limited'
   | 'server'
   | 'invalid_response'
-  | 'unknown';
+  | 'unknown'
+  | 'no_thread';
 
 export class AiAnalysisError extends Error {
   constructor(message: string, public code: AiErrorCode = 'unknown') {
@@ -48,104 +67,301 @@ export class AiAnalysisError extends Error {
   }
 }
 
+export type ChatMessage = { role: 'user' | 'assistant'; content: string };
+
+type ThreadState = {
+  system: string;
+  messages: ChatMessage[];
+};
+
+const threads = new Map<string, ThreadState>();
+
+export function getChatThread(cacheKey: string): ChatMessage[] {
+  return threads.get(cacheKey)?.messages.slice() ?? [];
+}
+
 /**
- * Cache em memória — sessão atual do app. Evita re-chamar API pra mesma
- * volta. Key = `${sessionId}:${lapId}`.
+ * Async — usa quando a UI abre uma conversa antiga (ex: tela Insights
+ * carregando uma thread que ficou no SQLite mas não tá em memória ainda).
+ * Hidrata o cache em memória pra próximas leituras serem síncronas.
  */
-const cache = new Map<string, string>();
+export async function loadChatThread(cacheKey: string): Promise<ChatMessage[]> {
+  const inMem = threads.get(cacheKey);
+  if (inMem) return inMem.messages.slice();
+  const row = await getAiChatThread(cacheKey);
+  if (!row) return [];
+  threads.set(cacheKey, {
+    system: row.systemPrompt,
+    messages: row.messages,
+  });
+  return row.messages.slice();
+}
+
+export async function clearChatThread(cacheKey: string): Promise<void> {
+  threads.delete(cacheKey);
+  await deleteAiChatThread(cacheKey).catch(() => {
+    /* silencioso — se o DB der ruim, a UI já tá ok com o reset em memória */
+  });
+}
+
+export function clearAiAnalysisCache(): void {
+  threads.clear();
+}
 
 export type AiAnalysisOptions = {
-  /** Chave de cache. Se não passar, cada chamada vira request nova. */
+  /** Chave de cache da thread. Convenção: `${sessionId}:${lapId}`. */
   cacheKey?: string;
+  /** Necessário pra persistir a thread no SQLite. Se ausente, vive só em memória. */
+  sessionId?: string;
+  /** Necessário pra persistir a thread no SQLite. Se ausente, vive só em memória. */
+  lapId?: string;
 };
+
+/** Persiste se temos os 3: cacheKey + sessionId + lapId. */
+async function persistThread(
+  opts: AiAnalysisOptions | undefined,
+  provider: string,
+  system: string,
+  messages: ChatMessage[]
+): Promise<void> {
+  if (!opts?.cacheKey || !opts.sessionId || !opts.lapId) return;
+  try {
+    await saveAiChatThread({
+      cacheKey: opts.cacheKey,
+      sessionId: opts.sessionId,
+      lapId: opts.lapId,
+      provider,
+      systemPrompt: system,
+      messages,
+    });
+  } catch {
+    /* silencioso — falha de persistência não pode quebrar resposta da IA */
+  }
+}
+
+/** Converte LLMError do client em AiAnalysisError com o code certo pra UI. */
+function adaptError(err: unknown): AiAnalysisError {
+  if (err instanceof LLMError) {
+    return new AiAnalysisError(err.message, err.code as AiErrorCode);
+  }
+  if (err instanceof Error) {
+    return new AiAnalysisError(err.message, 'unknown');
+  }
+  return new AiAnalysisError(String(err), 'unknown');
+}
 
 export async function requestAiAnalysis(
   input: AnalysisInput,
   opts?: AiAnalysisOptions
 ): Promise<string> {
-  const apiKey = getApiKey();
-  if (!apiKey) {
+  const cred = await getStoredCredential();
+  if (!cred) {
     throw new AiAnalysisError(
-      'IA não configurada. Adicione EXPO_PUBLIC_ANTHROPIC_API_KEY no .env.',
+      'Coach IA não configurado. Cola sua API key em Ajustes / Coach IA.',
       'no_key'
     );
   }
+  aiEnabledFlag = true;
 
-  if (opts?.cacheKey && cache.has(opts.cacheKey)) {
-    return cache.get(opts.cacheKey)!;
+  if (opts?.cacheKey) {
+    const existing = threads.get(opts.cacheKey);
+    if (existing && existing.messages.length >= 2) {
+      return existing.messages[1].content;
+    }
   }
 
   const { systemPrompt, userPrompt } = buildAnalysisPrompt(input);
+  const client = getClient(cred.provider);
 
-  let response: Response;
+  let assistantText: string;
   try {
-    response = await fetch(API_URL, {
-      method: 'POST',
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-        // React Native às vezes envia User-Agent tipo browser. Esse header
-        // libera a chamada CORS-like sem precisar de proxy.
-        'anthropic-dangerous-direct-browser-access': 'true',
-      },
-      body: JSON.stringify({
-        model: getModel(),
-        max_tokens: MAX_TOKENS,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt }],
-      }),
+    assistantText = await client.call({
+      apiKey: cred.apiKey,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userPrompt }],
+      maxTokens: MAX_TOKENS_INITIAL,
+      enableCaching: true,
     });
-  } catch (err: any) {
-    throw new AiAnalysisError(
-      `Sem conexão com a API: ${err?.message ?? 'erro de rede'}.`,
-      'network'
-    );
+  } catch (err) {
+    throw adaptError(err);
   }
 
-  if (!response.ok) {
-    let bodyText = '';
-    try {
-      bodyText = await response.text();
-    } catch {
-      /* ignora */
-    }
-    const code: AiErrorCode =
-      response.status === 401
-        ? 'unauthorized'
-        : response.status === 429
-          ? 'rate_limited'
-          : response.status >= 500
-            ? 'server'
-            : 'unknown';
-    throw new AiAnalysisError(
-      `API retornou ${response.status}. ${bodyText.slice(0, 200)}`,
-      code
-    );
-  }
-
-  let data: any;
-  try {
-    data = await response.json();
-  } catch {
-    throw new AiAnalysisError('Resposta da API não é JSON válido.', 'invalid_response');
-  }
-
-  const text: unknown = data?.content?.[0]?.text;
-  if (typeof text !== 'string' || text.trim().length === 0) {
-    throw new AiAnalysisError(
-      'Resposta da API sem conteúdo de texto esperado.',
-      'invalid_response'
-    );
-  }
-
+  const initialMessages: ChatMessage[] = [
+    { role: 'user', content: userPrompt },
+    { role: 'assistant', content: assistantText },
+  ];
   if (opts?.cacheKey) {
-    cache.set(opts.cacheKey, text);
+    threads.set(opts.cacheKey, { system: systemPrompt, messages: initialMessages });
+    await persistThread(opts, cred.provider, systemPrompt, initialMessages);
   }
 
-  return text;
+  return assistantText;
 }
 
-export function clearAiAnalysisCache(): void {
-  cache.clear();
+export type ContinueChatArgs = {
+  cacheKey: string;
+  userMessage: string;
+  /** Pra persistir no SQLite. Se ausente, atualiza só em memória. */
+  sessionId?: string;
+  lapId?: string;
+};
+
+// ===== Quick Insight (Coach IA flutuante) =====
+
+export type QuickInsightInput = {
+  /** Nome da pista pra contextualizar. */
+  trackName: string;
+  /** Melhor volta da sessão (ms). */
+  bestLapMs: number;
+  /** PB anterior dessa pista (ms), null se 1ª vez. */
+  previousPbMs: number | null;
+  /** Quantas voltas a sessão teve. */
+  lapCount: number;
+  /** Pico de velocidade km/h. */
+  peakKmh?: number;
+  /** Nome do piloto (opcional, pra IA usar). */
+  pilotName?: string | null;
+};
+
+export type QuickInsight = {
+  title: string; // 3-6 palavras
+  body: string; // 2-3 frases
+  metric?: string; // ex "+0.42s", "47.3 km/h"
+};
+
+/**
+ * Gera um insight curto via LLM pra alimentar o Coach IA flutuante.
+ * Resposta estruturada em JSON pra UI poder destacar a métrica.
+ *
+ * Retorna null se:
+ *   - IA não configurada (sem key)
+ *   - LLM falhou ou devolveu formato inválido
+ *   - Sem conexão
+ *
+ * Caller deve ter um fallback (insight mock) caso essa retorne null.
+ */
+export async function requestQuickInsight(
+  input: QuickInsightInput
+): Promise<QuickInsight | null> {
+  const cred = await getStoredCredential();
+  if (!cred) return null;
+
+  const isNewPb = input.previousPbMs == null || input.bestLapMs < input.previousPbMs;
+  const deltaMs = input.previousPbMs != null ? input.bestLapMs - input.previousPbMs : 0;
+
+  const system = `Você é um coach técnico de kart brasileiro. Sua tarefa AGORA é gerar UM insight curto e acionável pra mostrar num botão flutuante na app, sobre a sessão que o piloto acabou de fazer.
+
+Regras OBRIGATÓRIAS:
+- Responda APENAS um objeto JSON válido, sem markdown, sem fences, sem texto adicional.
+- Schema EXATO:
+  { "title": "string", "body": "string", "metric": "string opcional" }
+- "title": 3-6 palavras, sem ponto final. Direto e específico. Ex: "Foco na freada da curva 3", "Consistência tá boa".
+- "body": 2-4 frases curtas. Conecta o dado a uma AÇÃO prática pra próxima sessão. Tom de coach amigo, 2ª pessoa.
+- "metric": opcional. Se tem um número-chave (delta, km/h), inclui aqui formatado curto. Ex: "+0.42s", "−0.3s", "85 km/h".
+- PROIBIDO usar asteriscos, sublinhados, markdown, emojis no JSON.
+- Se faltar dado pra dica específica, dá orientação técnica geral pra aquela situação (freada, apex, consistência).`;
+
+  const user = `Pista: ${input.trackName}
+Melhor volta dessa sessão: ${(input.bestLapMs / 1000).toFixed(3)}s
+${input.previousPbMs != null ? `PB anterior: ${(input.previousPbMs / 1000).toFixed(3)}s (delta ${(deltaMs / 1000).toFixed(3)}s${isNewPb ? ' — NOVA PB' : ''})` : 'Sem PB anterior nessa pista (1ª vez)'}
+Voltas na sessão: ${input.lapCount}
+${input.peakKmh != null ? `Pico de velocidade: ${input.peakKmh.toFixed(0)} km/h` : ''}
+${input.pilotName ? `Piloto: ${input.pilotName.split(' ')[0]}` : ''}
+
+Gere o JSON do insight.`;
+
+  let text: string;
+  try {
+    const client = getClient(cred.provider);
+    text = await client.call({
+      apiKey: cred.apiKey,
+      system,
+      messages: [{ role: 'user', content: user }],
+      maxTokens: 300,
+      enableCaching: false,
+    });
+  } catch {
+    return null;
+  }
+
+  // Limpa cercas markdown caso o LLM tenha posto (Gemini às vezes faz)
+  const cleaned = text
+    .trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/```\s*$/i, '')
+    .trim();
+
+  try {
+    const parsed = JSON.parse(cleaned);
+    if (
+      typeof parsed?.title === 'string' &&
+      typeof parsed?.body === 'string' &&
+      parsed.title.length > 0 &&
+      parsed.body.length > 0
+    ) {
+      return {
+        title: parsed.title.slice(0, 60),
+        body: parsed.body.slice(0, 320),
+        metric:
+          typeof parsed.metric === 'string' && parsed.metric.length > 0
+            ? parsed.metric.slice(0, 20)
+            : undefined,
+      };
+    }
+  } catch {
+    /* JSON inválido, cai pro null */
+  }
+  return null;
+}
+
+export async function continueAiChat(args: ContinueChatArgs): Promise<string> {
+  const cred = await getStoredCredential();
+  if (!cred) {
+    throw new AiAnalysisError(
+      'Coach IA não configurado. Cola sua API key em Ajustes / Coach IA.',
+      'no_key'
+    );
+  }
+  aiEnabledFlag = true;
+
+  const thread = threads.get(args.cacheKey);
+  if (!thread) {
+    throw new AiAnalysisError(
+      'Conversa não iniciada. Pede a análise primeiro.',
+      'no_thread'
+    );
+  }
+
+  const updatedMessages: ChatMessage[] = [
+    ...thread.messages,
+    { role: 'user', content: args.userMessage },
+  ];
+
+  const client = getClient(cred.provider);
+  let assistantText: string;
+  try {
+    assistantText = await client.call({
+      apiKey: cred.apiKey,
+      system: thread.system,
+      messages: updatedMessages,
+      maxTokens: MAX_TOKENS_FOLLOWUP,
+      enableCaching: true,
+    });
+  } catch (err) {
+    throw adaptError(err);
+  }
+
+  thread.messages = [
+    ...updatedMessages,
+    { role: 'assistant', content: assistantText },
+  ];
+  threads.set(args.cacheKey, thread);
+  await persistThread(
+    { cacheKey: args.cacheKey, sessionId: args.sessionId, lapId: args.lapId },
+    cred.provider,
+    thread.system,
+    thread.messages
+  );
+
+  return assistantText;
 }

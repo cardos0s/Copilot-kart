@@ -5,6 +5,12 @@ import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import {
+  PlayfairDisplay_400Regular,
+  PlayfairDisplay_700Bold,
+  PlayfairDisplay_400Regular_Italic,
+  useFonts,
+} from '@expo-google-fonts/playfair-display';
 import { getProfile } from '../src/storage/profile';
 import { SplashLoader } from '../src/components/SplashLoader';
 import { colors } from '../src/theme';
@@ -73,7 +79,14 @@ function AuthGate() {
 export default function RootLayout() {
   const [profileReady, setProfileReady] = useState(false);
   const [barFinished, setBarFinished] = useState(false);
-  const ready = profileReady && barFinished;
+  // Carrega Playfair Display pras telas de celebração (Level Up, Achievements).
+  // Se falhar carregar, a app cai pro system font sem quebrar.
+  const [fontsLoaded] = useFonts({
+    PlayfairDisplay_400Regular,
+    PlayfairDisplay_700Bold,
+    PlayfairDisplay_400Regular_Italic,
+  });
+  const ready = profileReady && barFinished && fontsLoaded;
 
   useEffect(() => {
     // Pré-checa o perfil em paralelo à animação da barra, pra que a transição
@@ -123,6 +136,18 @@ export default function RootLayout() {
             <Stack.Screen name="recording-reference" options={{ headerShown: false }} />
             <Stack.Screen name="session/[id]" options={{ headerShown: false }} />
             <Stack.Screen name="settings" options={{ headerShown: false }} />
+            <Stack.Screen name="ai-key" options={{ headerShown: false }} />
+            <Stack.Screen name="coach" options={{ headerShown: false }} />
+            <Stack.Screen name="track-layouts-picker" options={{ headerShown: false }} />
+            <Stack.Screen name="kart-setups" options={{ headerShown: false }} />
+            <Stack.Screen name="kart-setup-edit" options={{ headerShown: false }} />
+            <Stack.Screen name="preflight" options={{ headerShown: false }} />
+            <Stack.Screen name="lap-compare" options={{ headerShown: false }} />
+            <Stack.Screen name="career" options={{ headerShown: false }} />
+            <Stack.Screen name="recap" options={{ headerShown: false, presentation: 'modal' }} />
+            <Stack.Screen name="challenges" options={{ headerShown: false }} />
+            <Stack.Screen name="leaderboard" options={{ headerShown: false }} />
+            <Stack.Screen name="track-map" options={{ headerShown: false }} />
             <Stack.Screen name="profile-edit" options={{ headerShown: false }} />
           </Stack>
           {!ready && (
