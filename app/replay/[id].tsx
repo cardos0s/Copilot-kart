@@ -29,7 +29,7 @@
  *     GPU sobreviver.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -124,7 +124,14 @@ export default function ReplayScreen() {
         }
 
         const built = buildScene(lapsRaw);
-        if (!cancelled) setScene(built);
+        if (cancelled) return;
+        if (!built) {
+          setError(
+            'Voltas dessa sessão não têm dados GPS suficientes pra renderizar em 3D (muito antigas ou corrompidas).'
+          );
+          return;
+        }
+        setScene(built);
       } catch (e: any) {
         if (!cancelled) setError(e?.message ?? 'Erro ao carregar replay');
       }
@@ -164,43 +171,61 @@ export default function ReplayScreen() {
 
   return (
     <View style={s.root}>
-      {/* Cena 3D */}
-      <Canvas
-        camera={{
-          position: [scene.center.x, scene.size * 0.9, scene.center.z + scene.size * 0.6],
-          fov: 50,
-          near: 0.1,
-          far: scene.size * 10,
-        }}
-        gl={{ antialias: true }}
-        onCreated={({ camera }) => {
-          camera.lookAt(scene.center.x, 0, scene.center.z);
-        }}
+      {/* Cena 3D — envolta em error boundary porque expo-gl em alguns
+       * Androids antigos falha ao inicializar contexto OpenGL (driver não
+       * suportado, etc) e cresharia o app inteiro sem captura. */}
+      <CanvasErrorBoundary
+        fallback={(err) => (
+          <View style={s.glFallback}>
+            <Text style={s.errorTitle}>Não consegui inicializar o 3D</Text>
+            <Text style={s.errorBody}>
+              Pode ser que esse aparelho não suporte expo-gl/OpenGL ES 2.0
+              direito, ou rodou sem memória. Detalhe técnico:{'\n\n'}
+              {err}
+            </Text>
+            <Pressable onPress={() => router.back()} style={s.backBtn}>
+              <Text style={s.backBtnText}>Voltar</Text>
+            </Pressable>
+          </View>
+        )}
       >
-        <ambientLight intensity={0.6} />
-        <directionalLight position={[scene.size, scene.size, scene.size]} intensity={0.8} />
-        <Ground center={scene.center} size={scene.size * 3} />
-        {scene.laps.map((lap) => (
-          <LapLine
-            key={lap.id}
-            lap={lap}
-            visible={selectedLapIdx === -1 || selectedLapIdx === lap.index}
-            highlighted={
-              selectedLapIdx === -1 ? lap.isPb : selectedLapIdx === lap.index
-            }
+        <Canvas
+          camera={{
+            position: [scene.center.x, scene.size * 0.9, scene.center.z + scene.size * 0.6],
+            fov: 50,
+            near: 0.1,
+            far: scene.size * 10,
+          }}
+          gl={{ antialias: true }}
+          onCreated={({ camera }) => {
+            camera.lookAt(scene.center.x, 0, scene.center.z);
+          }}
+        >
+          <ambientLight intensity={0.6} />
+          <directionalLight position={[scene.size, scene.size, scene.size]} intensity={0.8} />
+          <Ground center={scene.center} size={scene.size * 3} />
+          {scene.laps.map((lap) => (
+            <LapLine
+              key={lap.id}
+              lap={lap}
+              visible={selectedLapIdx === -1 || selectedLapIdx === lap.index}
+              highlighted={
+                selectedLapIdx === -1 ? lap.isPb : selectedLapIdx === lap.index
+              }
+            />
+          ))}
+          {scene.spins.map((sp, i) => (
+            <SpinMarker key={i} pos={sp.pos} altitudeBase={scene.altitudeBase} />
+          ))}
+          <AnimatedKart
+            lap={activeLap}
+            playing={playing}
+            speed={speed}
+            progressRef={progressRef}
+            onProgress={setDisplayProgress}
           />
-        ))}
-        {scene.spins.map((sp, i) => (
-          <SpinMarker key={i} pos={sp.pos} altitudeBase={scene.altitudeBase} />
-        ))}
-        <AnimatedKart
-          lap={activeLap}
-          playing={playing}
-          speed={speed}
-          progressRef={progressRef}
-          onProgress={setDisplayProgress}
-        />
-      </Canvas>
+        </Canvas>
+      </CanvasErrorBoundary>
 
       {/* Top bar */}
       <View style={[s.topBar, { paddingTop: insets.top + spacing.s }]}>
@@ -310,22 +335,21 @@ function LapLine({
   visible: boolean;
   highlighted: boolean;
 }) {
-  // Geometria + material criados via useMemo pra não recompilar a cada render.
-  const geometry = useMemo(() => {
+  // Cria a THREE.Line completa imperativamente (geometria + material) e
+  // renderiza via <primitive>. Evita o JSX intrinsic <line> que em r3f v9
+  // colide com SVG <line> no React 19 — comportamento depende da ordem de
+  // tipos e pode crashar no runtime em certas builds.
+  const lineObject = useMemo(() => {
+    if (lap.positions.length < 6) return null; // <2 pontos = sem linha
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(lap.positions, 3));
-    return geo;
-  }, [lap.positions]);
+    const color = highlighted ? '#00FF88' : lap.isPb ? '#A8CC2E' : '#3A506B';
+    const mat = new THREE.LineBasicMaterial({ color, linewidth: highlighted ? 4 : 2 });
+    return new THREE.Line(geo, mat);
+  }, [lap.positions, highlighted, lap.isPb]);
 
-  const color = highlighted ? '#00FF88' : lap.isPb ? '#A8CC2E' : '#3A506B';
-
-  if (!visible) return null;
-  return (
-    // @ts-ignore — JSX intrinsics adicionados pelo r3f
-    <line geometry={geometry}>
-      <lineBasicMaterial color={color} linewidth={highlighted ? 4 : 2} />
-    </line>
-  );
+  if (!visible || !lineObject) return null;
+  return <primitive object={lineObject} />;
 }
 
 function SpinMarker({
@@ -476,6 +500,32 @@ function Center({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * ErrorBoundary específico pro Canvas 3D — captura erros de expo-gl,
+ * three.js, ou shaders que cresham a render tree. Sem isso, qualquer
+ * erro no GL contexto crasha a TELA INTEIRA (e às vezes o app inteiro
+ * no Android antigo onde expo-gl init falha).
+ *
+ * Class component porque error boundaries em React 19 ainda precisam ser
+ * componente de classe (não tem hook equivalente estável).
+ */
+class CanvasErrorBoundary extends Component<
+  { children: ReactNode; fallback: (error: string) => ReactNode },
+  { error: string | null }
+> {
+  state = { error: null as string | null };
+  static getDerivedStateFromError(err: Error) {
+    return { error: err?.message ?? String(err) };
+  }
+  componentDidCatch(err: Error) {
+    if (__DEV__) console.warn('[Replay3D] Canvas crashou:', err);
+  }
+  render() {
+    if (this.state.error) return this.props.fallback(this.state.error);
+    return this.props.children;
+  }
+}
+
 // ============================================================================
 // Helpers
 // ============================================================================
@@ -492,13 +542,29 @@ function fmtTime(ms: number): string {
  * detecta spins, calcula bbox da cena pra apontar câmera. Tudo uma vez só
  * no carregamento — não roda na renderização.
  */
-function buildScene(rawLaps: Array<{
+function buildScene(rawLapsIn: Array<{
   id: string;
   samples: GpsSample[];
   imuSamples?: ImuSample[];
   durationMs: number;
   startedAt: number;
-}>): SceneData {
+}>): SceneData | null {
+  // Sanitiza voltas: descarta as que ficaram sem samples ou com lat/lng
+  // inválidos. Pode acontecer em voltas muito antigas ou corrompidas.
+  const rawLaps = rawLapsIn
+    .map((l) => ({
+      ...l,
+      samples: l.samples.filter(
+        (s) =>
+          Number.isFinite(s.lat) &&
+          Number.isFinite(s.lng) &&
+          Number.isFinite(s.t)
+      ),
+    }))
+    .filter((l) => l.samples.length >= 2);
+
+  if (rawLaps.length === 0) return null;
+
   // Origem = primeiro sample da primeira volta (consistente entre runs).
   const firstSample = rawLaps[0].samples[0];
   const origin = { lat: firstSample.lat, lng: firstSample.lng };
@@ -587,6 +653,13 @@ const s = StyleSheet.create({
   },
   centerBox: {
     alignItems: 'center',
+    padding: spacing.xl,
+  },
+  glFallback: {
+    flex: 1,
+    backgroundColor: '#08080C',
+    alignItems: 'center',
+    justifyContent: 'center',
     padding: spacing.xl,
   },
   loadingText: {

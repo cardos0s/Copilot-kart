@@ -523,9 +523,7 @@ function SessionScreenInner() {
               * marcação de rodadas. Usa react-three-fiber, então abre tela
               * dedicada (não inline) pra liberar tela inteira pro GL. */}
             <Pressable
-              onPress={() =>
-                router.push({ pathname: '/replay/[id]' as any, params: { id } })
-              }
+              onPress={() => router.push(`/replay/${id}` as any)}
               style={({ pressed }) => [s.replayBtn, pressed && { opacity: 0.7 }]}
             >
               <Text style={s.replayBtnText}>Ver replay 3D</Text>
