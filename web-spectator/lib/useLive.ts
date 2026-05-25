@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { getSupabase } from './supabase';
 import { LiveLap, LiveMessage, LiveSample, LiveSessionInfo, MessageSeverity } from './liveTypes';
@@ -10,16 +10,13 @@ import { LiveLap, LiveMessage, LiveSample, LiveSessionInfo, MessageSeverity } fr
  * traçado completo da volta + recente; samples antigos saem (continuam no
  * Supabase pra quem precisar de histórico via query). Sem cap, painel
  * congela após ~5min de sessão (3000+ samples re-renderizando).
+ *
+ * Cada INSERT do realtime continua disparando setState (mantém UI viva),
+ * mas o array é sempre podado ao adicionar — render fica bounded mesmo
+ * em sessão longa. Decimação no consumidor (TrackPanel etc) cuida do
+ * custo do SVG render.
  */
 const MAX_SAMPLES_IN_STATE = 3000;
-
-/**
- * Janela de batching dos samples chegando via realtime. Em vez de
- * setState a cada INSERT (10Hz = 10 re-renders/seg), acumulamos os que
- * chegam e fazemos 1 setState a cada N ms. ~2.5 re-renders/seg = painel
- * fluido sem perder dado.
- */
-const SAMPLE_BATCH_FLUSH_MS = 400;
 
 /**
  * Hook que assina uma live session pelo código.
@@ -114,17 +111,11 @@ function mapMessage(row: any): LiveMessage {
 export function useLive(code: string | null): LiveState {
   const [state, setState] = useState<LiveState>({ kind: 'loading' });
 
-  // Buffer de samples não-flushados. setState só roda no flush timer,
-  // não em cada INSERT do realtime. Crítico pra performance — sem isso
-  // o painel acumula 10 re-renders/s e congela em 3-5min.
-  const pendingSamplesRef = useRef<LiveSample[]>([]);
-
   useEffect(() => {
     if (!code) return;
     let cancelled = false;
     let channel: RealtimeChannel | null = null;
     let pollTimer: ReturnType<typeof setInterval> | null = null;
-    let flushTimer: ReturnType<typeof setInterval> | null = null;
 
     (async () => {
       let supabase;
@@ -183,9 +174,10 @@ export function useLive(code: string | null): LiveState {
       });
 
       // 3. Realtime — escuta INSERTs nas duas tabelas filtrados por session.
-      // Samples vão pro pendingSamplesRef e são flushados em batch a
-      // SAMPLE_BATCH_FLUSH_MS (em vez de setState a cada um). Crítico
-      // pra performance — 10Hz × 5min sem batch matava o painel.
+      // Samples são apendados ao state e o array é PODADO em MAX_SAMPLES_IN_STATE
+      // pra bound memória. Cada INSERT vira setState — UI continua "viva"
+      // 10x/seg. Custo do render é controlado pela decimação no consumidor
+      // (ex: TrackPanel só pinta 500 pontos máx do SVG).
       channel = supabase
         .channel(`live:${info.code}`)
         .on(
@@ -198,7 +190,14 @@ export function useLive(code: string | null): LiveState {
           },
           (payload) => {
             if (cancelled) return;
-            pendingSamplesRef.current.push(mapSample(payload.new));
+            const s = mapSample(payload.new);
+            setState((prev) => {
+              if (prev.kind !== 'live' && prev.kind !== 'ended') return prev;
+              const next = prev.samples.length >= MAX_SAMPLES_IN_STATE
+                ? [...prev.samples.slice(1), s]   // shift + push pra manter cap
+                : [...prev.samples, s];
+              return { ...prev, samples: next };
+            });
           }
         )
         .on(
@@ -237,26 +236,6 @@ export function useLive(code: string | null): LiveState {
         )
         .subscribe();
 
-      // 3.5. Flush timer dos samples batchados. Drena o buffer e faz um
-      // único setState com todos os samples acumulados desde o último flush.
-      // Aplica cap em MAX_SAMPLES_IN_STATE pra não acumular memória
-      // infinitamente em sessões longas (>5min).
-      flushTimer = setInterval(() => {
-        if (cancelled) return;
-        const batch = pendingSamplesRef.current;
-        if (batch.length === 0) return;
-        pendingSamplesRef.current = [];
-        setState((prev) => {
-          if (prev.kind !== 'live' && prev.kind !== 'ended') return prev;
-          const merged = prev.samples.concat(batch);
-          const capped =
-            merged.length > MAX_SAMPLES_IN_STATE
-              ? merged.slice(-MAX_SAMPLES_IN_STATE)
-              : merged;
-          return { ...prev, samples: capped };
-        });
-      }, SAMPLE_BATCH_FLUSH_MS);
-
       // 4. Polling do info — detecta ended_at sem precisar de outro canal.
       pollTimer = setInterval(async () => {
         const { data } = await supabase
@@ -282,8 +261,6 @@ export function useLive(code: string | null): LiveState {
         } catch {}
       }
       if (pollTimer) clearInterval(pollTimer);
-      if (flushTimer) clearInterval(flushTimer);
-      pendingSamplesRef.current = [];
     };
   }, [code]);
 
