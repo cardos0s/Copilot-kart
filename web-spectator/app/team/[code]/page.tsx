@@ -240,7 +240,28 @@ function TrackPanel({
 }) {
   const W = 800;
   const H = 540;
-  const { points, project } = useMemo(() => projectTrack(samples, W, H), [samples]);
+
+  // Decimação pra render do traçado — mantém formato visual mas reduz
+  // dramaticamente custo de SVG path com muitos pontos. Pra 3000 samples
+  // cap em 500 pontos = step 6. Reduz o custo de projectTrack + render do
+  // <path> em ~6x. Marker do kart usa `lastSample` separado, então a
+  // posição atual continua precisa apesar da decimação do traçado.
+  const decimatedSamples = useMemo(() => {
+    if (samples.length <= 500) return samples;
+    const step = Math.ceil(samples.length / 500);
+    const out: LiveSample[] = [];
+    for (let i = 0; i < samples.length; i += step) out.push(samples[i]);
+    // Garante que o último sample tá incluído (continuidade do traço até "agora")
+    if (out[out.length - 1] !== samples[samples.length - 1]) {
+      out.push(samples[samples.length - 1]);
+    }
+    return out;
+  }, [samples]);
+
+  const { points, project } = useMemo(
+    () => projectTrack(decimatedSamples, W, H),
+    [decimatedSamples]
+  );
 
   const currentSector = lastSample?.currentSectorIdx;
   const sectorLabel =

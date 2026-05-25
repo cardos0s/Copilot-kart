@@ -279,18 +279,26 @@ export default function Recording() {
     setLiveModalOpen(false);
   };
 
-  // Publica deltas de samples (1 por sample, com cap de batch). Roda quando
-  // o array de liveSamples cresce. Sem rate limit do nosso lado — Supabase
-  // realtime aguenta tranquilo o ritmo de ~1Hz do GPS.
+  // Publica samples em batch + decimados pra realtime. Antes: 1 INSERT
+  // por sample, await em loop, ~10Hz. Resultado: lag no painel da equipe
+  // após 3-5min (3000+ samples = re-render lento + tantas inserts/seg
+  // saturam network/Supabase).
+  //
+  // Agora: pega só 1 a cada PUBLISH_DECIMATION (4Hz efetivo), e dispara
+  // fire-and-forget (sem await no loop) — se a rede engasgar, sample
+  // seguinte não espera. Coaching ao vivo não precisa de 10Hz; 4Hz dá
+  // ~25cm de precisão em movimento mesmo a 80km/h.
   useEffect(() => {
     if (!live) return;
+    const PUBLISH_DECIMATION = 3; // pega 1 a cada 3 samples = ~3.3Hz
     const newOnes = liveSamples.slice(lastSampleIdxRef.current);
     if (newOnes.length === 0) return;
     lastSampleIdxRef.current = liveSamples.length;
+    const toSend = newOnes.filter((_, i) => i % PUBLISH_DECIMATION === 0);
+    // Fire-and-forget — não bloqueia se network engasgar
     (async () => {
-      for (const s of newOnes) {
-        try {
-          await publishSample(live.id, {
+      for (const s of toSend) {
+        publishSample(live.id, {
             t: s.t,
             lat: s.lat,
             lng: s.lng,
@@ -313,10 +321,9 @@ export default function Recording() {
             s3Ms: info.currentSectors.s3Ms,
             altitude: s.altitude ?? null,
             altitudeAccuracy: s.altitudeAccuracy ?? null,
-          });
-        } catch {
+          }).catch(() => {
           /* engole — não pode quebrar gravação se realtime falhar */
-        }
+        });
       }
     })();
   }, [
