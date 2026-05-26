@@ -60,25 +60,20 @@ import { LapResultOverlay } from '../src/components/LapResultOverlay';
 import { PilotMessageOverlay } from '../src/components/PilotMessageOverlay';
 import { colors, radius, spacing, typography } from '../src/theme';
 
+/**
+ * Formato padrão de tempo: MM:SS.SSS (minuto:segundo.milésimo).
+ * Centésimos ficam embutidos nos 2 primeiros dígitos do milésimo.
+ * Convenção de telemetria de motorsport (MyChron, Speedhive).
+ *
+ * Antes tinha fmtLap que omitia minuto pra voltas <60s ("34.872"),
+ * mas removido por inconsistência — agora todo lugar mostra formato
+ * cheio "00:34.872" pra clareza.
+ */
 function fmtLap(ms: number) {
   const totalS = ms / 1000;
   const m = Math.floor(totalS / 60);
   const s = totalS - m * 60;
   return `${String(m).padStart(2, '0')}:${s.toFixed(3).padStart(6, '0')}`;
-}
-
-/**
- * Tempo curto pro cronômetro central do HUD: "34.872" quando <60s,
- * "1:14.523" quando ≥60s. Kart médio fica entre 30-90s/volta — quase
- * sempre cabe na forma curta, que é menos visualmente "pesada" que
- * o "00:34.872" tradicional.
- */
-function fmtLapShort(ms: number) {
-  const totalS = ms / 1000;
-  if (totalS < 60) return totalS.toFixed(3);
-  const m = Math.floor(totalS / 60);
-  const s = totalS - m * 60;
-  return `${m}:${s.toFixed(3).padStart(6, '0')}`;
 }
 
 function fmtDelta(ms: number) {
@@ -782,7 +777,7 @@ export default function Recording() {
             numberOfLines={1}
             adjustsFontSizeToFit
           >
-            {fmtLapShort(currentLapMs)}
+            {fmtLap(currentLapMs)}
           </Text>
         </View>
       </View>
@@ -1079,7 +1074,7 @@ function SectorPanel({
             <View key={i} style={s.sectorTimeCell}>
               <Text style={[s.sectorTimeLabel, { color }]}>S{i + 1}</Text>
               <Text style={[s.sectorTimeValue, typography.mono, { color }]}>
-                {ms !== null ? fmtLapShort(ms) : '—'}
+                {ms !== null ? fmtLap(ms) : '—'}
               </Text>
             </View>
           );

@@ -536,11 +536,16 @@ function LapChip({
 // Helpers
 // ============================================================================
 
+/**
+ * Tempo no formato padrão MM:SS.SSS (minuto:segundo.milésimo).
+ * Centésimos embutidos nos 2 primeiros dígitos do milésimo.
+ */
 function fmtTime(ms: number): string {
-  if (ms < 60000) return (ms / 1000).toFixed(2);
-  const m = Math.floor(ms / 60000);
-  const s = (ms % 60000) / 1000;
-  return `${m}:${s.toFixed(2).padStart(5, '0')}`;
+  if (!Number.isFinite(ms) || ms < 0) return '00:00.000';
+  const totalS = ms / 1000;
+  const m = Math.floor(totalS / 60);
+  const s = totalS - m * 60;
+  return `${String(m).padStart(2, '0')}:${s.toFixed(3).padStart(6, '0')}`;
 }
 
 function buildScene(
