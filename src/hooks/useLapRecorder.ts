@@ -28,12 +28,31 @@ TaskManager.defineTask(BG_TASK, async ({ data, error }) => {
   }
   const { locations } = (data as any) ?? {};
   if (!locations) return;
-  for (const loc of locations as Location.LocationObject[]) {
+
+  // Timestamp dos samples — fonte de verdade pro tempo de volta.
+  //
+  // Problema observado em campo: alguns Android entregam loc.timestamp
+  // QUANTIZADO a segundos cheios (sempre múltiplo de 1000ms). Isso fazia
+  // durationMs = sample[fim].t − sample[início].t sair sempre redondo
+  // (42.000, 43.999...) — sem precisão de centésimo/milésimo.
+  //
+  // Date.now() no momento do processamento do BG task tem precisão de ms
+  // e fica a poucos ms do tempo real do fix (o task roda quase em
+  // tempo real quando a app está em foreground gravando). Então:
+  //   - loc.timestamp COM precisão sub-segundo (% 1000 != 0) → confia nele
+  //   - senão (quantizado, 0, ou ausente) → Date.now() com spread
+  //     intra-batch pra samples não colidirem no mesmo ms.
+  const arrivalNow = Date.now();
+  const locs = locations as Location.LocationObject[];
+  const n = locs.length;
+  for (let i = 0; i < n; i++) {
+    const loc = locs[i];
     if ((loc.coords.accuracy ?? 999) > 30) continue;
-    // Fallback pra Date.now() porque algumas builds Expo/Android entregam
-    // loc.timestamp = 0 ou undefined; sem isso a volta inteira fica com
-    // tMs constante e a análise por setor zera (curMs = 0 em tudo).
-    const t = loc.timestamp && loc.timestamp > 0 ? loc.timestamp : Date.now();
+    const rawTs = loc.timestamp;
+    const hasSubSecond = rawTs && rawTs > 0 && rawTs % 1000 !== 0;
+    // Quando cai no Date.now(), espalha ~100ms por sample retroativamente
+    // (assume GPS ~10Hz) pra batch com várias locations não virar um único t.
+    const t = hasSubSecond ? rawTs : arrivalNow - (n - 1 - i) * 100;
     buf.samples.push({
       t,
       lat: loc.coords.latitude,
