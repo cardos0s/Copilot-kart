@@ -301,12 +301,16 @@ export default function Recording() {
             heading: s.heading,
             accuracy: s.accuracy,
             lapNumber: info.lapsCompleted,
-            lapElapsedMs: info.elapsedMs,
+            // Tempo da volta ATUAL (reseta a cada cruzamento da linha),
+            // NÃO o total da sessão. Antes mandava info.elapsedMs (total)
+            // e o painel mostrava "VOLTA 8:35" crescendo sem parar.
+            lapElapsedMs: info.currentLapElapsedMs ?? info.elapsedMs,
             bestLapMs: info.bestLapMs ?? null,
-            deltaVsRefMs:
-              reference && info.bestLapMs !== null
-                ? info.bestLapMs - reference.durationMs
-                : null,
+            // Delta MyChron AO VIVO no ponto atual da pista (vem do tracker
+            // do hook). Antes mandava um valor estático (melhor − referência
+            // do layout) que só mudava ao bater PB — por isso "DELTA LIVE"
+            // ficava congelado em +1.000s.
+            deltaVsRefMs: info.liveDeltaMs,
             // Setores — null quando o app não tem layout reference carregada.
             // Team panel usa esses pra mostrar delta por setor + ranking.
             currentSectorIdx: info.currentSectorIdx,
@@ -326,7 +330,9 @@ export default function Recording() {
     liveSamples,
     info.lapsCompleted,
     info.elapsedMs,
+    info.currentLapElapsedMs,
     info.bestLapMs,
+    info.liveDeltaMs,
     info.currentSectorIdx,
     info.currentSectorElapsedMs,
     info.currentSectors,
