@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   useWindowDimensions,
   Vibration,
   View,
@@ -46,6 +48,9 @@ import { ensurePilot } from '../src/lib/liveSession';
 import {
   createLiveSession,
   endLiveSession,
+  createEvent,
+  findEventByCode,
+  EventInfo,
   LiveMessage,
   LiveSessionInfo,
   ackMessage,
@@ -129,6 +134,9 @@ export default function Recording() {
   const [live, setLive] = useState<LiveSessionInfo | null>(null);
   const [liveModalOpen, setLiveModalOpen] = useState(false);
   const [liveStarting, setLiveStarting] = useState(false);
+  // Competição: evento ao qual o piloto entrou (null = corrida avulsa).
+  const [event, setEvent] = useState<EventInfo | null>(null);
+  const [eventBusy, setEventBusy] = useState(false);
   const lastSampleIdxRef = useRef(0);
   const lastLapCountRef = useRef(0);
   // Mensagem mais recente vinda da equipe pelo realtime. Quando vira não-null,
@@ -251,13 +259,14 @@ export default function Recording() {
    * Se chamado durante recording (legacy path), também não abre modal —
    * tap no badge do top bar abre quando precisar.
    */
-  const handleStartLive = async () => {
+  const handleStartLive = async (eventId?: string | null) => {
     setLiveStarting(true);
     try {
       const info = await createLiveSession({
         trackId: params.trackId ?? null,
         trackName: params.trackName ?? 'Pista',
         referenceLapMs: reference?.durationMs ?? null,
+        eventId: eventId ?? null,
       });
       setLive(info);
       lastSampleIdxRef.current = 0;
@@ -280,7 +289,49 @@ export default function Recording() {
       /* silencioso — se já caiu, segue */
     }
     setLive(null);
+    setEvent(null);
     setLiveModalOpen(false);
+  };
+
+  // ===== Competição (evento multi-piloto) =====
+  // Entrar/criar um evento implica ativar o live broadcast (a sessão tem
+  // que jorrar voltas pro ranking). Por isso esses handlers chamam
+  // handleStartLive com o eventId — a live session já nasce vinculada.
+
+  const handleCreateEvent = async () => {
+    setEventBusy(true);
+    try {
+      const ev = await createEvent({
+        name: params.trackName ? `Corrida · ${params.trackName}` : 'Competição',
+        trackId: params.trackId ?? null,
+        trackName: params.trackName ?? null,
+      });
+      setEvent(ev);
+      await handleStartLive(ev.id);
+    } catch (err: any) {
+      Alert.alert('Erro', err?.message ?? 'Não foi possível criar a competição.');
+    } finally {
+      setEventBusy(false);
+    }
+  };
+
+  const handleJoinEvent = async (code: string) => {
+    const clean = code.trim().toUpperCase();
+    if (clean.length < 4) return;
+    setEventBusy(true);
+    try {
+      const ev = await findEventByCode(clean);
+      if (!ev) {
+        Alert.alert('Código não encontrado', `Não achei a competição "${clean}".`);
+        return;
+      }
+      setEvent(ev);
+      await handleStartLive(ev.id);
+    } catch (err: any) {
+      Alert.alert('Erro', err?.message ?? 'Não foi possível entrar na competição.');
+    } finally {
+      setEventBusy(false);
+    }
   };
 
   // Publica samples em batch + decimados pra realtime. Antes: 1 INSERT
@@ -362,14 +413,19 @@ export default function Recording() {
     const sectors = info.lastClosedLapSectors;
     lastLapCountRef.current = lapNumber;
     if (ms != null) {
-      publishLap(live.id, {
-        lapNumber,
-        durationMs: ms,
-        finishedAt: Date.now(),
-        s1Ms: sectors?.s1Ms ?? null,
-        s2Ms: sectors?.s2Ms ?? null,
-        s3Ms: sectors?.s3Ms ?? null,
-      }).catch(() => {});
+      publishLap(
+        live.id,
+        {
+          lapNumber,
+          durationMs: ms,
+          finishedAt: Date.now(),
+          s1Ms: sectors?.s1Ms ?? null,
+          s2Ms: sectors?.s2Ms ?? null,
+          s3Ms: sectors?.s3Ms ?? null,
+        },
+        // eventId denormalizado → ranking da competição via realtime.
+        live.eventId
+      ).catch(() => {});
     }
   }, [live, info.lapsCompleted, info.bestLapMs, info.lastClosedLap, info.lastClosedLapSectors]);
 
@@ -691,8 +747,12 @@ export default function Recording() {
         isLandscape={isLandscape}
         live={live}
         liveStarting={liveStarting}
-        onEnableLive={handleStartLive}
+        onEnableLive={() => handleStartLive()}
         onDisableLive={handleStopLive}
+        event={event}
+        eventBusy={eventBusy}
+        onCreateEvent={handleCreateEvent}
+        onJoinEvent={handleJoinEvent}
       />
     );
   }
@@ -1115,6 +1175,10 @@ function IdleView({
   liveStarting,
   onEnableLive,
   onDisableLive,
+  event,
+  eventBusy,
+  onCreateEvent,
+  onJoinEvent,
 }: {
   trackName: string;
   reference: TrackLayout | null;
@@ -1126,6 +1190,10 @@ function IdleView({
   liveStarting: boolean;
   onEnableLive: () => Promise<void> | void;
   onDisableLive: () => Promise<void> | void;
+  event: EventInfo | null;
+  eventBusy: boolean;
+  onCreateEvent: () => Promise<void> | void;
+  onJoinEvent: (code: string) => Promise<void> | void;
 }) {
   const insets = useSafeAreaInsets();
   return (
@@ -1169,6 +1237,16 @@ function IdleView({
             liveStarting={liveStarting}
             onEnable={onEnableLive}
             onDisable={onDisableLive}
+          />
+
+          {/* Competição — entrar/criar evento multi-piloto. Entrar implica
+            * ativar o live (a sessão tem que jorrar voltas pro ranking).
+            * Por isso fica logo abaixo do toggle de live. */}
+          <CompetitionPanel
+            event={event}
+            busy={eventBusy}
+            onCreate={onCreateEvent}
+            onJoin={onJoinEvent}
           />
 
           <Card variant="default" padding="l" style={{ marginTop: spacing.l }}>
@@ -1217,6 +1295,88 @@ function IdleView({
  * O switch visual é um Pressable com 2 estados — não usa o Switch nativo
  * pra manter o look custom do app.
  */
+/**
+ * Painel de Competição — entrar ou criar um evento multi-piloto. Quando
+ * o piloto entra/cria, a live session nasce vinculada ao evento e as
+ * voltas dele contam pro ranking ao vivo.
+ *
+ * 3 estados:
+ *   - fora de evento: botão "Criar competição" + campo "entrar com código"
+ *   - ocupado: spinner
+ *   - dentro de evento: mostra o código + link do ranking web
+ */
+function CompetitionPanel({
+  event,
+  busy,
+  onCreate,
+  onJoin,
+}: {
+  event: EventInfo | null;
+  busy: boolean;
+  onCreate: () => Promise<void> | void;
+  onJoin: (code: string) => Promise<void> | void;
+}) {
+  const [code, setCode] = useState('');
+
+  if (event) {
+    return (
+      <Card variant="glow" padding="m" style={{ marginTop: spacing.l, borderColor: colors.accentCyan, borderWidth: 1 }}>
+        <Text style={[s.compTitle, { color: colors.accentCyan }]}>🏁 NA COMPETIÇÃO</Text>
+        <View style={s.compCodeRow}>
+          <Text style={[s.compCode, typography.mono]}>{event.code}</Text>
+        </View>
+        <Text style={s.compHint}>
+          Suas voltas contam pro ranking. Acompanhe em{'\n'}
+          copilot-mu-eight.vercel.app/event/{event.code}
+        </Text>
+      </Card>
+    );
+  }
+
+  return (
+    <Card variant="default" padding="m" style={{ marginTop: spacing.l }}>
+      <Text style={s.compTitle}>🏁 COMPETIÇÃO</Text>
+      <Text style={s.compSub}>Corra contra outros pilotos com ranking ao vivo.</Text>
+
+      <Pressable
+        onPress={() => !busy && onCreate()}
+        disabled={busy}
+        style={({ pressed }) => [s.compCreateBtn, (pressed || busy) && { opacity: 0.6 }]}
+      >
+        {busy ? (
+          <ActivityIndicator color={colors.textOnPrimary} size="small" />
+        ) : (
+          <Text style={s.compCreateTxt}>Criar competição</Text>
+        )}
+      </Pressable>
+
+      <View style={s.compJoinRow}>
+        <TextInput
+          style={s.compInput}
+          value={code}
+          onChangeText={(t) => setCode(t.toUpperCase())}
+          placeholder="Código"
+          placeholderTextColor={colors.textMuted}
+          autoCapitalize="characters"
+          maxLength={8}
+          editable={!busy}
+        />
+        <Pressable
+          onPress={() => !busy && onJoin(code)}
+          disabled={busy || code.trim().length < 4}
+          style={({ pressed }) => [
+            s.compJoinBtn,
+            (busy || code.trim().length < 4) && { opacity: 0.4 },
+            pressed && { opacity: 0.7 },
+          ]}
+        >
+          <Text style={s.compJoinTxt}>Entrar</Text>
+        </Pressable>
+      </View>
+    </Card>
+  );
+}
+
 function LiveTogglePanel({
   live,
   liveStarting,
@@ -1674,6 +1834,79 @@ const s = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 1.2,
   },
+  // ===== Competição (idle) =====
+  compTitle: {
+    color: colors.textPrimary,
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 1.5,
+  },
+  compSub: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    marginTop: 4,
+    marginBottom: spacing.m,
+    lineHeight: 18,
+  },
+  compCreateBtn: {
+    backgroundColor: colors.accentCyan,
+    borderRadius: radius.m,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  compCreateTxt: {
+    color: colors.textOnPrimary,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  compJoinRow: {
+    flexDirection: 'row',
+    gap: spacing.s,
+    marginTop: spacing.s,
+  },
+  compInput: {
+    flex: 1,
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.m,
+    paddingHorizontal: spacing.m,
+    paddingVertical: 10,
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: 2,
+  },
+  compJoinBtn: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.accentCyan,
+    borderRadius: radius.m,
+    paddingHorizontal: spacing.l,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  compJoinTxt: {
+    color: colors.accentCyan,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  compCodeRow: {
+    marginTop: 6,
+  },
+  compCode: {
+    color: colors.accentCyan,
+    fontSize: 28,
+    fontWeight: '900',
+    letterSpacing: 3,
+  },
+  compHint: {
+    color: colors.textMuted,
+    fontSize: 11,
+    marginTop: spacing.s,
+    lineHeight: 16,
+  },
+
   // Placeholder enquanto não há delta (1ª volta). Mesma altura do pill
   // pra não deslocar o layout quando o delta aparecer.
   deltaPillPlaceholder: {
