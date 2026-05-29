@@ -1317,6 +1317,7 @@ function CompetitionPanel({
   onJoin: (code: string) => Promise<void> | void;
 }) {
   const [code, setCode] = useState('');
+  const router = useRouter();
 
   if (event) {
     return (
@@ -1329,6 +1330,12 @@ function CompetitionPanel({
           Suas voltas contam pro ranking. Acompanhe em{'\n'}
           copilot-mu-eight.vercel.app/event/{event.code}
         </Text>
+        <Pressable
+          onPress={() => router.push(`/ranking/${event.code}` as any)}
+          style={({ pressed }) => [s.compRankBtn, pressed && { opacity: 0.7 }]}
+        >
+          <Text style={s.compRankTxt}>Ver ranking ao vivo</Text>
+        </Pressable>
       </Card>
     );
   }
@@ -1905,6 +1912,19 @@ const s = StyleSheet.create({
     fontSize: 11,
     marginTop: spacing.s,
     lineHeight: 16,
+  },
+  compRankBtn: {
+    marginTop: spacing.m,
+    borderWidth: 1,
+    borderColor: colors.accentCyan,
+    borderRadius: radius.m,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  compRankTxt: {
+    color: colors.accentCyan,
+    fontSize: 13,
+    fontWeight: '800',
   },
 
   // Placeholder enquanto não há delta (1ª volta). Mesma altura do pill
