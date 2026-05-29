@@ -1,8 +1,14 @@
 import { useCallback, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { listSessions, Session, getLapsForSession } from '../../src/storage/db';
+import {
+  loadRecoverySnapshot,
+  recoverSnapshotToSession,
+  clearRecoverySnapshot,
+  type RecoverySnapshot,
+} from '../../src/storage/recovery';
 import { getProfile, PilotProfile } from '../../src/storage/profile';
 import { findTrackById } from '../../src/data/tracks';
 import { TrackSilhouette } from '../../src/components/TrackSilhouette';
@@ -52,10 +58,19 @@ export default function Home() {
   const insets = useSafeAreaInsets();
   const [profile, setProfile] = useState<PilotProfile | null>(null);
   const [sessions, setSessions] = useState<SessionWithStats[]>([]);
+  // Snapshot de recuperação anti-crash — não-null = sessão anterior foi
+  // interrompida (crash/SO) sem encerrar. Mostra banner pra recuperar.
+  const [recovery, setRecovery] = useState<RecoverySnapshot | null>(null);
+  const [recovering, setRecovering] = useState(false);
 
   const load = useCallback(async () => {
-    const [prof, list] = await Promise.all([getProfile(), listSessions()]);
+    const [prof, list, recoverySnap] = await Promise.all([
+      getProfile(),
+      listSessions(),
+      loadRecoverySnapshot(),
+    ]);
     setProfile(prof);
+    setRecovery(recoverySnap);
     const enriched = await Promise.all(
       list.map(async (sess) => {
         const laps = await getLapsForSession(sess.id);
@@ -69,6 +84,46 @@ export default function Home() {
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const handleRecover = async () => {
+    if (!recovery || recovering) return;
+    setRecovering(true);
+    try {
+      const sessionId = await recoverSnapshotToSession(recovery);
+      setRecovery(null);
+      if (sessionId) {
+        await load();
+        router.push(`/session/${sessionId}` as any);
+      } else {
+        Alert.alert(
+          'Nada pra recuperar',
+          'A sessão interrompida não tinha voltas completas o suficiente.'
+        );
+      }
+    } catch (e: any) {
+      Alert.alert('Erro', e?.message ?? 'Falha ao recuperar a sessão.');
+    } finally {
+      setRecovering(false);
+    }
+  };
+
+  const handleDiscardRecovery = () => {
+    Alert.alert(
+      'Descartar sessão interrompida?',
+      'Os dados gravados serão perdidos pra sempre.',
+      [
+        { text: 'Manter', style: 'cancel' },
+        {
+          text: 'Descartar',
+          style: 'destructive',
+          onPress: async () => {
+            await clearRecoverySnapshot();
+            setRecovery(null);
+          },
+        },
+      ]
+    );
+  };
 
   const firstName = profile?.name?.split(' ')[0] ?? '';
   const greeting = greetingFor(new Date().getHours());
@@ -117,6 +172,47 @@ export default function Home() {
             <Icon name="bell" size={22} color={colors.textSecondary} />
           </Pressable>
         </View>
+
+        {/* Banner de recuperação anti-crash — só aparece se a última sessão
+          * foi interrompida sem encerrar (crash/SO/bateria). */}
+        {recovery && (
+          <View style={s.recoveryBanner}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.recoveryTitle}>Sessão interrompida</Text>
+              <Text style={s.recoverySub}>
+                {recovery.trackName} ·{' '}
+                {new Date(recovery.startedAt).toLocaleString('pt-BR', {
+                  day: '2-digit',
+                  month: '2-digit',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+                {' · '}
+                {recovery.samples.length} pontos não salvos
+              </Text>
+              <View style={s.recoveryActions}>
+                <Pressable
+                  onPress={handleRecover}
+                  disabled={recovering}
+                  style={s.recoveryBtn}
+                >
+                  {recovering ? (
+                    <ActivityIndicator color={colors.textOnPrimary} size="small" />
+                  ) : (
+                    <Text style={s.recoveryBtnTxt}>Recuperar</Text>
+                  )}
+                </Pressable>
+                <Pressable
+                  onPress={handleDiscardRecovery}
+                  disabled={recovering}
+                  style={s.recoveryDiscard}
+                >
+                  <Text style={s.recoveryDiscardTxt}>Descartar</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        )}
 
         {/* Citação Senna — destaque emocional, troca a cada abertura */}
         <View style={{ marginTop: spacing.l }}>
@@ -238,6 +334,54 @@ function LastSessionSilhouette({ sessionId }: { sessionId: string }) {
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
+  recoveryBanner: {
+    flexDirection: 'row',
+    marginTop: spacing.l,
+    padding: spacing.m,
+    borderRadius: 14,
+    backgroundColor: colors.warning + '14',
+    borderWidth: 1,
+    borderColor: colors.warning + '55',
+  },
+  recoveryTitle: {
+    color: colors.warning,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  recoverySub: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    marginTop: 3,
+    lineHeight: 17,
+  },
+  recoveryActions: {
+    flexDirection: 'row',
+    gap: spacing.s,
+    marginTop: spacing.m,
+  },
+  recoveryBtn: {
+    backgroundColor: colors.warning,
+    paddingHorizontal: spacing.l,
+    paddingVertical: 8,
+    borderRadius: 10,
+    minWidth: 110,
+    alignItems: 'center',
+  },
+  recoveryBtnTxt: {
+    color: colors.textOnPrimary,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  recoveryDiscard: {
+    paddingHorizontal: spacing.m,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  recoveryDiscardTxt: {
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: '600',
+  },
 
   headerRow: {
     flexDirection: 'row',

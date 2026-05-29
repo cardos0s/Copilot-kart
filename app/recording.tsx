@@ -223,7 +223,15 @@ export default function Recording() {
   const handleStart = async () => {
     setStarting(true);
     try {
-      await start();
+      // Passa metadata pro auto-save anti-crash. Se o app morrer no meio,
+      // o boot detecta o snapshot e oferece recuperar a sessão.
+      await start({
+        trackId: params.trackId ?? null,
+        trackName: params.trackName ?? 'Pista',
+        layoutId: params.layoutId ?? null,
+        kartSetupId: params.kartSetupId ?? null,
+        mode: 'race',
+      });
     } catch (e: any) {
       Alert.alert('Erro', e.message ?? 'Falha ao iniciar GPS');
     }

@@ -6,6 +6,16 @@ import { Accelerometer, Gyroscope } from 'expo-sensors';
 import { GpsSample, ImuSample, LatLng } from '../lib/geometry';
 import { detectLaps, DetectedLap } from '../lib/lapDetector';
 import { DeltaTracker } from '../lib/realtimeDelta';
+import { saveRecoverySnapshot, clearRecoverySnapshot } from '../storage/recovery';
+
+/** Metadata da sessão pro snapshot de recuperação anti-crash. */
+export type RecoveryMeta = {
+  trackId: string | null;
+  trackName: string;
+  layoutId: string | null;
+  kartSetupId: string | null;
+  mode: 'race' | 'reference';
+};
 
 const BG_TASK = 'KARTLAP_BG_LOCATION';
 
@@ -307,6 +317,9 @@ export function useLapRecorder(options?: LapRecorderOptions) {
   // mas é local — não publica em realtime (sobrecarga de rede). Stop()
   // recorta esses por timestamp pra cada lap.
   const allImuRef = useRef<ImuSample[]>([]);
+  // Recovery anti-crash: metadata da sessão + timestamp do último snapshot.
+  const recoveryMetaRef = useRef<RecoveryMeta | null>(null);
+  const lastSnapshotAtRef = useRef<number>(0);
   const lastDetectionRef = useRef<DetectedLap[]>([]);
   const movingStartIdxRef = useRef<number>(-1);
   const targetReachedRef = useRef<boolean>(false);
@@ -353,8 +366,10 @@ export function useLapRecorder(options?: LapRecorderOptions) {
   // tem ciclo próprio (não some após 1s — fica visível até a próxima volta).
   const lastClosedLapSectorsRef = useRef<SectorTimes | null>(null);
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (recoveryMeta?: RecoveryMeta) => {
     setState('requesting');
+    recoveryMetaRef.current = recoveryMeta ?? null;
+    lastSnapshotAtRef.current = 0;
     buf.samples = [];
     buf.imu = [];
     allSamplesRef.current = [];
@@ -683,6 +698,33 @@ export function useLapRecorder(options?: LapRecorderOptions) {
       } else {
         setLiveSamples([]);
       }
+
+      // ===== Auto-save anti-crash =====
+      // Snapshot do estado bruto em arquivo on lap close + a cada 30s.
+      // Se o app morrer (crash/SO/bateria) no meio da sessão, o boot
+      // detecta o arquivo e oferece recuperar. Fire-and-forget (async,
+      // não bloqueia o poll). Só roda se recoveryMeta foi passado no start.
+      const meta = recoveryMetaRef.current;
+      if (meta && all.length > 0) {
+        const now = Date.now();
+        const shouldSnapshot =
+          closedNewLap || now - lastSnapshotAtRef.current > 30_000;
+        if (shouldSnapshot) {
+          lastSnapshotAtRef.current = now;
+          saveRecoverySnapshot({
+            version: 1,
+            startedAt: startTRef.current,
+            updatedAt: now,
+            trackId: meta.trackId,
+            trackName: meta.trackName,
+            layoutId: meta.layoutId,
+            kartSetupId: meta.kartSetupId,
+            mode: meta.mode,
+            samples: all,
+            imuSamples: allImuRef.current,
+          });
+        }
+      }
     }, 500);
   }, [options?.targetLaps, options?.onTargetReached]);
 
@@ -699,6 +741,12 @@ export function useLapRecorder(options?: LapRecorderOptions) {
     }
     stopImuCapture();
     deactivateKeepAwake('copilot-recording');
+
+    // Encerramento limpo — apaga o snapshot de recovery. A sessão vai ser
+    // salva normalmente pelo caller (createSession + saveLap), então não
+    // há o que recuperar. fire-and-forget.
+    recoveryMetaRef.current = null;
+    clearRecoverySnapshot();
 
     // Última drenagem do buffer — pode ter samples chegando entre o poll
     // anterior e agora. GPS + IMU.
