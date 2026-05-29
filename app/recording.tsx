@@ -55,6 +55,7 @@ import {
 } from '../src/lib/liveSession';
 import { polylineLength } from '../src/lib/geometry';
 import { LapRecord } from '../src/lib/analysis';
+import { syncSession } from '../src/lib/sessionSync';
 import { Button, Card, Icon } from '../src/components/ui';
 import { LapResultOverlay } from '../src/components/LapResultOverlay';
 import { PilotMessageOverlay } from '../src/components/PilotMessageOverlay';
@@ -435,6 +436,10 @@ export default function Recording() {
             for (const lap of lapsToSave) {
               await saveLap(lap);
             }
+
+            // Sync anônimo da sessão pra nuvem (backup + visibilidade dev).
+            // Fire-and-forget, respeita opt-out, falha silenciosa offline.
+            syncSession(session, lapsToSave).catch(() => {});
 
             if (lapsToSave.length === 0) {
               Alert.alert(

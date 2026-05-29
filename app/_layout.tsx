@@ -14,6 +14,7 @@ import {
 import { getProfile } from '../src/storage/profile';
 import { listCustomTracks } from '../src/storage/db';
 import { setCustomTracksCache } from '../src/data/tracks';
+import { syncAllSessions } from '../src/lib/sessionSync';
 import { SplashLoader } from '../src/components/SplashLoader';
 import { colors } from '../src/theme';
 
@@ -105,6 +106,9 @@ export default function RootLayout() {
         } catch {
           /* segue sem custom tracks */
         }
+        // Backfill de sync na nuvem — sobe sessões locais ainda não
+        // sincronizadas (idempotente). Background, não bloqueia boot.
+        syncAllSessions().catch(() => {});
       } finally {
         setProfileReady(true);
       }

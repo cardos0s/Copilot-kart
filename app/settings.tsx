@@ -4,7 +4,11 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { clearProfile, getProfile, PilotProfile } from '../src/storage/profile';
 import { getStoredCredential } from '../src/storage/apiKey';
 import { getClient } from '../src/lib/llm';
-import { useCoachFloatingEnabled } from '../src/storage/preferences';
+import {
+  useCoachFloatingEnabled,
+  getCloudSyncEnabled,
+  setCloudSyncEnabled,
+} from '../src/storage/preferences';
 import {
   BrandMark,
   Card,
@@ -26,6 +30,7 @@ export default function Settings() {
   const [profile, setProfile] = useState<PilotProfile | null>(null);
   const [aiProviderLabel, setAiProviderLabel] = useState<string | null>(null);
   const [coachFloatingEnabled, setCoachFloatingEnabled] = useCoachFloatingEnabled();
+  const [cloudSync, setCloudSync] = useState(true);
   const [state, setState] = useState<SettingsState>({
     unit: 'metric',
     notifications: true,
@@ -38,8 +43,14 @@ export default function Settings() {
       getStoredCredential().then((c) =>
         setAiProviderLabel(c ? getClient(c.provider).meta.displayName : null)
       );
+      getCloudSyncEnabled().then(setCloudSync);
     }, [])
   );
+
+  const handleCloudSyncChange = (v: boolean) => {
+    setCloudSync(v);
+    setCloudSyncEnabled(v);
+  };
 
   const handleSignOut = () => {
     Alert.alert(
@@ -135,6 +146,17 @@ export default function Settings() {
             sub="Aparece em todas as telas com insights novos"
             value={coachFloatingEnabled}
             onChange={setCoachFloatingEnabled}
+          />
+        </Card>
+
+        {/* Privacidade / backup */}
+        <SectionLabel>BACKUP NA NUVEM</SectionLabel>
+        <Card variant="default" padding="none" style={s.sectionCard}>
+          <RowToggle
+            label="Sincronizar sessões"
+            sub="Backup anônimo dos seus tempos de volta. Sem login. Não envia a telemetria completa, só os tempos."
+            value={cloudSync}
+            onChange={handleCloudSyncChange}
           />
         </Card>
 

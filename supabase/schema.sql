@@ -157,6 +157,48 @@ exception when duplicate_object then null;
 end $$;
 
 -- =====================
+-- Sync anônimo de sessões (backup + visibilidade dev)
+-- =====================
+-- Sincroniza METADATA + tempos de volta (não os sample arrays brutos —
+-- grandes demais pro free tier). Chaveado por device_id (anônimo, sem
+-- login). Dá backup pro tester + dashboard pro dev ver uso de campo.
+-- Telemetria completa (samples/IMU) continua local; sincroniza sob demanda.
+--
+-- Upsert idempotente via UNIQUE(device_id, local_session_id).
+
+create table if not exists synced_sessions (
+  id uuid primary key default gen_random_uuid(),
+  device_id text not null,
+  local_session_id text not null,           -- id da session no SQLite do device
+  pilot_name text,
+  track_id text,
+  track_name text,
+  layout_id text,
+  mode text,
+  started_at timestamptz,
+  best_lap_ms int,
+  lap_count int,
+  synced_at timestamptz default now(),
+  unique (device_id, local_session_id)
+);
+
+create index if not exists idx_synced_sessions_device on synced_sessions(device_id, started_at desc);
+
+create table if not exists synced_laps (
+  id bigserial primary key,
+  device_id text not null,
+  local_session_id text not null,
+  lap_number int not null,
+  duration_ms int not null,
+  s1_ms int,
+  s2_ms int,
+  s3_ms int,
+  unique (device_id, local_session_id, lap_number)
+);
+
+create index if not exists idx_synced_laps_session on synced_laps(device_id, local_session_id);
+
+-- =====================
 -- RLS (Row-Level Security)
 -- =====================
 -- Por enquanto: permissivo (qualquer um com o anon key pode ler/escrever).
@@ -172,6 +214,8 @@ alter table live_sessions enable row level security;
 alter table live_samples enable row level security;
 alter table live_laps enable row level security;
 alter table live_messages enable row level security;
+alter table synced_sessions enable row level security;
+alter table synced_laps enable row level security;
 
 -- Policies — `create policy` não tem "if not exists" no Postgres, então
 -- precedemos cada uma com `drop policy if exists` pra que o schema rode
@@ -200,6 +244,20 @@ drop policy if exists "public read live_laps" on live_laps;
 create policy "public read live_laps" on live_laps for select using (true);
 drop policy if exists "public insert live_laps" on live_laps;
 create policy "public insert live_laps" on live_laps for insert with check (true);
+
+drop policy if exists "public read synced_sessions" on synced_sessions;
+create policy "public read synced_sessions" on synced_sessions for select using (true);
+drop policy if exists "public insert synced_sessions" on synced_sessions;
+create policy "public insert synced_sessions" on synced_sessions for insert with check (true);
+drop policy if exists "public update synced_sessions" on synced_sessions;
+create policy "public update synced_sessions" on synced_sessions for update using (true);
+
+drop policy if exists "public read synced_laps" on synced_laps;
+create policy "public read synced_laps" on synced_laps for select using (true);
+drop policy if exists "public insert synced_laps" on synced_laps;
+create policy "public insert synced_laps" on synced_laps for insert with check (true);
+drop policy if exists "public update synced_laps" on synced_laps;
+create policy "public update synced_laps" on synced_laps for update using (true);
 
 drop policy if exists "public read live_messages" on live_messages;
 create policy "public read live_messages" on live_messages for select using (true);
