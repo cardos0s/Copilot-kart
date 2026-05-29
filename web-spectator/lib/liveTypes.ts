@@ -54,3 +54,20 @@ export type LiveMessage = {
   ackedAt: number | null;
   sentBy: string | null;
 };
+
+export type EventInfo = {
+  id: string;
+  code: string;
+  name: string | null;
+  trackId: string | null;
+  trackName: string | null;
+};
+
+export type EventRankingRow = {
+  pilotName: string;
+  kartNumber: string | null;
+  bestLapMs: number | null;
+  lastLapMs: number | null;
+  lapCount: number;
+  lastLapAt: number | null;
+};
