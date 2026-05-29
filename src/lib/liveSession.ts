@@ -45,6 +45,26 @@ export type LiveLap = {
   s3Ms?: number | null;
 };
 
+/** Evento / competição que agrupa várias live_sessions. */
+export type EventInfo = {
+  id: string;
+  code: string;
+  name: string | null;
+  trackId: string | null;
+  trackName: string | null;
+};
+
+/** Uma linha do ranking do evento — agregado por piloto. */
+export type EventRankingRow = {
+  pilotName: string;
+  kartNumber: string | null;
+  bestLapMs: number | null;
+  lastLapMs: number | null;
+  lapCount: number;
+  /** Timestamp da última volta — pra ordenar/detectar atividade. */
+  lastLapAt: number | null;
+};
+
 /**
  * Mensagem da equipe pro piloto. Severidade controla a cor do overlay
  * no app (info=verde, warning=amarelo, critical=vermelho).
@@ -74,6 +94,8 @@ export type LiveSessionInfo = {
   referenceLapMs: number | null;
   startedAt: number;
   endedAt: number | null;
+  /** Evento de competição ao qual a sessão pertence (null se avulsa). */
+  eventId: string | null;
 };
 
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // sem 0/O/1/I/L
@@ -118,6 +140,8 @@ export type CreateOpts = {
   trackName: string | null;
   trackId: string | null;
   referenceLapMs?: number | null;
+  /** Se a sessão faz parte de uma competição, o id do evento. */
+  eventId?: string | null;
 };
 
 /**
@@ -140,6 +164,7 @@ export async function createLiveSession(opts: CreateOpts): Promise<LiveSessionIn
         track_name: opts.trackName,
         track_id: opts.trackId,
         reference_lap_ms: opts.referenceLapMs ?? null,
+        event_id: opts.eventId ?? null,
       })
       .select('*')
       .single();
@@ -152,6 +177,179 @@ export async function createLiveSession(opts: CreateOpts): Promise<LiveSessionIn
     }
   }
   throw new Error('Não foi possível gerar um código único após 5 tentativas');
+}
+
+// =====================
+// Eventos / Competição
+// =====================
+
+function mapEventRow(row: any): EventInfo {
+  return {
+    id: row.id,
+    code: row.code,
+    name: row.name ?? null,
+    trackId: row.track_id ?? null,
+    trackName: row.track_name ?? null,
+  };
+}
+
+/**
+ * Cria um evento de competição. Retorna o info (com o código pra
+ * compartilhar). Pilotos entram com esse código.
+ */
+export async function createEvent(opts: {
+  name: string | null;
+  trackId: string | null;
+  trackName: string | null;
+}): Promise<EventInfo> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Competição precisa do Supabase configurado.');
+  const deviceId = await getDeviceId();
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const code = generateCode();
+    const { data, error } = await supabase
+      .from('events')
+      .insert({
+        code,
+        name: opts.name,
+        track_id: opts.trackId,
+        track_name: opts.trackName,
+        created_by: deviceId,
+      })
+      .select('*')
+      .single();
+    if (!error && data) return mapEventRow(data);
+    if (error?.code !== '23505') {
+      throw new Error(error?.message ?? 'Erro ao criar evento');
+    }
+  }
+  throw new Error('Não foi possível gerar um código único após 5 tentativas');
+}
+
+/** Busca um evento pelo código. null se não existe. */
+export async function findEventByCode(code: string): Promise<EventInfo | null> {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+  const { data } = await supabase
+    .from('events')
+    .select('*')
+    .eq('code', code.toUpperCase())
+    .maybeSingle();
+  return data ? mapEventRow(data) : null;
+}
+
+/**
+ * Carrega o ranking agregado do evento. Junta todas as live_sessions do
+ * evento + suas voltas + nome do piloto, e agrega por piloto:
+ *   bestLapMs = menor duração, lastLapMs = volta mais recente, lapCount.
+ *
+ * Ordenado por melhor volta (asc) — líder primeiro. Pilotos sem volta
+ * fechada ainda vão pro fim.
+ */
+export async function loadEventRanking(eventId: string): Promise<EventRankingRow[]> {
+  const supabase = getSupabase();
+  if (!supabase) return [];
+
+  // 1. Sessions do evento + pilotos
+  const { data: sessRows } = await supabase
+    .from('live_sessions')
+    .select('id, pilot_id, pilots(display_name, kart_number)')
+    .eq('event_id', eventId);
+  if (!sessRows || sessRows.length === 0) return [];
+
+  // 2. Todas as voltas do evento (denormalizado por event_id)
+  const { data: lapRows } = await supabase
+    .from('live_laps')
+    .select('live_session_id, duration_ms, finished_at')
+    .eq('event_id', eventId)
+    .order('finished_at', { ascending: true });
+
+  // Mapa session → piloto
+  const pilotBySession = new Map<string, { name: string; kart: string | null }>();
+  for (const s of sessRows as any[]) {
+    pilotBySession.set(s.id, {
+      name: s.pilots?.display_name ?? 'Piloto',
+      kart: s.pilots?.kart_number ?? null,
+    });
+  }
+
+  // Agrega por NOME do piloto (junta múltiplas sessions do mesmo piloto
+  // — ex: parou e voltou). Chave por nome+kart é suficiente pra MVP.
+  const byPilot = new Map<string, EventRankingRow>();
+  for (const lap of (lapRows ?? []) as any[]) {
+    const pilot = pilotBySession.get(lap.live_session_id);
+    if (!pilot) continue;
+    const key = `${pilot.name}#${pilot.kart ?? ''}`;
+    const t = new Date(lap.finished_at).getTime();
+    const existing = byPilot.get(key);
+    if (!existing) {
+      byPilot.set(key, {
+        pilotName: pilot.name,
+        kartNumber: pilot.kart,
+        bestLapMs: lap.duration_ms,
+        lastLapMs: lap.duration_ms,
+        lapCount: 1,
+        lastLapAt: t,
+      });
+    } else {
+      existing.lapCount += 1;
+      if (lap.duration_ms < (existing.bestLapMs ?? Infinity)) {
+        existing.bestLapMs = lap.duration_ms;
+      }
+      // lapRows vem ordenado asc por finished_at, então o último visto é o mais recente
+      existing.lastLapMs = lap.duration_ms;
+      existing.lastLapAt = t;
+    }
+  }
+
+  // Pilotos sem volta ainda — entram no ranking com null (no fim)
+  for (const [, pilot] of pilotBySession) {
+    const key = `${pilot.name}#${pilot.kart ?? ''}`;
+    if (!byPilot.has(key)) {
+      byPilot.set(key, {
+        pilotName: pilot.name,
+        kartNumber: pilot.kart,
+        bestLapMs: null,
+        lastLapMs: null,
+        lapCount: 0,
+        lastLapAt: null,
+      });
+    }
+  }
+
+  return Array.from(byPilot.values()).sort((a, b) => {
+    if (a.bestLapMs === null && b.bestLapMs === null) return 0;
+    if (a.bestLapMs === null) return 1;
+    if (b.bestLapMs === null) return -1;
+    return a.bestLapMs - b.bestLapMs;
+  });
+}
+
+/**
+ * Assina novas voltas do evento (de QUALQUER piloto). Callback dispara a
+ * cada volta fechada — o consumidor re-carrega o ranking (debounced).
+ * Retorna unsubscribe.
+ */
+export function subscribeEventLaps(eventId: string, onLap: () => void): () => void {
+  const supabase = getSupabase();
+  if (!supabase) return () => {};
+  const channel: RealtimeChannel = supabase
+    .channel(`event:${eventId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'live_laps',
+        filter: `event_id=eq.${eventId}`,
+      },
+      () => onLap()
+    )
+    .subscribe();
+  return () => {
+    supabase.removeChannel(channel);
+  };
 }
 
 export async function endLiveSession(code: string): Promise<void> {
@@ -189,7 +387,11 @@ export async function publishSample(sessionId: string, sample: LiveSample): Prom
   if (error && __DEV__) console.warn('[liveSession] publishSample error:', error.message);
 }
 
-export async function publishLap(sessionId: string, lap: LiveLap): Promise<void> {
+export async function publishLap(
+  sessionId: string,
+  lap: LiveLap,
+  eventId?: string | null
+): Promise<void> {
   const supabase = getSupabase();
   if (!supabase) return;
   const { error } = await supabase.from('live_laps').insert({
@@ -200,6 +402,8 @@ export async function publishLap(sessionId: string, lap: LiveLap): Promise<void>
     s1_ms: lap.s1Ms ?? null,
     s2_ms: lap.s2Ms ?? null,
     s3_ms: lap.s3Ms ?? null,
+    // Denormalizado pro ranking de evento via realtime filtrado por event_id.
+    event_id: eventId ?? null,
   });
   if (error && __DEV__) console.warn('[liveSession] publishLap error:', error.message);
 }
@@ -387,6 +591,7 @@ function mapSessionRow(row: any): LiveSessionInfo {
     referenceLapMs: row.reference_lap_ms ?? null,
     startedAt: new Date(row.started_at).getTime(),
     endedAt: row.ended_at ? new Date(row.ended_at).getTime() : null,
+    eventId: row.event_id ?? null,
   };
 }
 

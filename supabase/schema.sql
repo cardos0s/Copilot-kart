@@ -97,6 +97,37 @@ alter table live_laps add column if not exists s2_ms int;
 alter table live_laps add column if not exists s3_ms int;
 
 -- =====================
+-- Eventos / Modo Competição
+-- =====================
+-- Um EVENTO agrupa várias live_sessions (uma por piloto) sob um código.
+-- Ranking ao vivo agrega a melhor volta de cada piloto. GPS outdoor —
+-- cada piloto roda o app, entra no código, e cronometra suas voltas.
+--
+-- live_sessions.event_id liga a sessão ao evento. live_laps.event_id é
+-- denormalizado (mesmo valor) pra permitir realtime filtrado por evento
+-- (subscribe em live_laps WHERE event_id = X pega voltas de TODOS os
+-- pilotos do evento num canal só).
+
+create table if not exists events (
+  id uuid primary key default gen_random_uuid(),
+  code text unique not null,
+  name text,
+  track_id text,
+  track_name text,
+  created_by text,                            -- device_id do criador, ou 'web'
+  created_at timestamptz default now(),
+  expires_at timestamptz default now() + interval '12 hours'
+);
+
+create index if not exists idx_events_code on events(code);
+
+alter table live_sessions add column if not exists event_id uuid references events(id) on delete set null;
+alter table live_laps add column if not exists event_id uuid;
+
+create index if not exists idx_live_laps_event on live_laps(event_id, finished_at);
+create index if not exists idx_live_sessions_event on live_sessions(event_id);
+
+-- =====================
 -- Mensagens da equipe pro piloto (Team→Pilot)
 -- =====================
 -- Equipe/box manda comandos curtos pro piloto durante a sessão. O app
@@ -153,6 +184,12 @@ end $$;
 do $$
 begin
   alter publication supabase_realtime add table live_messages;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table events;
 exception when duplicate_object then null;
 end $$;
 
@@ -216,6 +253,7 @@ alter table live_laps enable row level security;
 alter table live_messages enable row level security;
 alter table synced_sessions enable row level security;
 alter table synced_laps enable row level security;
+alter table events enable row level security;
 
 -- Policies — `create policy` não tem "if not exists" no Postgres, então
 -- precedemos cada uma com `drop policy if exists` pra que o schema rode
@@ -258,6 +296,13 @@ drop policy if exists "public insert synced_laps" on synced_laps;
 create policy "public insert synced_laps" on synced_laps for insert with check (true);
 drop policy if exists "public update synced_laps" on synced_laps;
 create policy "public update synced_laps" on synced_laps for update using (true);
+
+drop policy if exists "public read events" on events;
+create policy "public read events" on events for select using (true);
+drop policy if exists "public insert events" on events;
+create policy "public insert events" on events for insert with check (true);
+drop policy if exists "public update events" on events;
+create policy "public update events" on events for update using (true);
 
 drop policy if exists "public read live_messages" on live_messages;
 create policy "public read live_messages" on live_messages for select using (true);
