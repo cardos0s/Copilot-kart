@@ -5,8 +5,9 @@ import { useFocusEffect } from 'expo-router';
 import * as Location from 'expo-location';
 import Svg, { Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { TRACKS, TrackRef, distanceKm, findTrackById } from '../src/data/tracks';
-import { listAllLayoutsGrouped, TrackLayout } from '../src/storage/db';
+import { getAllTracks, TrackRef, distanceKm, findTrackById } from '../src/data/tracks';
+import { listAllLayoutsGrouped, listCustomTracks, TrackLayout } from '../src/storage/db';
+import { setCustomTracksCache } from '../src/data/tracks';
 import { getProfile } from '../src/storage/profile';
 import { TrackSilhouette } from '../src/components/TrackSilhouette';
 import { colors, spacing, radius, typography } from '../src/theme';
@@ -72,10 +73,15 @@ export default function NewSession() {
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    const [grouped, profile] = await Promise.all([
+    const [grouped, profile, customTracks] = await Promise.all([
       listAllLayoutsGrouped(),
       getProfile(),
+      listCustomTracks(),
     ]);
+    // Re-hidrata cache de custom tracks toda vez que entra na tela — pega
+    // pistas criadas em outras sessões/devices e a recém-criada ao voltar
+    // do new-track.
+    setCustomTracksCache(customTracks);
     setLayoutsByTrack(grouped);
     setHomeTrackId(profile?.homeTrackId ?? null);
     setLoading(false);
@@ -103,7 +109,7 @@ export default function NewSession() {
   }, []);
 
   const rows: TrackRow[] = useMemo(() => {
-    const all = TRACKS.map<TrackRow>((t) => {
+    const all = getAllTracks().map<TrackRow>((t) => {
       const layouts = layoutsByTrack.get(t.id) ?? [];
       // listAllLayoutsGrouped ordena: is_default DESC, recorded_at DESC.
       // O primeiro é o default (se houver).
@@ -252,6 +258,20 @@ export default function NewSession() {
           {rows.length === 0 && (
             <Text style={s.emptyText}>Nenhuma pista encontrada com "{query}"</Text>
           )}
+
+          {/* Criar pista custom — pro piloto num kartódromo fora da lista.
+            * Crítico pra teste de campo: sem isso, quem está numa pista
+            * desconhecida não consegue nem começar. */}
+          <Pressable
+            onPress={() => router.push('/new-track' as any)}
+            style={({ pressed }) => [s.addTrackBtn, pressed && { opacity: 0.7 }]}
+          >
+            <Text style={s.addTrackPlus}>+</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={s.addTrackTitle}>Minha pista não está aqui</Text>
+              <Text style={s.addTrackSub}>Criar uma pista nova com o GPS atual</Text>
+            </View>
+          </Pressable>
         </View>
       </ScrollView>
     </View>
@@ -376,5 +396,34 @@ const s = StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
     padding: spacing.xl,
+  },
+  addTrackBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.m,
+    padding: spacing.m,
+    marginTop: spacing.s,
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: colors.primary + '55',
+    borderStyle: 'dashed',
+    borderRadius: radius.l,
+  },
+  addTrackPlus: {
+    color: colors.primary,
+    fontSize: 28,
+    fontWeight: '300',
+    width: 64,
+    textAlign: 'center',
+  },
+  addTrackTitle: {
+    color: colors.primary,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  addTrackSub: {
+    color: colors.textMuted,
+    fontSize: 12,
+    marginTop: 2,
   },
 });

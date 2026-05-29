@@ -12,6 +12,8 @@ import {
   useFonts,
 } from '@expo-google-fonts/playfair-display';
 import { getProfile } from '../src/storage/profile';
+import { listCustomTracks } from '../src/storage/db';
+import { setCustomTracksCache } from '../src/data/tracks';
 import { SplashLoader } from '../src/components/SplashLoader';
 import { colors } from '../src/theme';
 
@@ -94,6 +96,15 @@ export default function RootLayout() {
     (async () => {
       try {
         await getProfile();
+        // Hidrata o cache de pistas custom — findTrackById/getAllTracks
+        // precisam disso sync em várias telas. Falha silenciosa: se o DB
+        // não responder, só não mostra custom tracks (hardcoded seguem).
+        try {
+          const customTracks = await listCustomTracks();
+          setCustomTracksCache(customTracks);
+        } catch {
+          /* segue sem custom tracks */
+        }
       } finally {
         setProfileReady(true);
       }

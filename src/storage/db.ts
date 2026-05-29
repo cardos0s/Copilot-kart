@@ -1,6 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 import { GpsSample } from '../lib/geometry';
 import { LapRecord } from '../lib/analysis';
+import type { TrackRef } from '../data/tracks';
 
 let dbInstance: SQLite.SQLiteDatabase | null = null;
 
@@ -199,6 +200,30 @@ async function db() {
       }
       await dbInstance.execAsync('PRAGMA user_version = 3');
     }
+
+    // Migration v3 → v4: tabela de pistas custom criadas pelo usuário.
+    // Hardcoded TRACKS cobrem só 8 kartódromos; quando o piloto está numa
+    // pista fora da lista, cria a sua aqui (nome + GPS atual). Mescladas
+    // com as hardcoded em getAllTracks().
+    const v4 = await dbInstance.getFirstAsync<{ user_version: number }>(
+      'PRAGMA user_version'
+    );
+    if ((v4?.user_version ?? 0) < 4) {
+      await dbInstance.execAsync(`
+        CREATE TABLE IF NOT EXISTS custom_tracks (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          short_name TEXT NOT NULL,
+          city TEXT,
+          state TEXT,
+          lat REAL NOT NULL,
+          lng REAL NOT NULL,
+          length_m REAL,
+          created_at INTEGER NOT NULL
+        );
+      `);
+      await dbInstance.execAsync('PRAGMA user_version = 4');
+    }
   }
   return dbInstance;
 }
@@ -330,6 +355,78 @@ export async function getTrackHistory(
     lapCount: r.lapCount ?? 0,
     bestLapMs: r.bestLapMs ?? null,
   }));
+}
+
+// =========================
+// Custom tracks
+// =========================
+
+export type NewCustomTrack = {
+  name: string;
+  shortName: string;
+  city?: string | null;
+  state?: string | null;
+  lat: number;
+  lng: number;
+  lengthM?: number | null;
+};
+
+/** Lista pistas custom criadas pelo usuário (ordem: mais recente primeiro). */
+export async function listCustomTracks(): Promise<TrackRef[]> {
+  const d = await db();
+  const rows = await d.getAllAsync<any>(
+    `SELECT id, name, short_name, city, state, lat, lng, length_m
+     FROM custom_tracks
+     ORDER BY created_at DESC`
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    shortName: r.short_name,
+    city: r.city ?? '',
+    state: r.state ?? '',
+    lat: r.lat,
+    lng: r.lng,
+    lengthM: r.length_m ?? 0,
+  }));
+}
+
+/** Cria uma pista custom. Retorna o TrackRef pronto pra usar. */
+export async function addCustomTrack(t: NewCustomTrack): Promise<TrackRef> {
+  const d = await db();
+  // id estável + único. Prefixo "custom-" distingue de hardcoded em qualquer
+  // lugar que precise diferenciar (ex: não deixar deletar hardcoded).
+  const id = `custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  await d.runAsync(
+    `INSERT INTO custom_tracks (id, name, short_name, city, state, lat, lng, length_m, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    id,
+    t.name,
+    t.shortName,
+    t.city ?? null,
+    t.state ?? null,
+    t.lat,
+    t.lng,
+    t.lengthM ?? null,
+    Date.now()
+  );
+  return {
+    id,
+    name: t.name,
+    shortName: t.shortName,
+    city: t.city ?? '',
+    state: t.state ?? '',
+    lat: t.lat,
+    lng: t.lng,
+    lengthM: t.lengthM ?? 0,
+  };
+}
+
+/** Remove uma pista custom (e seus layouts/sessões ficam órfãos por trackId
+ *  string — não impacta o histórico já gravado). */
+export async function deleteCustomTrack(id: string): Promise<void> {
+  const d = await db();
+  await d.runAsync('DELETE FROM custom_tracks WHERE id = ?', id);
 }
 
 export async function deleteSession(id: string): Promise<void> {

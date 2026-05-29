@@ -93,8 +93,37 @@ export const TRACKS: TrackRef[] = [
   },
 ];
 
+/**
+ * Cache em memória das pistas custom (criadas pelo usuário, vivem no
+ * SQLite). Mantido aqui pra que findTrackById/getAllTracks continuem
+ * SÍNCRONOS — muitos call sites (sessions, session/[id], etc) chamam
+ * findTrackById sem await. O cache é hidratado no boot do app
+ * (_layout.tsx) e re-hidratado quando uma pista nova é criada.
+ */
+let customTracksCache: TrackRef[] = [];
+
+/** Substitui o cache de pistas custom. Chamado após carregar do DB. */
+export function setCustomTracksCache(tracks: TrackRef[]): void {
+  customTracksCache = tracks;
+}
+
+/** Pistas custom atualmente em cache (sync). */
+export function getCustomTracksCached(): TrackRef[] {
+  return customTracksCache;
+}
+
+/** Todas as pistas: hardcoded + custom. */
+export function getAllTracks(): TrackRef[] {
+  return [...TRACKS, ...customTracksCache];
+}
+
+/** True se o id é de uma pista custom (criada pelo usuário). */
+export function isCustomTrack(id: string): boolean {
+  return id.startsWith('custom-');
+}
+
 export function findTrackById(id: string): TrackRef | undefined {
-  return TRACKS.find((t) => t.id === id);
+  return TRACKS.find((t) => t.id === id) ?? customTracksCache.find((t) => t.id === id);
 }
 
 /** Distância haversine em km */
