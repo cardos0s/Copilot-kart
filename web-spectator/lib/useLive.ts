@@ -6,6 +6,19 @@ import { getSupabase } from './supabase';
 import { LiveLap, LiveMessage, LiveSample, LiveSessionInfo, MessageSeverity } from './liveTypes';
 
 /**
+ * Cap de samples mantidos no state — ~5min de GPS a 10Hz. Suficiente pra
+ * traçado completo da volta + recente; samples antigos saem (continuam no
+ * Supabase pra quem precisar de histórico via query). Sem cap, painel
+ * congela após ~5min de sessão (3000+ samples re-renderizando).
+ *
+ * Cada INSERT do realtime continua disparando setState (mantém UI viva),
+ * mas o array é sempre podado ao adicionar — render fica bounded mesmo
+ * em sessão longa. Decimação no consumidor (TrackPanel etc) cuida do
+ * custo do SVG render.
+ */
+const MAX_SAMPLES_IN_STATE = 3000;
+
+/**
  * Hook que assina uma live session pelo código.
  *
  * Estratégia:
@@ -161,6 +174,10 @@ export function useLive(code: string | null): LiveState {
       });
 
       // 3. Realtime — escuta INSERTs nas duas tabelas filtrados por session.
+      // Samples são apendados ao state e o array é PODADO em MAX_SAMPLES_IN_STATE
+      // pra bound memória. Cada INSERT vira setState — UI continua "viva"
+      // 10x/seg. Custo do render é controlado pela decimação no consumidor
+      // (ex: TrackPanel só pinta 500 pontos máx do SVG).
       channel = supabase
         .channel(`live:${info.code}`)
         .on(
@@ -176,7 +193,10 @@ export function useLive(code: string | null): LiveState {
             const s = mapSample(payload.new);
             setState((prev) => {
               if (prev.kind !== 'live' && prev.kind !== 'ended') return prev;
-              return { ...prev, samples: [...prev.samples, s] };
+              const next = prev.samples.length >= MAX_SAMPLES_IN_STATE
+                ? [...prev.samples.slice(1), s]   // shift + push pra manter cap
+                : [...prev.samples, s];
+              return { ...prev, samples: next };
             });
           }
         )

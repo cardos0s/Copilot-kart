@@ -60,25 +60,20 @@ import { LapResultOverlay } from '../src/components/LapResultOverlay';
 import { PilotMessageOverlay } from '../src/components/PilotMessageOverlay';
 import { colors, radius, spacing, typography } from '../src/theme';
 
+/**
+ * Formato padrão de tempo: MM:SS.SSS (minuto:segundo.milésimo).
+ * Centésimos ficam embutidos nos 2 primeiros dígitos do milésimo.
+ * Convenção de telemetria de motorsport (MyChron, Speedhive).
+ *
+ * Antes tinha fmtLap que omitia minuto pra voltas <60s ("34.872"),
+ * mas removido por inconsistência — agora todo lugar mostra formato
+ * cheio "00:34.872" pra clareza.
+ */
 function fmtLap(ms: number) {
   const totalS = ms / 1000;
   const m = Math.floor(totalS / 60);
   const s = totalS - m * 60;
   return `${String(m).padStart(2, '0')}:${s.toFixed(3).padStart(6, '0')}`;
-}
-
-/**
- * Tempo curto pro cronômetro central do HUD: "34.872" quando <60s,
- * "1:14.523" quando ≥60s. Kart médio fica entre 30-90s/volta — quase
- * sempre cabe na forma curta, que é menos visualmente "pesada" que
- * o "00:34.872" tradicional.
- */
-function fmtLapShort(ms: number) {
-  const totalS = ms / 1000;
-  if (totalS < 60) return totalS.toFixed(3);
-  const m = Math.floor(totalS / 60);
-  const s = totalS - m * 60;
-  return `${m}:${s.toFixed(3).padStart(6, '0')}`;
 }
 
 function fmtDelta(ms: number) {
@@ -279,18 +274,26 @@ export default function Recording() {
     setLiveModalOpen(false);
   };
 
-  // Publica deltas de samples (1 por sample, com cap de batch). Roda quando
-  // o array de liveSamples cresce. Sem rate limit do nosso lado — Supabase
-  // realtime aguenta tranquilo o ritmo de ~1Hz do GPS.
+  // Publica samples em batch + decimados pra realtime. Antes: 1 INSERT
+  // por sample, await em loop, ~10Hz. Resultado: lag no painel da equipe
+  // após 3-5min (3000+ samples = re-render lento + tantas inserts/seg
+  // saturam network/Supabase).
+  //
+  // Agora: pega só 1 a cada PUBLISH_DECIMATION (4Hz efetivo), e dispara
+  // fire-and-forget (sem await no loop) — se a rede engasgar, sample
+  // seguinte não espera. Coaching ao vivo não precisa de 10Hz; 4Hz dá
+  // ~25cm de precisão em movimento mesmo a 80km/h.
   useEffect(() => {
     if (!live) return;
+    const PUBLISH_DECIMATION = 3; // pega 1 a cada 3 samples = ~3.3Hz
     const newOnes = liveSamples.slice(lastSampleIdxRef.current);
     if (newOnes.length === 0) return;
     lastSampleIdxRef.current = liveSamples.length;
+    const toSend = newOnes.filter((_, i) => i % PUBLISH_DECIMATION === 0);
+    // Fire-and-forget — não bloqueia se network engasgar
     (async () => {
-      for (const s of newOnes) {
-        try {
-          await publishSample(live.id, {
+      for (const s of toSend) {
+        publishSample(live.id, {
             t: s.t,
             lat: s.lat,
             lng: s.lng,
@@ -298,12 +301,16 @@ export default function Recording() {
             heading: s.heading,
             accuracy: s.accuracy,
             lapNumber: info.lapsCompleted,
-            lapElapsedMs: info.elapsedMs,
+            // Tempo da volta ATUAL (reseta a cada cruzamento da linha),
+            // NÃO o total da sessão. Antes mandava info.elapsedMs (total)
+            // e o painel mostrava "VOLTA 8:35" crescendo sem parar.
+            lapElapsedMs: info.currentLapElapsedMs ?? info.elapsedMs,
             bestLapMs: info.bestLapMs ?? null,
-            deltaVsRefMs:
-              reference && info.bestLapMs !== null
-                ? info.bestLapMs - reference.durationMs
-                : null,
+            // Delta MyChron AO VIVO no ponto atual da pista (vem do tracker
+            // do hook). Antes mandava um valor estático (melhor − referência
+            // do layout) que só mudava ao bater PB — por isso "DELTA LIVE"
+            // ficava congelado em +1.000s.
+            deltaVsRefMs: info.liveDeltaMs,
             // Setores — null quando o app não tem layout reference carregada.
             // Team panel usa esses pra mostrar delta por setor + ranking.
             currentSectorIdx: info.currentSectorIdx,
@@ -313,10 +320,9 @@ export default function Recording() {
             s3Ms: info.currentSectors.s3Ms,
             altitude: s.altitude ?? null,
             altitudeAccuracy: s.altitudeAccuracy ?? null,
-          });
-        } catch {
+          }).catch(() => {
           /* engole — não pode quebrar gravação se realtime falhar */
-        }
+        });
       }
     })();
   }, [
@@ -324,7 +330,9 @@ export default function Recording() {
     liveSamples,
     info.lapsCompleted,
     info.elapsedMs,
+    info.currentLapElapsedMs,
     info.bestLapMs,
+    info.liveDeltaMs,
     info.currentSectorIdx,
     info.currentSectorElapsedMs,
     info.currentSectors,
@@ -775,7 +783,7 @@ export default function Recording() {
             numberOfLines={1}
             adjustsFontSizeToFit
           >
-            {fmtLapShort(currentLapMs)}
+            {fmtLap(currentLapMs)}
           </Text>
         </View>
       </View>
@@ -1072,7 +1080,7 @@ function SectorPanel({
             <View key={i} style={s.sectorTimeCell}>
               <Text style={[s.sectorTimeLabel, { color }]}>S{i + 1}</Text>
               <Text style={[s.sectorTimeValue, typography.mono, { color }]}>
-                {ms !== null ? fmtLapShort(ms) : '—'}
+                {ms !== null ? fmtLap(ms) : '—'}
               </Text>
             </View>
           );
