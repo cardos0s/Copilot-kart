@@ -50,6 +50,7 @@ import {
   endLiveSession,
   createEvent,
   findEventByCode,
+  setEventReferenceIfEmpty,
   EventInfo,
   LiveMessage,
   LiveSessionInfo,
@@ -380,7 +381,9 @@ export default function Recording() {
             s3Ms: info.currentSectors.s3Ms,
             altitude: s.altitude ?? null,
             altitudeAccuracy: s.altitudeAccuracy ?? null,
-          }).catch(() => {
+          },
+          // event_id denormalizado pra realtime filtrado por evento na web
+          live.eventId).catch(() => {
           /* engole — não pode quebrar gravação se realtime falhar */
         });
       }
@@ -427,7 +430,21 @@ export default function Recording() {
         live.eventId
       ).catch(() => {});
     }
-  }, [live, info.lapsCompleted, info.bestLapMs, info.lastClosedLap, info.lastClosedLapSectors]);
+
+    // Se está num evento, tenta gravar essa volta como REFERÊNCIA do
+    // evento. Update atômico (WHERE reference_set_at IS NULL) — só o
+    // PRIMEIRO piloto que fechar volta ganha; demais são no-op. A partir
+    // daí todos os karts são projetados nessa polyline pra posição ao
+    // vivo no ranking da web.
+    if (live.eventId && liveSamples.length > 10 && ms != null) {
+      const refSamples = liveSamples.map((s) => ({
+        lat: s.lat,
+        lng: s.lng,
+        t: s.t,
+      }));
+      setEventReferenceIfEmpty(live.eventId, refSamples, ms).catch(() => {});
+    }
+  }, [live, info.lapsCompleted, info.bestLapMs, info.lastClosedLap, info.lastClosedLapSectors, liveSamples]);
 
   // Assina canal realtime da live session pra receber mensagens da equipe.
   // Roda só enquanto `live` está ativa — desmonta + remonta se ativar/desativar.

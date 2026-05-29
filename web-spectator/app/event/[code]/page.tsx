@@ -11,9 +11,11 @@
 
 'use client';
 
-import { useEventRanking } from '@/lib/useEventRanking';
+import { useMemo } from 'react';
+import { useEventRanking, type LivePosition } from '@/lib/useEventRanking';
 import { fmtLap } from '@/lib/format';
 import type { EventRankingRow } from '@/lib/liveTypes';
+import { projectProgress, type CompiledReference } from '@/lib/trackProgress';
 
 export default function EventPage({ params }: { params: { code: string } }) {
   const state = useEventRanking(params.code);
@@ -29,7 +31,7 @@ export default function EventPage({ params }: { params: { code: string } }) {
   }
   if (state.kind === 'error') return <Center title="Erro" text={state.message} />;
 
-  const { event, ranking } = state;
+  const { event, ranking, reference, positions } = state;
   const leaderBest = ranking.find((r) => r.bestLapMs != null)?.bestLapMs ?? null;
 
   return (
@@ -49,6 +51,17 @@ export default function EventPage({ params }: { params: { code: string } }) {
       </header>
 
       <div className="flex-1 px-4 py-4">
+        {/* Mapa ao vivo + posição de corrida — só aparece quando algum
+          * piloto já fechou volta (define a referência do evento). */}
+        {reference && positions.length > 0 && (
+          <div className="max-w-3xl mx-auto mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-[1.4fr_1fr] gap-3">
+              <TrackMap reference={reference} positions={positions} />
+              <LivePositionList positions={positions} hasRef={!!reference} />
+            </div>
+          </div>
+        )}
+
         {ranking.length === 0 ? (
           <div className="text-center text-textMuted text-sm py-20">
             Aguardando pilotos entrarem na competição…
@@ -136,6 +149,151 @@ function RankingRow({
       </span>
     </div>
   );
+}
+
+/**
+ * Mapa SVG da pista com cada kart no ponto onde ele está agora.
+ * - Polyline da referência do evento
+ * - Bolinha colorida por piloto na lat/lng atual
+ * - Lado a lado com a lista de posição ao vivo
+ */
+function TrackMap({
+  reference,
+  positions,
+}: {
+  reference: CompiledReference;
+  positions: LivePosition[];
+}) {
+  const W = 480;
+  const H = 360;
+  const PAD = 20;
+  const { bbox } = reference;
+  const dx = Math.max(1, bbox.maxX - bbox.minX);
+  const dy = Math.max(1, bbox.maxY - bbox.minY);
+  const scale = Math.min((W - PAD * 2) / dx, (H - PAD * 2) / dy);
+  const offX = (W - dx * scale) / 2 - bbox.minX * scale;
+  const offY = (H - dy * scale) / 2 - bbox.minY * scale;
+  // Y do SVG cresce pra baixo; queremos norte pra cima → inverte
+  const tx = (x: number) => offX + x * scale;
+  const ty = (y: number) => H - (offY + y * scale);
+
+  const path = useMemo(() => {
+    return reference.points.reduce(
+      (acc, p, i) => acc + (i === 0 ? `M ${tx(p.x).toFixed(1)} ${ty(p.y).toFixed(1)}` : ` L ${tx(p.x).toFixed(1)} ${ty(p.y).toFixed(1)}`),
+      ''
+    );
+  }, [reference]);
+
+  // Projeta cada piloto pra coords da tela
+  const karts = positions.map((p, i) => {
+    const proj = projectProgress({ lat: p.lat, lng: p.lng }, reference);
+    return {
+      ...p,
+      sx: tx(proj.x),
+      sy: ty(proj.y),
+      color: kartColor(i),
+      label: p.kartNumber ?? p.pilotName.slice(0, 2).toUpperCase(),
+    };
+  });
+
+  return (
+    <div className="bg-surface rounded-2xl border border-border p-3">
+      <div className="text-textMuted text-[10px] font-extrabold tracking-widest mb-2">
+        POSIÇÃO AO VIVO
+      </div>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="xMidYMid meet"
+        className="w-full h-auto"
+      >
+        {/* Pista */}
+        <path
+          d={path}
+          stroke="#2a2a35"
+          strokeWidth={14}
+          fill="none"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <path
+          d={path}
+          stroke="#00FF88"
+          strokeWidth={2}
+          fill="none"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          opacity={0.5}
+        />
+        {/* Karts */}
+        {karts.map((k) => (
+          <g key={k.sessionId}>
+            <circle cx={k.sx} cy={k.sy} r={11} fill={k.color} opacity={0.25} />
+            <circle
+              cx={k.sx}
+              cy={k.sy}
+              r={7}
+              fill={k.color}
+              stroke="#08080C"
+              strokeWidth={1.5}
+            />
+            <text
+              x={k.sx}
+              y={k.sy + 3}
+              fill="#08080C"
+              fontSize="8"
+              fontWeight="900"
+              textAnchor="middle"
+            >
+              {k.label}
+            </text>
+          </g>
+        ))}
+      </svg>
+    </div>
+  );
+}
+
+function LivePositionList({ positions, hasRef }: { positions: LivePosition[]; hasRef: boolean }) {
+  return (
+    <div className="bg-surface rounded-2xl border border-border p-3">
+      <div className="text-textMuted text-[10px] font-extrabold tracking-widest mb-2">
+        ORDEM NA PISTA
+      </div>
+      <div className="flex flex-col gap-1.5">
+        {positions.map((p, i) => (
+          <div
+            key={p.sessionId}
+            className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-bg border border-border"
+          >
+            <div
+              className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-black"
+              style={{ backgroundColor: kartColor(i), color: '#08080C' }}
+            >
+              {i + 1}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-extrabold truncate">{p.pilotName}</div>
+              <div className="text-textMuted text-[10px]">
+                volta {p.lapNumber + 1}
+                {hasRef && p.progress != null && ` · ${Math.round(p.progress * 100)}%`}
+              </div>
+            </div>
+            {p.kartNumber && (
+              <span className="text-primary font-mono text-xs font-bold">
+                #{p.kartNumber}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Paleta estável de cores por índice — kart 1 sempre amarelo, kart 2 azul, etc. */
+function kartColor(idx: number): string {
+  const palette = ['#FFEB3B', '#00BCD4', '#FF4757', '#9D5BFF', '#00FF88', '#FF9800', '#E91E63', '#3DDCFF'];
+  return palette[idx % palette.length];
 }
 
 function Center({ title, text }: { title?: string; text: string }) {

@@ -4,6 +4,22 @@ import { useEffect, useRef, useState } from 'react';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { getSupabase } from './supabase';
 import { EventInfo, EventRankingRow } from './liveTypes';
+import { CompiledReference, compileReference, projectProgress } from './trackProgress';
+
+/** Posição de corrida ao vivo de um piloto. */
+export type LivePosition = {
+  pilotName: string;
+  kartNumber: string | null;
+  sessionId: string;
+  lapNumber: number;
+  /** Latitude/longitude da última posição reportada. */
+  lat: number;
+  lng: number;
+  /** Progresso 0..1 na volta atual (precisa de referência). null se sem ref. */
+  progress: number | null;
+  /** Timestamp do último sample. */
+  lastT: number;
+};
 
 /**
  * Hook do ranking de competição. Carrega o evento pelo código, agrega o
@@ -20,7 +36,15 @@ export type EventState =
   | { kind: 'loading' }
   | { kind: 'not-found' }
   | { kind: 'error'; message: string }
-  | { kind: 'ready'; event: EventInfo; ranking: EventRankingRow[] };
+  | {
+      kind: 'ready';
+      event: EventInfo;
+      ranking: EventRankingRow[];
+      /** Polyline da referência do evento (origem em primeira posição). null se ninguém fechou volta ainda. */
+      reference: CompiledReference | null;
+      /** Posições ao vivo, ordenadas P1 → último. */
+      positions: LivePosition[];
+    };
 
 function mapEvent(row: any): EventInfo {
   return {
@@ -137,10 +161,95 @@ export function useEventRanking(code: string | null): EventState {
 
       const ranking = await aggregateRanking(supabase, event.id);
       if (cancelled) return;
-      setState({ kind: 'ready', event, ranking });
 
-      // Realtime: nova volta de qualquer piloto do evento → reload debounced
-      const reload = () => {
+      // Compila a referência do evento, se já tiver sido fixada por
+      // algum piloto (1º que fechou volta). Polyline pra projeção +
+      // visualização do mapa.
+      let reference: CompiledReference | null = null;
+      try {
+        const refRaw = evRow.reference_samples_json;
+        if (refRaw) {
+          const parsed = JSON.parse(refRaw);
+          if (Array.isArray(parsed) && parsed.length >= 2) {
+            reference = compileReference(parsed);
+          }
+        }
+      } catch {
+        /* ignora ref corrompida */
+      }
+
+      setState({ kind: 'ready', event, ranking, reference, positions: [] });
+
+      // Mapa interno: latest sample por sessão (key: live_session_id)
+      const latestBySession = new Map<string, { lat: number; lng: number; t: number; lap: number }>();
+      // Mapa: sessionId → piloto
+      const pilotBySession = new Map<string, { name: string; kart: string | null }>();
+      const { data: sessForPositions } = await supabase
+        .from('live_sessions')
+        .select('id, pilots(display_name, kart_number)')
+        .eq('event_id', event.id);
+      for (const s of (sessForPositions ?? []) as any[]) {
+        pilotBySession.set(s.id, {
+          name: s.pilots?.display_name ?? 'Piloto',
+          kart: s.pilots?.kart_number ?? null,
+        });
+      }
+
+      // Carrega o último sample de cada sessão como bootstrap das posições
+      const { data: lastSamples } = await supabase
+        .from('live_samples')
+        .select('live_session_id, lat, lng, t, lap_number')
+        .eq('event_id', event.id)
+        .order('t', { ascending: false })
+        .limit(200); // mais que suficiente pra pegar 1 por piloto recente
+      for (const sm of (lastSamples ?? []) as any[]) {
+        if (!latestBySession.has(sm.live_session_id)) {
+          latestBySession.set(sm.live_session_id, {
+            lat: sm.lat,
+            lng: sm.lng,
+            t: new Date(sm.t).getTime(),
+            lap: sm.lap_number ?? 0,
+          });
+        }
+      }
+
+      const buildPositions = (): LivePosition[] => {
+        const out: LivePosition[] = [];
+        for (const [sessionId, sm] of latestBySession) {
+          const pilot = pilotBySession.get(sessionId);
+          if (!pilot) continue;
+          let progress: number | null = null;
+          if (reference) {
+            progress = projectProgress({ lat: sm.lat, lng: sm.lng }, reference).progress;
+          }
+          out.push({
+            pilotName: pilot.name,
+            kartNumber: pilot.kart,
+            sessionId,
+            lapNumber: sm.lap,
+            lat: sm.lat,
+            lng: sm.lng,
+            progress,
+            lastT: sm.t,
+          });
+        }
+        // Posição = ordena por (voltas desc, progresso desc). Sem ref,
+        // só desempata por voltas; karts na mesma volta ficam empatados.
+        return out.sort((a, b) => {
+          if (a.lapNumber !== b.lapNumber) return b.lapNumber - a.lapNumber;
+          if (a.progress === null && b.progress === null) return 0;
+          if (a.progress === null) return 1;
+          if (b.progress === null) return -1;
+          return b.progress - a.progress;
+        });
+      };
+
+      setState((prev) =>
+        prev.kind === 'ready' ? { ...prev, positions: buildPositions() } : prev
+      );
+
+      // Debounce do reload do ranking — várias voltas podem chegar quase juntas.
+      const reloadRanking = () => {
         if (reloadTimer.current) clearTimeout(reloadTimer.current);
         reloadTimer.current = setTimeout(async () => {
           const fresh = await aggregateRanking(supabase!, event.id);
@@ -152,8 +261,23 @@ export function useEventRanking(code: string | null): EventState {
         }, 600);
       };
 
+      // Throttle das atualizações de posição (samples chegam a 3.3Hz × N pilotos)
+      let positionUpdateTimer: ReturnType<typeof setTimeout> | null = null;
+      const schedulePositionUpdate = () => {
+        if (positionUpdateTimer) return;
+        positionUpdateTimer = setTimeout(() => {
+          positionUpdateTimer = null;
+          if (!cancelled) {
+            setState((prev) =>
+              prev.kind === 'ready' ? { ...prev, positions: buildPositions() } : prev
+            );
+          }
+        }, 250);
+      };
+
       channel = supabase
         .channel(`event:${event.id}`)
+        // Nova volta → recarrega ranking + atualiza positions
         .on(
           'postgres_changes',
           {
@@ -162,9 +286,9 @@ export function useEventRanking(code: string | null): EventState {
             table: 'live_laps',
             filter: `event_id=eq.${event.id}`,
           },
-          reload
+          reloadRanking
         )
-        // Também recarrega quando um piloto novo entra (nova session no evento)
+        // Piloto novo entrando no evento (session ganha event_id)
         .on(
           'postgres_changes',
           {
@@ -173,7 +297,28 @@ export function useEventRanking(code: string | null): EventState {
             table: 'live_sessions',
             filter: `event_id=eq.${event.id}`,
           },
-          reload
+          reloadRanking
+        )
+        // Cada sample atualiza posição do kart (throttled)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'live_samples',
+            filter: `event_id=eq.${event.id}`,
+          },
+          (payload) => {
+            const row = payload.new as any;
+            if (!row || !row.live_session_id) return;
+            latestBySession.set(row.live_session_id, {
+              lat: row.lat,
+              lng: row.lng,
+              t: new Date(row.t).getTime(),
+              lap: row.lap_number ?? 0,
+            });
+            schedulePositionUpdate();
+          }
         )
         .subscribe();
     })();

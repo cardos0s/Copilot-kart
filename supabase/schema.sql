@@ -123,9 +123,19 @@ create index if not exists idx_events_code on events(code);
 
 alter table live_sessions add column if not exists event_id uuid references events(id) on delete set null;
 alter table live_laps add column if not exists event_id uuid;
+alter table live_samples add column if not exists event_id uuid;
+
+-- Referência geográfica do evento — primeiro piloto que fechar uma volta
+-- envia a dele aqui, e todos os karts passam a ser projetados nessa polyline
+-- pra cálculo de posição ao vivo (progresso na volta). Update atômico:
+-- WHERE reference_set_at IS NULL → só o primeiro ganha; demais ficam no-op.
+alter table events add column if not exists reference_samples_json text;
+alter table events add column if not exists reference_duration_ms int;
+alter table events add column if not exists reference_set_at timestamptz;
 
 create index if not exists idx_live_laps_event on live_laps(event_id, finished_at);
 create index if not exists idx_live_sessions_event on live_sessions(event_id);
+create index if not exists idx_live_samples_event on live_samples(event_id, t desc);
 
 -- =====================
 -- Mensagens da equipe pro piloto (Team→Pilot)

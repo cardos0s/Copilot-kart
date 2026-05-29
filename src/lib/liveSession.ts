@@ -240,6 +240,48 @@ export async function findEventByCode(code: string): Promise<EventInfo | null> {
 }
 
 /**
+ * Tenta gravar uma volta como REFERÊNCIA geográfica do evento. Update
+ * atômico — só grava se reference_set_at AINDA é null (o primeiro
+ * piloto que fechar uma volta no evento ganha). Demais updates viram
+ * no-op (não sobrescrevem).
+ *
+ * A partir daí, todos os karts são projetados nessa polyline pra
+ * posição ao vivo (progresso na volta) tanto no app quanto na web.
+ *
+ * Retorna true se ESSE piloto fixou a referência (foi o primeiro),
+ * false se já existia uma.
+ */
+export async function setEventReferenceIfEmpty(
+  eventId: string,
+  samples: Array<{ lat: number; lng: number; t: number }>,
+  durationMs: number
+): Promise<boolean> {
+  const supabase = getSupabase();
+  if (!supabase) return false;
+  if (samples.length < 10) return false; // muito pouco — não vira referência
+  try {
+    // Decimação leve antes de gravar (cap em ~500 pontos = ~15KB JSON)
+    const step = Math.max(1, Math.floor(samples.length / 500));
+    const decimated = samples.filter((_, i) => i % step === 0);
+    const { data, error } = await supabase
+      .from('events')
+      .update({
+        reference_samples_json: JSON.stringify(decimated),
+        reference_duration_ms: durationMs,
+        reference_set_at: new Date().toISOString(),
+      })
+      .eq('id', eventId)
+      .is('reference_set_at', null)
+      .select('id');
+    if (error) return false;
+    // data não-vazio = update aconteceu = fui o primeiro
+    return Array.isArray(data) && data.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Carrega o ranking agregado do evento. Junta todas as live_sessions do
  * evento + suas voltas + nome do piloto, e agrega por piloto:
  *   bestLapMs = menor duração, lastLapMs = volta mais recente, lapCount.
@@ -361,11 +403,16 @@ export async function endLiveSession(code: string): Promise<void> {
     .eq('code', code);
 }
 
-export async function publishSample(sessionId: string, sample: LiveSample): Promise<void> {
+export async function publishSample(
+  sessionId: string,
+  sample: LiveSample,
+  eventId?: string | null
+): Promise<void> {
   const supabase = getSupabase();
   if (!supabase) return;
   const { error } = await supabase.from('live_samples').insert({
     live_session_id: sessionId,
+    event_id: eventId ?? null,
     t: new Date(sample.t).toISOString(),
     lat: sample.lat,
     lng: sample.lng,
