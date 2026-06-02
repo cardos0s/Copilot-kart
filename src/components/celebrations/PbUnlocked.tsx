@@ -161,7 +161,7 @@ export function PbUnlocked({
               onPress={async () => {
                 try {
                   await Share.share({
-                    message: `Acabei de bater ${fmtLap(durationMs)} no Copilot! 🏁`,
+                    message: `Acabei de bater ${fmtLap(durationMs)} no Cockpit! 🏁`,
                   });
                 } catch {
                   /* silencioso */

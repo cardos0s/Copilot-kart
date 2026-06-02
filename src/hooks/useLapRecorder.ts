@@ -408,7 +408,7 @@ export function useLapRecorder(options?: LapRecorderOptions) {
       distanceInterval: 0,
       showsBackgroundLocationIndicator: true,
       foregroundService: {
-        notificationTitle: 'Copilot gravando',
+        notificationTitle: 'Cockpit gravando',
         notificationBody: 'Gravando trajetória da pista',
         notificationColor: '#00ff88',
       },

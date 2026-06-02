@@ -2,7 +2,7 @@ import './globals.css';
 import type { Metadata, Viewport } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Copilot Live',
+  title: 'Cockpit Live',
   description: 'Acompanhe o piloto em tempo real.',
 };
 

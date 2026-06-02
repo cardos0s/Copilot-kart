@@ -22,7 +22,7 @@ const mapboxDownloadsToken = process.env.MAPBOX_DOWNLOADS_TOKEN ?? '';
 
 module.exports = {
   expo: {
-    name: 'Copilot',
+    name: 'Cockpit',
     slug: 'kartlap',
     version: '0.1.0',
     orientation: 'default',
@@ -35,11 +35,11 @@ module.exports = {
       infoPlist: {
         UIBackgroundModes: ['location', 'location'],
         NSLocationWhenInUseUsageDescription:
-          'O KartLap usa sua localização para gravar a trajetória na pista.',
+          'O Cockpit usa sua localização para gravar a trajetória na pista.',
         NSLocationAlwaysAndWhenInUseUsageDescription:
-          'O KartLap precisa da localização em segundo plano para continuar gravando quando a tela estiver apagada.',
+          'O Cockpit precisa da localização em segundo plano para continuar gravando quando a tela estiver apagada.',
         NSMotionUsageDescription:
-          'O KartLap usa sensores de movimento para melhorar a precisão da trajetória.',
+          'O Cockpit usa sensores de movimento para melhorar a precisão da trajetória.',
         NSPhotoLibraryUsageDescription:
           'Selecione uma foto da galeria para usar no seu perfil.',
         NSCameraUsageDescription: 'Tire uma foto para usar no seu perfil.',
@@ -76,7 +76,7 @@ module.exports = {
         'expo-location',
         {
           locationAlwaysAndWhenInUsePermission:
-            'O KartLap precisa da localização em segundo plano para gravar a volta completa.',
+            'O Cockpit precisa da localização em segundo plano para gravar a volta completa.',
           isIosBackgroundLocationEnabled: true,
           isAndroidBackgroundLocationEnabled: true,
           isAndroidForegroundServiceEnabled: true,

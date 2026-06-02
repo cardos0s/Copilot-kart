@@ -47,7 +47,7 @@ export default function HomePage() {
     <main className="min-h-screen flex items-center justify-center px-6">
       <div className="w-full max-w-md">
         <div className="text-center mb-10">
-          <h1 className="text-4xl font-black tracking-tight text-primary">Copilot Live</h1>
+          <h1 className="text-4xl font-black tracking-tight text-primary">Cockpit Live</h1>
           <p className="text-textSecondary mt-3 text-sm">
             Acompanhe um piloto em tempo real. Cole o código que o app dele te passou.
           </p>
