@@ -73,18 +73,24 @@ export default function NewSession() {
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    const [grouped, profile, customTracks] = await Promise.all([
-      listAllLayoutsGrouped(),
-      getProfile(),
-      listCustomTracks(),
-    ]);
-    // Re-hidrata cache de custom tracks toda vez que entra na tela — pega
-    // pistas criadas em outras sessões/devices e a recém-criada ao voltar
-    // do new-track.
-    setCustomTracksCache(customTracks);
-    setLayoutsByTrack(grouped);
-    setHomeTrackId(profile?.homeTrackId ?? null);
-    setLoading(false);
+    // Cada fonte independente: se uma falhar (ex: custom_tracks table ainda
+    // não existe na migration), as outras carregam normal. Antes era um
+    // Promise.all sem catch — um erro deixava a tela em "carregando" pra
+    // sempre.
+    try {
+      const [grouped, profile, customTracks] = await Promise.all([
+        listAllLayoutsGrouped().catch(() => new Map<string, TrackLayout[]>()),
+        getProfile().catch(() => null),
+        listCustomTracks().catch(() => []),
+      ]);
+      setCustomTracksCache(customTracks);
+      setLayoutsByTrack(grouped);
+      setHomeTrackId(profile?.homeTrackId ?? null);
+    } finally {
+      // Sempre sai do loading, mesmo se tudo falhar — usuário vê lista
+      // (possivelmente sem custom tracks) em vez de spinner eterno.
+      setLoading(false);
+    }
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));

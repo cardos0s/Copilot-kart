@@ -371,24 +371,30 @@ export type NewCustomTrack = {
   lengthM?: number | null;
 };
 
-/** Lista pistas custom criadas pelo usuário (ordem: mais recente primeiro). */
+/** Lista pistas custom criadas pelo usuário (ordem: mais recente primeiro).
+ *  Resiliente: retorna [] se a tabela não existe (migration ainda não
+ *  rodou em algum device antigo) ou se a query falha por qualquer motivo. */
 export async function listCustomTracks(): Promise<TrackRef[]> {
-  const d = await db();
-  const rows = await d.getAllAsync<any>(
-    `SELECT id, name, short_name, city, state, lat, lng, length_m
-     FROM custom_tracks
-     ORDER BY created_at DESC`
-  );
-  return rows.map((r) => ({
-    id: r.id,
-    name: r.name,
-    shortName: r.short_name,
-    city: r.city ?? '',
-    state: r.state ?? '',
-    lat: r.lat,
-    lng: r.lng,
-    lengthM: r.length_m ?? 0,
-  }));
+  try {
+    const d = await db();
+    const rows = await d.getAllAsync<any>(
+      `SELECT id, name, short_name, city, state, lat, lng, length_m
+       FROM custom_tracks
+       ORDER BY created_at DESC`
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      shortName: r.short_name,
+      city: r.city ?? '',
+      state: r.state ?? '',
+      lat: r.lat,
+      lng: r.lng,
+      lengthM: r.length_m ?? 0,
+    }));
+  } catch {
+    return [];
+  }
 }
 
 /** Cria uma pista custom. Retorna o TrackRef pronto pra usar. */
