@@ -35,15 +35,18 @@ export default function ChallengesScreen() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    // Refresh primeiro pra refletir sessões recentes do dia
-    await refreshTodayChallenges();
-    const [cs, st] = await Promise.all([
-      getChallengesForToday(),
-      countChallengeStreak(),
-    ]);
-    setChallenges(cs);
-    setStreak(st);
-    setLoading(false);
+    try {
+      // Refresh primeiro pra refletir sessões recentes do dia
+      await refreshTodayChallenges().catch(() => {});
+      const [cs, st] = await Promise.all([
+        getChallengesForToday().catch(() => []),
+        countChallengeStreak().catch(() => 0),
+      ]);
+      setChallenges(cs);
+      setStreak(st);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));

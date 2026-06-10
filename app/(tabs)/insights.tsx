@@ -116,9 +116,14 @@ function TrendsTab() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const result = await computeSmartInsights({ window: 3 });
-    setBundle(result);
-    setLoading(false);
+    try {
+      const result = await computeSmartInsights({ window: 3 });
+      setBundle(result);
+    } catch {
+      setBundle(null);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));

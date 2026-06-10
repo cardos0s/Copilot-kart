@@ -33,10 +33,14 @@ export default function ProfileEdit() {
   });
 
   useEffect(() => {
-    getProfile().then((p) => {
-      if (p) setForm(p);
-      setLoading(false);
-    });
+    getProfile()
+      .then((p) => {
+        if (p) setForm(p);
+      })
+      .catch(() => {
+        // Sem perfil — form fica com defaults, user pode editar mesmo assim
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   const update = useCallback(<K extends keyof PilotProfile>(key: K, value: PilotProfile[K]) => {

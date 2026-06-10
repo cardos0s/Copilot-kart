@@ -41,9 +41,14 @@ export default function LeaderboardScreen() {
       return;
     }
     setLoading(true);
-    const data = await fetchLeaderboard(trackId, layoutId ?? null, 20);
-    setEntries(data);
-    setLoading(false);
+    try {
+      const data = await fetchLeaderboard(trackId, layoutId ?? null, 20);
+      setEntries(data);
+    } catch {
+      setEntries([]);
+    } finally {
+      setLoading(false);
+    }
     reveal.value = 0;
     reveal.value = withTiming(1, {
       duration: 1400,

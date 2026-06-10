@@ -58,10 +58,11 @@ export default function CareerScreen() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    try {
     const [state, unlocked, sessions] = await Promise.all([
-      getGamificationState(),
-      listUnlockedAchievements(),
-      listSessions(),
+      getGamificationState().catch(() => ({ xp: 0 } as any)),
+      listUnlockedAchievements().catch(() => []),
+      listSessions().catch(() => []),
     ]);
     const unlockedIds = new Set(unlocked.map((u) => u.achievementId));
     const currentLevel = levelForXp(state.xp);
@@ -100,7 +101,9 @@ export default function CareerScreen() {
       achievements: unlocked.length,
       totalAchievements: ACHIEVEMENTS.length,
     });
-    setLoading(false);
+    } finally {
+      setLoading(false);
+    }
 
     // Trigger anim
     reveal.value = 0;
