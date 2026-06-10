@@ -201,53 +201,59 @@ function SessionScreenInner() {
     (async () => {
       if (!id) return;
       setLoading(true);
-      const ses = await getSession(id);
-      const lapsRaw = await getLapsForSession(id);
+      // try/finally garante que setLoading(false) sempre dispara, mesmo se
+      // qualquer await abaixo lançar. Sem isso a tela ficava em "carregando"
+      // pra sempre quando uma sessão antiga tinha layout/track inválido.
+      try {
+        const ses = await getSession(id).catch(() => null);
+        const lapsRaw = await getLapsForSession(id).catch(() => []);
 
-      // Prioriza o layout explicitamente gravado na sessão; se nada vier
-      // (sessões antigas pré-layout, ou sem trackId), cai pro default da pista.
-      let ref: TrackLayout | null = null;
-      if (ses?.layoutId) {
-        ref = await getLayout(ses.layoutId);
-      }
-      if (!ref && ses?.trackId) {
-        ref = await getDefaultLayoutForTrack(ses.trackId);
-      }
-
-      // Pipeline de cada volta: limpa por accuracy, depois detecta e repara
-      // timestamps degenerados. O reparo usa durationMs/startedAt salvos no
-      // banco (que vieram do lapDetector quando os t ainda eram válidos) pra
-      // sintetizar tempos linearmente espaçados. Sem isso, voltas antigas
-      // gravadas com loc.timestamp=0 mostravam "Confiança baixa 20/20" e
-      // todos os setores zerados.
-      let anyRepaired = false;
-      const cleanedLaps = lapsRaw.map((l) => {
-        const cleaned = cleanSamples(l.samples, 10);
-        const { samples: repairedSamples, repaired } = repairDegenerateTimestamps(
-          cleaned,
-          l.durationMs,
-          l.startedAt,
-        );
-        if (repaired) anyRepaired = true;
-        return { ...l, samples: repairedSamples };
-      });
-
-      if (ref && ref.samples.length >= 2) {
-        const { samples: repairedRefSamples, repaired } = repairDegenerateTimestamps(
-          ref.samples,
-          ref.durationMs,
-        );
-        if (repaired) {
-          anyRepaired = true;
-          ref = { ...ref, samples: repairedRefSamples };
+        // Prioriza o layout explicitamente gravado na sessão; se nada vier
+        // (sessões antigas pré-layout, ou sem trackId), cai pro default da pista.
+        let ref: TrackLayout | null = null;
+        if (ses?.layoutId) {
+          ref = await getLayout(ses.layoutId).catch(() => null);
         }
-      }
+        if (!ref && ses?.trackId) {
+          ref = await getDefaultLayoutForTrack(ses.trackId).catch(() => null);
+        }
 
-      setSession(ses);
-      setLaps(cleanedLaps);
-      setReference(ref);
-      setApproxTimestamps(anyRepaired);
-      setLoading(false);
+        // Pipeline de cada volta: limpa por accuracy, depois detecta e repara
+        // timestamps degenerados. O reparo usa durationMs/startedAt salvos no
+        // banco (que vieram do lapDetector quando os t ainda eram válidos) pra
+        // sintetizar tempos linearmente espaçados. Sem isso, voltas antigas
+        // gravadas com loc.timestamp=0 mostravam "Confiança baixa 20/20" e
+        // todos os setores zerados.
+        let anyRepaired = false;
+        const cleanedLaps = lapsRaw.map((l) => {
+          const cleaned = cleanSamples(l.samples, 10);
+          const { samples: repairedSamples, repaired } = repairDegenerateTimestamps(
+            cleaned,
+            l.durationMs,
+            l.startedAt,
+          );
+          if (repaired) anyRepaired = true;
+          return { ...l, samples: repairedSamples };
+        });
+
+        if (ref && ref.samples.length >= 2) {
+          const { samples: repairedRefSamples, repaired } = repairDegenerateTimestamps(
+            ref.samples,
+            ref.durationMs,
+          );
+          if (repaired) {
+            anyRepaired = true;
+            ref = { ...ref, samples: repairedRefSamples };
+          }
+        }
+
+        setSession(ses);
+        setLaps(cleanedLaps);
+        setReference(ref);
+        setApproxTimestamps(anyRepaired);
+      } finally {
+        setLoading(false);
+      }
     })();
   }, [id]);
 
