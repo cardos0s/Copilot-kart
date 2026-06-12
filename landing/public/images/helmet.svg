@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000">
+  <!--
+    Placeholder do capacete inspirado no legado do automobilismo brasileiro
+    (amarelo, verde e azul). Substitua por uma foto cinematográfica em
+    /public/images/helmet.jpg mantendo o visor a ~43% da altura.
+    Mesmo viewBox do pilot.svg — as máscaras do hero dependem desse alinhamento.
+  -->
+  <defs>
+    <radialGradient id="hbg" cx="0.5" cy="0.4" r="0.9">
+      <stop offset="0" stop-color="#23231f"/>
+      <stop offset="0.6" stop-color="#121210"/>
+      <stop offset="1" stop-color="#070707"/>
+    </radialGradient>
+    <linearGradient id="shell" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffe24a"/>
+      <stop offset="0.45" stop-color="#ffd400"/>
+      <stop offset="1" stop-color="#dca900"/>
+    </linearGradient>
+    <linearGradient id="visor" x1="0" y1="0" x2="1" y2="0.4">
+      <stop offset="0" stop-color="#1a2230"/>
+      <stop offset="0.5" stop-color="#0a0e16"/>
+      <stop offset="1" stop-color="#02030a"/>
+    </linearGradient>
+    <linearGradient id="visorGlow" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- dramatic dark atmosphere -->
+  <rect width="800" height="1000" fill="url(#hbg)"/>
+  <!-- light streaks (speed) -->
+  <g opacity="0.18" stroke="#ffd400" stroke-width="2">
+    <path d="M-40 240 L840 140"/>
+    <path d="M-40 700 L840 620"/>
+  </g>
+  <g opacity="0.12" stroke="#ffffff" stroke-width="1.5">
+    <path d="M-40 320 L840 250"/>
+    <path d="M-40 860 L840 780"/>
+  </g>
+
+  <!-- helmet shell -->
+  <path d="M400 150 C580 150 640 290 638 440 C636 580 600 690 540 740 L260 740 C200 690 164 580 162 440 C160 290 220 150 400 150 Z" fill="url(#shell)"/>
+  <!-- shell top highlight -->
+  <path d="M400 168 C500 168 560 230 580 300 C520 240 460 214 400 214 C340 214 280 240 220 300 C240 230 300 168 400 168 Z" fill="#fff3a6" opacity="0.8"/>
+
+  <!-- green band over crown -->
+  <path d="M170 392 C240 330 320 300 400 300 C480 300 560 330 630 392 C632 414 633 436 632 458 C556 392 478 362 400 362 C322 362 244 392 168 458 C167 436 168 414 170 392 Z" fill="#009739"/>
+  <!-- blue band at chin/rim -->
+  <path d="M262 742 C232 716 208 672 192 620 C258 668 326 692 400 692 C474 692 542 668 608 620 C592 672 568 716 538 742 Z" fill="#0033a0"/>
+  <path d="M180 560 C250 614 322 640 400 640 C478 640 550 614 620 560 C617 580 613 600 608 618 C540 666 472 690 400 690 C328 690 260 666 192 618 C187 600 183 580 180 560 Z" fill="#062a6e" opacity="0.55"/>
+
+  <!-- visor opening (eyes region, y ≈ 380–500) -->
+  <path d="M210 384 C272 360 336 348 400 348 C464 348 528 360 590 384 C600 420 602 462 596 498 C534 520 466 530 400 530 C334 530 266 520 204 498 C198 462 200 420 210 384 Z" fill="url(#visor)"/>
+  <!-- visor reflections -->
+  <path d="M236 392 L330 372 L300 506 L222 488 Z" fill="#ffffff" opacity="0.16"/>
+  <path d="M356 366 L420 360 L390 524 L336 518 Z" fill="#ffffff" opacity="0.10"/>
+  <rect x="206" y="398" width="388" height="5" fill="url(#visorGlow)" opacity="0.7"/>
+  <!-- visor rim -->
+  <path d="M210 384 C272 360 336 348 400 348 C464 348 528 360 590 384 C600 420 602 462 596 498 C534 520 466 530 400 530 C334 530 266 520 204 498 C198 462 200 420 210 384 Z" fill="none" stroke="#0a0a0a" stroke-width="10"/>
+  <!-- visor pivots -->
+  <circle cx="206" cy="440" r="20" fill="#0a0a0a"/>
+  <circle cx="594" cy="440" r="20" fill="#0a0a0a"/>
+  <circle cx="206" cy="440" r="8" fill="#3a3a3a"/>
+  <circle cx="594" cy="440" r="8" fill="#3a3a3a"/>
+
+  <!-- chin vent -->
+  <rect x="352" y="586" width="96" height="26" rx="13" fill="#0a0a0a" opacity="0.85"/>
+  <rect x="368" y="594" width="64" height="10" rx="5" fill="#2c2c2c"/>
+
+  <!-- shell shading -->
+  <path d="M540 740 C600 690 636 580 638 440 C639 360 622 282 580 226 C636 290 660 380 656 470 C652 600 614 700 556 740 Z" fill="#b88c00" opacity="0.5"/>
+  <!-- acrylic reflection sweep -->
+  <path d="M250 180 L350 160 L240 520 L180 460 Z" fill="#ffffff" opacity="0.14"/>
+</svg>
