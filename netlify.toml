@@ -1,0 +1,9 @@
+# Deploy da landing page do COCKPIT (Next.js static export).
+# A landing fica em landing/; o build gera HTML estático em landing/out.
+[build]
+  base = "landing"
+  command = "npm run build"
+  publish = "out"
+
+[build.environment]
+  NODE_VERSION = "20"
