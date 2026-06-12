@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000">
+  <!--
+    Placeholder editorial do piloto (retrato frontal, fundo claro).
+    Substitua por uma foto real em /public/images/pilot.jpg mantendo o
+    enquadramento: olhos a ~43% da altura, rosto centralizado.
+  -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f6f4ef"/>
+      <stop offset="1" stop-color="#e9e6dd"/>
+    </linearGradient>
+    <linearGradient id="suit" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1c1c1e"/>
+      <stop offset="1" stop-color="#0c0c0d"/>
+    </linearGradient>
+    <radialGradient id="faceShade" cx="0.5" cy="0.38" r="0.75">
+      <stop offset="0" stop-color="#f0c49a"/>
+      <stop offset="0.75" stop-color="#e3af83"/>
+      <stop offset="1" stop-color="#cf9b6f"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="800" height="1000" fill="url(#bg)"/>
+  <!-- soft studio vignette -->
+  <ellipse cx="400" cy="430" rx="330" ry="420" fill="#ffffff" opacity="0.35"/>
+
+  <!-- shoulders / racing suit -->
+  <path d="M120 1000 C140 830 240 760 330 738 L470 738 C560 760 660 830 680 1000 Z" fill="url(#suit)"/>
+  <!-- suit trim: senna colors -->
+  <path d="M150 1000 C168 870 230 805 305 778 L305 1000 Z" fill="#ffd400" opacity="0.92"/>
+  <path d="M495 1000 L495 778 C570 805 632 870 650 1000 Z" fill="#0033a0" opacity="0.92"/>
+  <rect x="305" y="930" width="190" height="14" fill="#009739"/>
+  <!-- collar -->
+  <path d="M330 738 L400 800 L470 738 L470 700 L330 700 Z" fill="#0c0c0d"/>
+
+  <!-- neck -->
+  <path d="M340 620 L340 740 Q400 780 460 740 L460 620 Z" fill="#d8a276"/>
+  <path d="M340 660 Q400 700 460 660 L460 620 L340 620 Z" fill="#c08f64" opacity="0.6"/>
+
+  <!-- head -->
+  <path d="M400 200 C520 200 565 290 562 420 C560 520 540 600 500 650 C470 686 436 706 400 706 C364 706 330 686 300 650 C260 600 240 520 238 420 C235 290 280 200 400 200 Z" fill="url(#faceShade)"/>
+
+  <!-- hair -->
+  <path d="M400 184 C530 184 580 280 572 392 C566 350 540 330 520 332 C530 300 510 270 488 268 C470 240 430 232 400 236 C370 232 330 240 312 268 C290 270 270 300 280 332 C260 330 234 350 228 392 C220 280 270 184 400 184 Z" fill="#171310"/>
+  <path d="M238 400 C232 440 236 470 244 492 L256 480 C248 452 246 424 250 396 Z" fill="#171310"/>
+  <path d="M562 400 C568 440 564 470 556 492 L544 480 C552 452 554 424 550 396 Z" fill="#171310"/>
+
+  <!-- brows -->
+  <path d="M292 396 Q330 378 372 392 L368 406 Q332 394 298 410 Z" fill="#2a201a"/>
+  <path d="M428 392 Q470 378 508 396 L502 410 Q468 394 432 406 Z" fill="#2a201a"/>
+
+  <!-- eyes (y ≈ 430) -->
+  <ellipse cx="334" cy="432" rx="30" ry="15" fill="#fdfdfb"/>
+  <ellipse cx="466" cy="432" rx="30" ry="15" fill="#fdfdfb"/>
+  <circle cx="336" cy="432" r="11" fill="#3a2a1c"/>
+  <circle cx="464" cy="432" r="11" fill="#3a2a1c"/>
+  <circle cx="336" cy="432" r="5" fill="#0a0a0a"/>
+  <circle cx="464" cy="432" r="5" fill="#0a0a0a"/>
+  <circle cx="339" cy="428" r="2.4" fill="#ffffff"/>
+  <circle cx="467" cy="428" r="2.4" fill="#ffffff"/>
+  <path d="M304 426 Q334 412 364 426" stroke="#2a201a" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M436 426 Q466 412 496 426" stroke="#2a201a" stroke-width="3" fill="none" stroke-linecap="round"/>
+
+  <!-- nose (y ≈ 520) -->
+  <path d="M396 440 L388 520 Q400 536 412 520 L404 440 Z" fill="#d29a6c" opacity="0.85"/>
+  <path d="M380 524 Q400 540 420 524" stroke="#b9805394" stroke-width="4" fill="none" stroke-linecap="round"/>
+
+  <!-- mouth (y ≈ 600) -->
+  <path d="M348 596 Q400 622 452 596 Q400 644 348 596 Z" fill="#a8573f"/>
+  <path d="M352 596 Q400 612 448 596" stroke="#7c3a2a" stroke-width="3" fill="none"/>
+
+  <!-- cheek / jaw shading -->
+  <path d="M262 470 Q276 560 310 620 Q280 580 264 520 Z" fill="#c08f64" opacity="0.5"/>
+  <path d="M538 470 Q524 560 490 620 Q520 580 536 520 Z" fill="#c08f64" opacity="0.5"/>
+  <!-- ears -->
+  <path d="M236 430 C214 424 210 470 232 494 C240 500 250 496 252 484 Z" fill="#dca77a"/>
+  <path d="M564 430 C586 424 590 470 568 494 C560 500 550 496 548 484 Z" fill="#dca77a"/>
+</svg>

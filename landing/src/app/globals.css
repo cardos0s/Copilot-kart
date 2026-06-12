@@ -1,0 +1,106 @@
+@import "tailwindcss";
+
+/* Paleta extraída do pôster do piloto: preto profundo, amarelo neon,
+   azul elétrico e violeta dos splashes. */
+:root {
+  --paper: #0a0a0d;
+  --paper-soft: #101015;
+  --ink: #f2f1ea;
+  --ink-soft: #b9b7ae;
+  --senna-yellow: #d8f000;
+  --senna-green: #2bd45f;
+  --senna-blue: #2f7bff;
+  --neon-purple: #9b4dff;
+  --carbon: #14141a;
+  --line: rgba(242, 241, 234, 0.07);
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-paper-soft: var(--paper-soft);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-senna-yellow: var(--senna-yellow);
+  --color-senna-green: var(--senna-green);
+  --color-senna-blue: var(--senna-blue);
+  --color-neon-purple: var(--neon-purple);
+  --color-carbon: var(--carbon);
+  --font-display: var(--font-anton);
+  --font-sans: var(--font-grotesk);
+  --font-mono: var(--font-jetbrains);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-grotesk), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+::selection {
+  background: var(--senna-yellow);
+  color: #0a0a0d;
+}
+
+/* Display type: big, condensed, sporty */
+.display {
+  font-family: var(--font-anton), Impact, sans-serif;
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
+  line-height: 0.88;
+}
+
+/* Telemetry data type */
+.data {
+  font-family: var(--font-jetbrains), monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+}
+
+/* Technical grid overlay */
+.tech-grid {
+  background-image:
+    linear-gradient(var(--line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 72px 72px;
+}
+
+.tech-grid-dark {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  background-size: 72px 72px;
+}
+
+/* Film-like grain for the cinematic feel */
+.grain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.22'/%3E%3C/svg%3E");
+}
+
+/* Outlined display text (editorial accent) */
+.outline-text {
+  -webkit-text-stroke: 1.5px var(--ink);
+  color: transparent;
+}
+
+.outline-text-light {
+  -webkit-text-stroke: 1.5px rgba(244, 242, 237, 0.9);
+  color: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
