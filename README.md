@@ -1,4 +1,4 @@
-# KartLap
+# CockPit 
 
 App de análise de voltas de kart via GPS. Grava trajetória no celular no bolso
 do macacão, detecta voltas automaticamente, identifica a melhor volta como
