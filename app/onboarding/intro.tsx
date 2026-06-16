@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Path, Defs, LinearGradient, Stop, Circle, Ellipse } from 'react-native-svg';
+import Svg, { Path, Defs, LinearGradient, Stop, Circle } from 'react-native-svg';
 import Animated, {
   Easing,
   FadeIn,
@@ -208,9 +208,44 @@ function StepCoach() {
 // Passo 3 — você x fantasma correndo na pista
 // ============================================================================
 
-// Waypoints sobre a elipse da pista (cx 130, cy 78, rx 92, ry 50).
-const TRACK_X = [222, 210, 176, 130, 84, 50, 38, 50, 84, 130, 176, 210, 222];
-const TRACK_Y = [78, 103, 121, 128, 121, 103, 78, 53, 35, 28, 35, 53, 78];
+// Circuito curvado: pontos-âncora suavizados com Catmull-Rom. Gera o path do
+// desenho E uma amostragem densa de pontos pros marcadores seguirem a curva.
+const TRACK_PTS = [
+  [130, 26], [182, 34], [222, 68], [208, 108], [162, 126],
+  [112, 120], [72, 128], [38, 96], [48, 58], [88, 40],
+];
+
+function buildTrack(pts: number[][], seg: number) {
+  const n = pts.length;
+  const xs: number[] = [];
+  const ys: number[] = [];
+  let d = `M${pts[0][0]},${pts[0][1]}`;
+  for (let i = 0; i < n; i++) {
+    const p0 = pts[(i - 1 + n) % n];
+    const p1 = pts[i];
+    const p2 = pts[(i + 1) % n];
+    const p3 = pts[(i + 2) % n];
+    const c1x = p1[0] + (p2[0] - p0[0]) / 6;
+    const c1y = p1[1] + (p2[1] - p0[1]) / 6;
+    const c2x = p2[0] - (p3[0] - p1[0]) / 6;
+    const c2y = p2[1] - (p3[1] - p1[1]) / 6;
+    d += ` C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2[0]},${p2[1]}`;
+    for (let s = 0; s < seg; s++) {
+      const t = s / seg;
+      const mt = 1 - t;
+      xs.push(mt * mt * mt * p1[0] + 3 * mt * mt * t * c1x + 3 * mt * t * t * c2x + t * t * t * p2[0]);
+      ys.push(mt * mt * mt * p1[1] + 3 * mt * mt * t * c1y + 3 * mt * t * t * c2y + t * t * t * p2[1]);
+    }
+  }
+  d += ' Z';
+  xs.push(xs[0]);
+  ys.push(ys[0]);
+  return { d, xs, ys };
+}
+
+const TRACK = buildTrack(TRACK_PTS, 9);
+const TRACK_X = TRACK.xs;
+const TRACK_Y = TRACK.ys;
 const TRACK_IN = TRACK_X.map((_, i) => i / (TRACK_X.length - 1));
 const MARK = 13;
 
@@ -245,8 +280,8 @@ function StepGhost() {
     <View style={gh.wrap}>
       <View style={gh.trackBox}>
         <Svg width={260} height={156} viewBox="0 0 260 156">
-          <Ellipse cx={130} cy={78} rx={92} ry={50} stroke="#23232f" strokeWidth={16} fill="none" />
-          <Ellipse cx={130} cy={78} rx={92} ry={50} stroke="#3a3a48" strokeWidth={1.5} fill="none" strokeDasharray="2 9" />
+          <Path d={TRACK.d} stroke="#23232f" strokeWidth={16} fill="none" strokeLinejoin="round" strokeLinecap="round" />
+          <Path d={TRACK.d} stroke="#3a3a48" strokeWidth={1.5} fill="none" strokeDasharray="2 9" />
         </Svg>
 
         {/* Tempo no centro da pista */}
@@ -394,8 +429,8 @@ const c = StyleSheet.create({
   wrap: { width: 280, height: 200, alignItems: 'center', justifyContent: 'center' },
   dot: {
     position: 'absolute',
-    left: 184,
-    top: 80,
+    left: 181,
+    top: 96,
     width: 14,
     height: 14,
     borderRadius: 7,
@@ -405,8 +440,8 @@ const c = StyleSheet.create({
   },
   dotGlow: {
     position: 'absolute',
-    left: 178,
-    top: 74,
+    left: 175,
+    top: 90,
     width: 26,
     height: 26,
     borderRadius: 13,
