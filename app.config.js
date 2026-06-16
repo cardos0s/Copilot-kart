@@ -72,13 +72,12 @@ module.exports = {
       [
         'expo-splash-screen',
         {
-          // O plugin renderiza a imagem como LOGO centralizado (não tela cheia).
-          // Fundo claro = combina com as bordas da arte → handoff suave pro
-          // SplashLoader (JS), que aí sim mostra a arte inteira animada.
-          image: './assets/splash-cockpit219.png',
-          imageWidth: 340,
+          // Frame nativo: wordmark COCKPIT 219 (branco+azul) sobre preto.
+          // Mesmo logo usado no SplashLoader (JS) → handoff preto→preto perfeito.
+          image: './assets/splash-logo-f1.png',
+          imageWidth: 300,
           resizeMode: 'contain',
-          backgroundColor: '#F2F5F8',
+          backgroundColor: '#000000',
         },
       ],
       [

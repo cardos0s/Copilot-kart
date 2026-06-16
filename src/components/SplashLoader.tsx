@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Dimensions, StyleSheet, View } from 'react-native';
+import { Dimensions, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -7,6 +7,7 @@ import Animated, {
   useSharedValue,
   withDelay,
   withRepeat,
+  withSequence,
   withTiming,
 } from 'react-native-reanimated';
 
@@ -17,46 +18,70 @@ type Props = {
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
-// Fundo claro pra casar com a arte (mesmo tom do splash nativo) → handoff suave.
-const BG = '#F2F5F8';
-// Azul de corrida da própria arte (barra de progresso).
+const BG = '#000000';
 const BLUE = '#1C8FE5';
-
-// Arte do splash. PRECISA existir em assets/splash-cockpit219.png.
-const ART = require('../../assets/splash-cockpit219.png');
+const WHITE = '#F4F4F4';
 
 export function SplashLoader({ onFinish, durationMs = 2600 }: Props) {
-  // Imagem: fade-in + Ken Burns (zoom suave que vai assentando).
-  // O zoom começa um pouco maior que o logo nativo (~340pt) e "abre" pra tela
-  // cheia, dando continuidade ao frame estático do splash nativo.
-  const imgOpacity = useSharedValue(0);
-  const imgScale = useSharedValue(1.14);
+  // Logo: slam-in (entra grande, assenta com leve overshoot).
+  const logoOpacity = useSharedValue(0);
+  const logoScale = useSharedValue(1.25);
 
-  // Brilho diagonal varrendo a arte.
-  const sweepX = useSharedValue(-SCREEN_W * 0.7);
+  // Flash azul no impacto.
+  const flashOpacity = useSharedValue(0);
+
+  // Acento azul (linha que cresce sob o COCKPIT).
+  const accentScaleX = useSharedValue(0);
+
+  // "219" entra logo depois do impacto.
+  const subOpacity = useSharedValue(0);
+
+  // Speed lines azuis (4 trilhas diagonais em loop).
+  const streak1 = useSharedValue(-SCREEN_W);
+  const streak2 = useSharedValue(-SCREEN_W);
+  const streak3 = useSharedValue(-SCREEN_W);
+  const streak4 = useSharedValue(-SCREEN_W);
 
   // Barra de progresso.
   const progress = useSharedValue(0);
 
   useEffect(() => {
-    // === Imagem entra ===
-    imgOpacity.value = withTiming(1, { duration: 520, easing: Easing.out(Easing.quad) });
-    imgScale.value = withTiming(1, { duration: durationMs, easing: Easing.out(Easing.cubic) });
+    const startStreak = (sv: typeof streak1, duration: number, delay: number) => {
+      sv.value = withDelay(
+        delay,
+        withRepeat(
+          withTiming(SCREEN_W * 1.3, { duration, easing: Easing.linear }),
+          -1,
+          false
+        )
+      );
+    };
+    startStreak(streak1, 850, 0);
+    startStreak(streak2, 680, 150);
+    startStreak(streak3, 1050, 80);
+    startStreak(streak4, 760, 280);
 
-    // === Brilho diagonal (varre 2x) ===
-    sweepX.value = withDelay(
-      600,
-      withRepeat(
-        withTiming(SCREEN_W * 1.5, { duration: 1100, easing: Easing.inOut(Easing.quad) }),
-        2,
-        false
-      )
+    // Logo slam-in
+    logoOpacity.value = withTiming(1, { duration: 220, easing: Easing.out(Easing.quad) });
+    logoScale.value = withTiming(1, { duration: 560, easing: Easing.out(Easing.back(1.6)) });
+
+    // Flash azul no impacto
+    flashOpacity.value = withSequence(
+      withTiming(0.45, { duration: 150, easing: Easing.out(Easing.quad) }),
+      withTiming(0, { duration: 420, easing: Easing.in(Easing.quad) })
     );
 
-    // === Barra de progresso ===
+    // Acento + "219"
+    accentScaleX.value = withDelay(
+      400,
+      withTiming(1, { duration: 420, easing: Easing.out(Easing.cubic) })
+    );
+    subOpacity.value = withDelay(560, withTiming(1, { duration: 380 }));
+
+    // Barra de progresso
     progress.value = withDelay(
-      250,
-      withTiming(1, { duration: durationMs - 250, easing: Easing.out(Easing.cubic) })
+      300,
+      withTiming(1, { duration: durationMs - 300, easing: Easing.out(Easing.cubic) })
     );
 
     const t = setTimeout(() => {
@@ -65,33 +90,83 @@ export function SplashLoader({ onFinish, durationMs = 2600 }: Props) {
 
     return () => {
       clearTimeout(t);
-      cancelAnimation(imgOpacity);
-      cancelAnimation(imgScale);
-      cancelAnimation(sweepX);
+      cancelAnimation(logoOpacity);
+      cancelAnimation(logoScale);
+      cancelAnimation(flashOpacity);
+      cancelAnimation(accentScaleX);
+      cancelAnimation(subOpacity);
+      cancelAnimation(streak1);
+      cancelAnimation(streak2);
+      cancelAnimation(streak3);
+      cancelAnimation(streak4);
       cancelAnimation(progress);
     };
-  }, [durationMs, onFinish, imgOpacity, imgScale, sweepX, progress]);
+  }, [
+    durationMs,
+    onFinish,
+    logoOpacity,
+    logoScale,
+    flashOpacity,
+    accentScaleX,
+    subOpacity,
+    streak1,
+    streak2,
+    streak3,
+    streak4,
+    progress,
+  ]);
 
-  const imgStyle = useAnimatedStyle(() => ({
-    opacity: imgOpacity.value,
-    transform: [{ scale: imgScale.value }],
+  const logoStyle = useAnimatedStyle(() => ({
+    opacity: logoOpacity.value,
+    transform: [{ scale: logoScale.value }],
   }));
-  const sweepStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: sweepX.value }, { skewX: '-22deg' }],
+  const flashStyle = useAnimatedStyle(() => ({ opacity: flashOpacity.value }));
+  const accentStyle = useAnimatedStyle(() => ({ transform: [{ scaleX: accentScaleX.value }] }));
+  const subStyle = useAnimatedStyle(() => ({ opacity: subOpacity.value }));
+  const fillStyle = useAnimatedStyle(() => ({ width: `${progress.value * 100}%` }));
+
+  const streak1Style = useAnimatedStyle(() => ({
+    transform: [{ translateX: streak1.value }, { skewX: '-20deg' }],
   }));
-  const fillStyle = useAnimatedStyle(() => ({
-    width: `${progress.value * 100}%`,
+  const streak2Style = useAnimatedStyle(() => ({
+    transform: [{ translateX: streak2.value }, { skewX: '-20deg' }],
+  }));
+  const streak3Style = useAnimatedStyle(() => ({
+    transform: [{ translateX: streak3.value }, { skewX: '-20deg' }],
+  }));
+  const streak4Style = useAnimatedStyle(() => ({
+    transform: [{ translateX: streak4.value }, { skewX: '-20deg' }],
   }));
 
   return (
     <View style={styles.root}>
-      {/* Arte principal (cobre a tela) */}
-      <Animated.Image source={ART} resizeMode="cover" style={[styles.art, imgStyle]} />
-
-      {/* Brilho diagonal varrendo */}
-      <View style={styles.sweepLayer} pointerEvents="none">
-        <Animated.View style={[styles.sweep, sweepStyle]} />
+      {/* Speed lines (fundo) */}
+      <View style={styles.streaksLayer} pointerEvents="none">
+        <Animated.View style={[styles.streak, { top: '22%', width: 200 }, streak1Style]} />
+        <Animated.View
+          style={[styles.streak, { top: '40%', width: 280, opacity: 0.5 }, streak2Style]}
+        />
+        <Animated.View
+          style={[styles.streak, { top: '64%', width: 180, opacity: 0.7 }, streak3Style]}
+        />
+        <Animated.View
+          style={[styles.streak, { top: '80%', width: 240, opacity: 0.45 }, streak4Style]}
+        />
       </View>
+
+      {/* Logo COCKPIT 219 (texto nativo, pesado + itálico) */}
+      <Animated.View style={[styles.center, logoStyle]}>
+        <Text style={styles.word}>COCKPIT</Text>
+        <Animated.View style={[styles.accent, accentStyle]} />
+        <Animated.View style={[styles.row, subStyle]}>
+          <Text style={styles.chev}>‹‹‹</Text>
+          <Text style={styles.num}>219</Text>
+          <Text style={styles.chev}>›››</Text>
+        </Animated.View>
+      </Animated.View>
+
+      {/* Flash azul no impacto */}
+      <Animated.View style={[styles.flash, flashStyle]} pointerEvents="none" />
 
       {/* Barra de progresso */}
       <View style={styles.barWrapper} pointerEvents="none">
@@ -107,38 +182,86 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: BG,
+    justifyContent: 'center',
+    alignItems: 'center',
     overflow: 'hidden',
   },
-  art: {
-    ...StyleSheet.absoluteFillObject,
-    width: '100%',
-    height: '100%',
-  },
-  sweepLayer: {
+  streaksLayer: {
     ...StyleSheet.absoluteFillObject,
   },
-  sweep: {
+  streak: {
     position: 'absolute',
-    top: -SCREEN_H * 0.1,
-    height: SCREEN_H * 1.2,
-    width: 90,
-    backgroundColor: 'rgba(255,255,255,0.28)',
-    shadowColor: '#FFFFFF',
-    shadowOpacity: 0.6,
-    shadowRadius: 24,
+    left: 0,
+    height: 3,
+    backgroundColor: BLUE,
+    opacity: 0.6,
+    shadowColor: BLUE,
+    shadowOpacity: 0.9,
+    shadowRadius: 8,
     shadowOffset: { width: 0, height: 0 },
+  },
+  center: {
+    alignItems: 'center',
+  },
+  word: {
+    color: WHITE,
+    fontSize: 56,
+    fontWeight: '900',
+    fontStyle: 'italic',
+    letterSpacing: -2,
+    textShadowColor: 'rgba(28,143,229,0.55)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 18,
+  },
+  accent: {
+    width: 200,
+    height: 4,
+    backgroundColor: BLUE,
+    marginTop: 10,
+    borderRadius: 2,
+    shadowColor: BLUE,
+    shadowOpacity: 1,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 14,
+    gap: 12,
+  },
+  chev: {
+    color: BLUE,
+    fontSize: 22,
+    fontWeight: '900',
+    fontStyle: 'italic',
+    letterSpacing: -2,
+  },
+  num: {
+    color: BLUE,
+    fontSize: 30,
+    fontWeight: '900',
+    fontStyle: 'italic',
+    letterSpacing: 2,
+    textShadowColor: 'rgba(28,143,229,0.5)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 12,
+  },
+  flash: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: BLUE,
   },
   barWrapper: {
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: SCREEN_H * 0.06,
+    bottom: SCREEN_H * 0.08,
     alignItems: 'center',
   },
   barTrack: {
     width: '52%',
     height: 4,
-    backgroundColor: 'rgba(0,0,0,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.12)',
     borderRadius: 2,
     overflow: 'hidden',
   },
