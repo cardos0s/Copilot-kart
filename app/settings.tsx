@@ -52,7 +52,7 @@ export default function Settings() {
           style: 'destructive',
           onPress: async () => {
             await clearProfile();
-            router.replace('/welcome');
+            router.replace('/onboarding/intro');
           },
         },
       ]

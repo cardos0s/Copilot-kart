@@ -38,11 +38,6 @@ async function hideAndroidNavBar() {
   }
 }
 
-// Flag de cold start: resetada quando o JS bundle recarrega. Garante que
-// a Welcome screen apareça em toda inicialização fria, independentemente
-// de já ter perfil salvo.
-let coldStartHandled = false;
-
 function AuthGate() {
   const router = useRouter();
   const segments = useSegments();
@@ -53,22 +48,12 @@ function AuthGate() {
       const hasProfile = profile !== null && !!profile.name;
 
       const currentRoute = segments.join('/');
-      const inAuthFlow =
-        currentRoute === 'welcome' ||
-        currentRoute.startsWith('onboarding');
+      const inOnboarding = currentRoute.startsWith('onboarding');
 
-      // Cold start: força welcome screen mesmo com perfil já criado.
-      if (!coldStartHandled) {
-        coldStartHandled = true;
-        if (!inAuthFlow) {
-          router.replace('/welcome');
-          return;
-        }
-      }
-
-      // Sem perfil + não está em fluxo de auth → redireciona pra welcome.
-      if (!hasProfile && !inAuthFlow) {
-        router.replace('/welcome');
+      // Sem perfil → onboarding (intro explicando → cadastro).
+      // Com perfil → segue direto pra home (splash → home), sem tela de welcome.
+      if (!hasProfile && !inOnboarding) {
+        router.replace('/onboarding/intro');
       }
     })();
   }, [segments]);
@@ -134,7 +119,6 @@ export default function RootLayout() {
             }}
           >
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="welcome" options={{ headerShown: false }} />
             <Stack.Screen name="onboarding" options={{ headerShown: false }} />
             <Stack.Screen name="new-session" options={{ title: 'Nova sessão' }} />
             <Stack.Screen name="recording" options={{ headerShown: false }} />
