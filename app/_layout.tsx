@@ -107,12 +107,17 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
-    if (ready) {
+    // Esconde o splash NATIVO assim que o JS pinta o primeiro frame, pra
+    // REVELAR o SplashLoader animado. (Antes escondia só quando `ready`, ou
+    // seja, depois da animação acabar — então a animação rodava invisível
+    // atrás do frame nativo estático.)
+    const id = requestAnimationFrame(() => {
       SplashScreen.hideAsync().catch(() => {
         /* já escondida — ok */
       });
-    }
-  }, [ready]);
+    });
+    return () => cancelAnimationFrame(id);
+  }, []);
 
   return (
     <SafeAreaProvider>

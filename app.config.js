@@ -29,6 +29,7 @@ module.exports = {
     scheme: 'kartlap',
     userInterfaceStyle: 'dark',
     newArchEnabled: true,
+    icon: './assets/icon.png',
     ios: {
       supportsTablet: false,
       package: 'com.cortextech.copilot',
@@ -53,6 +54,10 @@ module.exports = {
     },
     android: {
       package: 'com.cortextech.copilot',
+      adaptiveIcon: {
+        foregroundImage: './assets/adaptive-icon.png',
+        backgroundColor: '#151D2F',
+      },
       permissions: [
         'ACCESS_FINE_LOCATION',
         'ACCESS_COARSE_LOCATION',
