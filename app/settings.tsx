@@ -5,6 +5,9 @@ import { clearProfile, getProfile, PilotProfile } from '../src/storage/profile';
 import { getStoredCredential } from '../src/storage/apiKey';
 import { getClient } from '../src/lib/llm';
 import { useCoachFloatingEnabled } from '../src/storage/preferences';
+import { useAuthSession, signOut as authSignOut } from '../src/lib/auth';
+import { AppleSignInButton } from '../src/components/AppleSignInButton';
+import type { AppleAuthResult } from '../src/lib/auth';
 import {
   BrandMark,
   Card,
@@ -26,6 +29,25 @@ export default function Settings() {
   const [profile, setProfile] = useState<PilotProfile | null>(null);
   const [aiProviderLabel, setAiProviderLabel] = useState<string | null>(null);
   const [coachFloatingEnabled, setCoachFloatingEnabled] = useCoachFloatingEnabled();
+  const { user } = useAuthSession();
+
+  const handleAppleResult = (r: AppleAuthResult) => {
+    if (r.ok) {
+      getProfile().then(setProfile);
+      Alert.alert('Conectado!', 'Sua conta Apple está vinculada. Em breve seus dados sincronizam entre aparelhos.');
+    } else if (r.reason === 'no-supabase') {
+      Alert.alert('Indisponível', 'Sincronização não está configurada nesta versão.');
+    } else if (r.reason === 'error') {
+      Alert.alert('Não deu pra entrar', r.message ?? 'Tente de novo.');
+    }
+  };
+
+  const handleAuthSignOut = () => {
+    Alert.alert('Sair da conta Apple?', 'Você continua com seus dados locais. Pode entrar de novo quando quiser.', [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Sair', style: 'destructive', onPress: () => authSignOut() },
+    ]);
+  };
   const [state, setState] = useState<SettingsState>({
     unit: 'metric',
     notifications: true,
@@ -66,6 +88,25 @@ export default function Settings() {
         contentContainerStyle={{ paddingBottom: spacing.huge }}
         showsVerticalScrollIndicator={false}
       >
+        {/* Conta */}
+        <SectionLabel>CONTA</SectionLabel>
+        <Card variant="default" padding="none" style={s.sectionCard}>
+          {user ? (
+            <>
+              <Row label="Conectado" value={user.email ?? 'Apple ID'} />
+              <Divider />
+              <Row label="Sair da conta" value="" onPress={handleAuthSignOut} />
+            </>
+          ) : (
+            <View style={s.accountBox}>
+              <Text style={s.accountHint}>
+                Entre para salvar seus dados na nuvem e recuperá-los em outro aparelho.
+              </Text>
+              <AppleSignInButton onResult={handleAppleResult} />
+            </View>
+          )}
+        </Card>
+
         {/* Geral */}
         <SectionLabel>GERAL</SectionLabel>
         <Card variant="default" padding="none" style={s.sectionCard}>
@@ -263,6 +304,8 @@ const s = StyleSheet.create({
     paddingHorizontal: spacing.l + spacing.s,
   },
   sectionCard: { marginHorizontal: spacing.l },
+  accountBox: { padding: spacing.l, gap: spacing.m },
+  accountHint: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -32,6 +32,7 @@ module.exports = {
     icon: './assets/icon.png',
     ios: {
       supportsTablet: false,
+      usesAppleSignIn: true,
       package: 'com.cortextech.copilot',
       config: {
         // App usa apenas criptografia padrão (HTTPS/TLS) — isenta.
@@ -74,6 +75,7 @@ module.exports = {
     },
     plugins: [
       'expo-router',
+      'expo-apple-authentication',
       [
         'expo-splash-screen',
         {
