@@ -31,7 +31,7 @@ module.exports = {
     newArchEnabled: true,
     ios: {
       supportsTablet: false,
-      package: 'com.cortextech.copilot',
+      package: 'com.cortextech.cockpit',
       infoPlist: {
         UIBackgroundModes: ['location', 'location'],
         NSLocationWhenInUseUsageDescription:
@@ -44,10 +44,10 @@ module.exports = {
           'Selecione uma foto da galeria para usar no seu perfil.',
         NSCameraUsageDescription: 'Tire uma foto para usar no seu perfil.',
       },
-      bundleIdentifier: 'com.cortextech.copilot',
+      bundleIdentifier: 'com.cortextech.cockpit',
     },
     android: {
-      package: 'com.cortextech.copilot',
+      package: 'com.cortextech.cockpit',
       permissions: [
         'ACCESS_FINE_LOCATION',
         'ACCESS_COARSE_LOCATION',
