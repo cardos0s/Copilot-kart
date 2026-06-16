@@ -33,6 +33,10 @@ module.exports = {
       supportsTablet: false,
       package: 'com.cortextech.cockpit',
       infoPlist: {
+        // Export compliance — app só usa HTTPS via system TLS + Keychain.
+        // Nenhuma crypto custom ou lib extra. Diz pra Apple não perguntar
+        // a cada build.
+        ITSAppUsesNonExemptEncryption: false,
         UIBackgroundModes: ['location', 'location'],
         NSLocationWhenInUseUsageDescription:
           'O Cockpit usa sua localização para gravar a trajetória na pista.',
