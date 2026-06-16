@@ -1,0 +1,9 @@
+# Python virtualenv e artefatos
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.Python
+
+# Saídas de processamento de vídeo
+*_cockpit.mp4

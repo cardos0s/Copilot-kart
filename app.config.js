@@ -32,6 +32,11 @@ module.exports = {
     ios: {
       supportsTablet: false,
       package: 'com.cortextech.copilot',
+      config: {
+        // App usa apenas criptografia padrão (HTTPS/TLS) — isenta.
+        // Evita o aviso "Faltam dados de conformidade" a cada build no TestFlight.
+        usesNonExemptEncryption: false,
+      },
       infoPlist: {
         UIBackgroundModes: ['location', 'location'],
         NSLocationWhenInUseUsageDescription:
@@ -67,9 +72,13 @@ module.exports = {
       [
         'expo-splash-screen',
         {
-          image: './assets/splash-icon.png',
+          // O plugin renderiza a imagem como LOGO centralizado (não tela cheia).
+          // Fundo claro = combina com as bordas da arte → handoff suave pro
+          // SplashLoader (JS), que aí sim mostra a arte inteira animada.
+          image: './assets/splash-cockpit219.png',
+          imageWidth: 340,
           resizeMode: 'contain',
-          backgroundColor: '#000000',
+          backgroundColor: '#F2F5F8',
         },
       ],
       [
