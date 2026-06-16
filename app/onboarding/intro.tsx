@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Path, Defs, LinearGradient, Stop, Circle } from 'react-native-svg';
+import Svg, { Path, Defs, LinearGradient, Stop, Circle, Ellipse } from 'react-native-svg';
 import Animated, {
   Easing,
   FadeIn,
+  interpolate,
   useAnimatedStyle,
   useSharedValue,
   withDelay,
@@ -24,24 +25,21 @@ const STEPS = [
     tag: 'PASSO 1',
     title: 'Telemetria que você sente',
     desc: 'Velocidade, RPM e aceleração capturados em tempo real e traduzidos em algo que dá pra ler de relance.',
-    cta: 'Continuar',
   },
   {
     tag: 'PASSO 2',
     title: 'Um copiloto que pensa por volta',
     desc: 'A IA estuda cada setor e te diz exatamente onde ganhar tempo — em segundos, não em achismo.',
-    cta: 'Continuar',
   },
   {
     tag: 'PASSO 3',
     title: 'Corra contra o seu melhor',
     desc: 'O fantasma da sua melhor volta anda junto com você. Bata o recorde e veja a evolução sessão a sessão.',
-    cta: 'Começar',
   },
 ];
 
 // ============================================================================
-// Passo 1 — velocímetro animado
+// Passo 1 — velocímetro (ponteiro vivo, número abaixo do arco)
 // ============================================================================
 
 function StepGauge() {
@@ -52,26 +50,56 @@ function StepGauge() {
   const [kmh, setKmh] = useState(0);
 
   useEffect(() => {
-    rot.value = withDelay(180, withTiming(36, { duration: 1000, easing: Easing.out(Easing.cubic) }));
-    b1.value = withDelay(320, withTiming(0.85, { duration: 700 }));
-    b2.value = withDelay(400, withTiming(0.68, { duration: 700 }));
-    b3.value = withDelay(480, withTiming(0.52, { duration: 700 }));
+    // Entrada + oscilação contínua (ponteiro "vivo").
+    rot.value = withDelay(
+      180,
+      withSequence(
+        withTiming(36, { duration: 900, easing: Easing.out(Easing.cubic) }),
+        withRepeat(
+          withSequence(
+            withTiming(45, { duration: 620 }),
+            withTiming(28, { duration: 720 }),
+            withTiming(38, { duration: 560 })
+          ),
+          -1,
+          false
+        )
+      )
+    );
 
+    const live = (sv: typeof b1, base: number) =>
+      withDelay(
+        320,
+        withSequence(
+          withTiming(base, { duration: 700, easing: Easing.out(Easing.cubic) }),
+          withRepeat(
+            withSequence(
+              withTiming(base - 0.07, { duration: 650 }),
+              withTiming(base + 0.06, { duration: 650 })
+            ),
+            -1,
+            true
+          )
+        )
+      );
+    b1.value = live(b1, 0.85);
+    b2.value = live(b2, 0.68);
+    b3.value = live(b3, 0.52);
+
+    // Contador vivo: sobe até 92, depois flutua suave.
     let raf = 0;
     const start = Date.now();
-    const dur = 1000;
     const tick = () => {
-      const t = Math.min(1, (Date.now() - start) / dur);
-      setKmh(Math.round(92 * (1 - Math.pow(1 - t, 3))));
-      if (t < 1) raf = requestAnimationFrame(tick);
-    };
-    const to = setTimeout(() => {
+      const e = Date.now() - start;
+      if (e < 1000) {
+        setKmh(Math.round(92 * (1 - Math.pow(1 - e / 1000, 3))));
+      } else {
+        setKmh(92 + Math.round(Math.sin(e / 240) * 3));
+      }
       raf = requestAnimationFrame(tick);
-    }, 180);
-    return () => {
-      clearTimeout(to);
-      if (raf) cancelAnimationFrame(raf);
     };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
   }, [rot, b1, b2, b3]);
 
   const needleStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `${rot.value}deg` }] }));
@@ -82,23 +110,24 @@ function StepGauge() {
   return (
     <View style={g.wrap}>
       <View style={g.gaugeBox}>
-        <Svg width={236} height={140} viewBox="0 0 236 140">
+        <Svg width={236} height={132} viewBox="0 0 236 132">
           <Defs>
             <LinearGradient id="ga" x1="0" y1="0" x2="1" y2="0">
               <Stop offset="0" stopColor={ACCENT_DIM} />
               <Stop offset="1" stopColor="#4F95FF" />
             </LinearGradient>
           </Defs>
-          <Path d="M22 126 A96 96 0 0 1 214 126" stroke="#1b1b27" strokeWidth={14} fill="none" strokeLinecap="round" />
-          <Path d="M22 126 A96 96 0 0 1 214 126" stroke="url(#ga)" strokeWidth={14} fill="none" strokeLinecap="round" strokeDasharray="218 400" />
-          <Circle cx={118} cy={126} r={9} fill="#FFFFFF" />
-          <Circle cx={118} cy={126} r={4} fill={ACCENT} />
+          <Path d="M22 124 A96 96 0 0 1 214 124" stroke="#1b1b27" strokeWidth={14} fill="none" strokeLinecap="round" />
+          <Path d="M22 124 A96 96 0 0 1 214 124" stroke="url(#ga)" strokeWidth={14} fill="none" strokeLinecap="round" strokeDasharray="214 400" />
+          <Circle cx={118} cy={124} r={9} fill="#FFFFFF" />
+          <Circle cx={118} cy={124} r={4} fill={ACCENT} />
         </Svg>
         <Animated.View style={[g.needle, needleStyle]} />
-        <View style={g.readout}>
-          <Text style={g.kmh}>{kmh}</Text>
-          <Text style={g.unit}>km/h</Text>
-        </View>
+      </View>
+
+      <View style={g.readout}>
+        <Text style={g.kmh}>{kmh}</Text>
+        <Text style={g.unit}>km/h</Text>
       </View>
 
       <View style={g.bars}>
@@ -176,44 +205,71 @@ function StepCoach() {
 }
 
 // ============================================================================
-// Passo 3 — fantasma da melhor volta
+// Passo 3 — você x fantasma correndo na pista
 // ============================================================================
 
+// Waypoints sobre a elipse da pista (cx 130, cy 78, rx 92, ry 50).
+const TRACK_X = [222, 210, 176, 130, 84, 50, 38, 50, 84, 130, 176, 210, 222];
+const TRACK_Y = [78, 103, 121, 128, 121, 103, 78, 53, 35, 28, 35, 53, 78];
+const TRACK_IN = TRACK_X.map((_, i) => i / (TRACK_X.length - 1));
+const MARK = 13;
+
 function StepGhost() {
+  const t = useSharedValue(0);
   const enter = useSharedValue(0);
-  const shimmer = useSharedValue(0);
 
   useEffect(() => {
-    enter.value = withDelay(180, withTiming(1, { duration: 520, easing: Easing.out(Easing.cubic) }));
-    shimmer.value = withRepeat(
-      withSequence(withTiming(1, { duration: 1100 }), withTiming(0, { duration: 1100 })),
-      -1,
-      true
-    );
-  }, [enter, shimmer]);
+    enter.value = withTiming(1, { duration: 520, easing: Easing.out(Easing.cubic) });
+    t.value = withRepeat(withTiming(1, { duration: 4600, easing: Easing.linear }), -1, false);
+  }, [t, enter]);
 
+  const youStyle = useAnimatedStyle(() => {
+    const x = interpolate(t.value, TRACK_IN, TRACK_X);
+    const y = interpolate(t.value, TRACK_IN, TRACK_Y);
+    return { opacity: enter.value, transform: [{ translateX: x - MARK / 2 }, { translateY: y - MARK / 2 }] };
+  });
+  const ghostStyle = useAnimatedStyle(() => {
+    'worklet';
+    let tf = t.value - 0.085;
+    if (tf < 0) tf += 1;
+    const x = interpolate(tf, TRACK_IN, TRACK_X);
+    const y = interpolate(tf, TRACK_IN, TRACK_Y);
+    return { opacity: enter.value * 0.8, transform: [{ translateX: x - MARK / 2 }, { translateY: y - MARK / 2 }] };
+  });
   const cardStyle = useAnimatedStyle(() => ({
     opacity: enter.value,
-    transform: [{ scale: 0.86 + enter.value * 0.14 }],
+    transform: [{ scale: 0.92 + enter.value * 0.08 }],
   }));
-  const ghostDotStyle = useAnimatedStyle(() => ({ opacity: 0.35 + shimmer.value * 0.5 }));
 
   return (
     <View style={gh.wrap}>
-      <Animated.View style={[gh.card, cardStyle]}>
-        <Text style={gh.badge}>SUA MELHOR VOLTA</Text>
-        <Text style={gh.lap}>1:38.21</Text>
-        <View style={gh.legend}>
-          <View style={gh.legendItem}>
-            <View style={[gh.legendDot, { backgroundColor: ACCENT }]} />
-            <Text style={gh.legendText}>VOCÊ</Text>
-          </View>
-          <View style={gh.legendItem}>
-            <Animated.View style={[gh.legendDot, { backgroundColor: colors.textMuted }, ghostDotStyle]} />
-            <Text style={gh.legendText}>FANTASMA</Text>
-          </View>
+      <View style={gh.trackBox}>
+        <Svg width={260} height={156} viewBox="0 0 260 156">
+          <Ellipse cx={130} cy={78} rx={92} ry={50} stroke="#23232f" strokeWidth={16} fill="none" />
+          <Ellipse cx={130} cy={78} rx={92} ry={50} stroke="#3a3a48" strokeWidth={1.5} fill="none" strokeDasharray="2 9" />
+        </Svg>
+
+        {/* Tempo no centro da pista */}
+        <Animated.View style={[gh.center, cardStyle]} pointerEvents="none">
+          <Text style={gh.badge}>SUA MELHOR VOLTA</Text>
+          <Text style={gh.lap}>1:38.21</Text>
+        </Animated.View>
+
+        {/* Fantasma (atrás) e você (na frente) correndo */}
+        <Animated.View style={[gh.marker, gh.ghost, ghostStyle]} />
+        <Animated.View style={[gh.marker, gh.you, youStyle]} />
+      </View>
+
+      <View style={gh.legend}>
+        <View style={gh.legendItem}>
+          <View style={[gh.legendDot, { backgroundColor: ACCENT }]} />
+          <Text style={gh.legendText}>VOCÊ</Text>
         </View>
-      </Animated.View>
+        <View style={gh.legendItem}>
+          <View style={[gh.legendDot, { backgroundColor: colors.textMuted }]} />
+          <Text style={gh.legendText}>FANTASMA</Text>
+        </View>
+      </View>
     </View>
   );
 }
@@ -228,16 +284,16 @@ export default function OnboardingIntro() {
   const [step, setStep] = useState(0);
 
   const goToCadastro = () => router.push('/onboarding/name');
-
   const advance = () => {
-    if (step < STEPS.length - 1) setStep((s) => s + 1);
+    if (step < STEPS.length - 1) setStep((sp) => sp + 1);
     else goToCadastro();
   };
 
   const data = STEPS[step];
+  const last = step === STEPS.length - 1;
 
   return (
-    <View style={[s.root, { paddingTop: insets.top + spacing.m }]}>
+    <Pressable style={[s.root, { paddingTop: insets.top + spacing.m }]} onPress={advance}>
       {/* Topo: dots + pular */}
       <View style={s.topBar}>
         <View style={s.dots}>
@@ -250,14 +306,14 @@ export default function OnboardingIntro() {
         </Pressable>
       </View>
 
-      {/* Ilustração (toque avança) */}
-      <Pressable style={s.illuArea} onPress={advance}>
+      {/* Ilustração */}
+      <View style={s.illuArea}>
         <Animated.View key={`illu-${step}`} entering={FadeIn.duration(320)} style={s.illuInner}>
           {step === 0 && <StepGauge />}
           {step === 1 && <StepCoach />}
           {step === 2 && <StepGhost />}
         </Animated.View>
-      </Pressable>
+      </View>
 
       {/* Texto */}
       <Animated.View key={`txt-${step}`} entering={FadeIn.duration(320)} style={s.textArea}>
@@ -266,16 +322,11 @@ export default function OnboardingIntro() {
         <Text style={s.desc}>{data.desc}</Text>
       </Animated.View>
 
-      {/* Botão */}
-      <View style={[s.footer, { paddingBottom: insets.bottom + spacing.l }]}>
-        <Pressable
-          style={({ pressed }) => [s.button, pressed && s.buttonPressed]}
-          onPress={advance}
-        >
-          <Text style={s.buttonText}>{data.cta}</Text>
-        </Pressable>
+      {/* Dica de toque (no lugar do botão) */}
+      <View style={[s.hintWrap, { paddingBottom: insets.bottom + spacing.l }]}>
+        <Text style={s.hint}>{last ? 'Toque para começar' : 'Toque para continuar'}</Text>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -306,40 +357,32 @@ const s = StyleSheet.create({
     lineHeight: 28,
   },
   desc: { color: colors.textSecondary, fontSize: 14, lineHeight: 20, marginTop: spacing.m },
-  footer: { paddingTop: spacing.s },
-  button: {
-    backgroundColor: ACCENT,
-    borderRadius: radius.m,
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
-  buttonPressed: { opacity: 0.85 },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '800',
-    fontStyle: 'italic',
+  hintWrap: { alignItems: 'center', paddingTop: spacing.s },
+  hint: {
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.5,
     textTransform: 'uppercase',
-    letterSpacing: 1,
   },
 });
 
 const g = StyleSheet.create({
   wrap: { alignItems: 'center', width: 280 },
-  gaugeBox: { width: 236, height: 140, alignItems: 'center', justifyContent: 'flex-start' },
+  gaugeBox: { width: 236, height: 132 },
   needle: {
     position: 'absolute',
     left: 116,
-    top: 44,
+    top: 48,
     width: 4,
-    height: 82,
+    height: 76,
     backgroundColor: '#FFFFFF',
     borderRadius: 2,
     transformOrigin: '50% 100%',
   },
-  readout: { position: 'absolute', top: 70, alignItems: 'center', width: '100%' },
-  kmh: { color: colors.textPrimary, fontSize: 40, fontWeight: '900', letterSpacing: -1 },
-  unit: { color: colors.textSecondary, fontSize: 12, fontWeight: '600', marginTop: -2 },
+  readout: { flexDirection: 'row', alignItems: 'flex-end', marginTop: spacing.s },
+  kmh: { color: colors.textPrimary, fontSize: 40, fontWeight: '900', letterSpacing: -1, lineHeight: 42 },
+  unit: { color: colors.textSecondary, fontSize: 13, fontWeight: '600', marginLeft: 6, marginBottom: 6 },
   bars: { width: 220, marginTop: spacing.l, gap: 10 },
   barRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.m },
   barLabel: { color: colors.textMuted, fontSize: 10, fontWeight: '800', letterSpacing: 1, width: 38 },
@@ -398,25 +441,29 @@ const c = StyleSheet.create({
 });
 
 const gh = StyleSheet.create({
-  wrap: { width: 280, alignItems: 'center', justifyContent: 'center' },
-  card: {
-    width: 240,
+  wrap: { width: 280, alignItems: 'center' },
+  trackBox: { width: 260, height: 156 },
+  center: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 50,
     alignItems: 'center',
-    paddingVertical: spacing.xxl,
-    paddingHorizontal: spacing.xl,
-    backgroundColor: colors.bgElevated,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
   },
-  badge: { color: LIME, fontSize: 11, fontWeight: '800', letterSpacing: 2 },
-  lap: {
-    color: colors.textPrimary,
-    fontSize: 46,
-    fontWeight: '900',
-    letterSpacing: -1,
-    marginTop: spacing.s,
+  badge: { color: LIME, fontSize: 10, fontWeight: '800', letterSpacing: 1.5 },
+  lap: { color: colors.textPrimary, fontSize: 34, fontWeight: '900', letterSpacing: -1, marginTop: 2 },
+  marker: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    width: MARK,
+    height: MARK,
+    borderRadius: MARK / 2,
+    borderWidth: 2,
+    borderColor: colors.bg,
   },
+  you: { backgroundColor: ACCENT },
+  ghost: { backgroundColor: colors.textMuted },
   legend: { flexDirection: 'row', gap: spacing.xl, marginTop: spacing.l },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendDot: { width: 8, height: 8, borderRadius: 4 },
