@@ -33,6 +33,31 @@ function startOfTodayMs(): number {
 
 const POS_COLORS = ['#F5C84B', '#C9D2DE', '#D98A4B']; // ouro / prata / bronze
 
+// Ranking de exemplo (quando ainda não há dados reais no Supabase) — deixa a
+// home testável. Um dos pilotos vira "você" pra mostrar o destaque.
+function demoEntries(myName: string | null): LeaderboardEntry[] {
+  const base: [string, string, number][] = [
+    ['Bia Rocha', '7', 41402],
+    ['Léo Martins', '14', 41870],
+    [myName ?? 'Você', '219', 42118],
+    ['Diego Sá', '44', 42400],
+    ['Marina L.', '12', 42880],
+    ['Rafa Tó', '88', 43050],
+    ['Camila V.', '23', 43400],
+    ['Theo M.', '5', 43770],
+  ];
+  return base.map(([name, kart, ms], i) => ({
+    id: `demo-${i}`,
+    pilotId: `demo-${i}`,
+    pilotName: name,
+    pilotKartNumber: kart,
+    trackId: '',
+    layoutId: null,
+    bestLapMs: ms,
+    createdAt: Date.now(),
+  }));
+}
+
 export function IndoorHome() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -42,6 +67,7 @@ export function IndoorHome() {
   const [loading, setLoading] = useState(true);
   const [myName, setMyName] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [isDemo, setIsDemo] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -49,7 +75,13 @@ export function IndoorHome() {
     setMyName(prof?.name ?? null);
     const since = mode === 'today' ? startOfTodayMs() : undefined;
     const data = await fetchLeaderboard(trackId, null, 30, since);
-    setEntries(data);
+    if (data.length === 0) {
+      setEntries(demoEntries(prof?.name ?? null));
+      setIsDemo(true);
+    } else {
+      setEntries(data);
+      setIsDemo(false);
+    }
     setLoading(false);
   }, [trackId, mode]);
 
@@ -74,7 +106,7 @@ export function IndoorHome() {
         showsVerticalScrollIndicator={false}
       >
         {/* Cabeçalho */}
-        <Text style={s.kicker}>MODO INDOOR · COMPETIÇÃO</Text>
+        <Text style={s.kicker}>MODO INDOOR · COMPETIÇÃO{isDemo ? ' · EXEMPLO' : ''}</Text>
         <View style={s.headerRow}>
           <Text style={s.title}>RANKING</Text>
           <Pressable style={s.shareBtn} hitSlop={8} onPress={handleShare}>
