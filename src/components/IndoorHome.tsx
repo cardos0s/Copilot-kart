@@ -58,7 +58,7 @@ function demoEntries(myName: string | null): LeaderboardEntry[] {
   }));
 }
 
-export function IndoorHome() {
+export function IndoorHome({ showBack }: { showBack?: boolean } = {}) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [trackId, setTrackId] = useState<string>(TRACKS[0].id);
@@ -106,7 +106,12 @@ export function IndoorHome() {
         showsVerticalScrollIndicator={false}
       >
         {/* Cabeçalho */}
-        <Text style={s.kicker}>MODO INDOOR · COMPETIÇÃO{isDemo ? ' · EXEMPLO' : ''}</Text>
+        {showBack && (
+          <Pressable onPress={() => router.back()} hitSlop={12} style={{ marginBottom: 2 }}>
+            <Text style={{ color: colors.textSecondary, fontSize: 26, fontWeight: '400' }}>‹</Text>
+          </Pressable>
+        )}
+        <Text style={s.kicker}>RANKING AO VIVO{isDemo ? ' · EXEMPLO' : ''}</Text>
         <View style={s.headerRow}>
           <Text style={s.title}>RANKING</Text>
           <Pressable style={s.shareBtn} hitSlop={8} onPress={handleShare}>

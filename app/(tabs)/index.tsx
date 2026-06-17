@@ -295,18 +295,29 @@ export default function Home() {
           </Card>
         )}
 
-        {/* Modo Lendas */}
-        <Pressable
-          style={({ pressed }) => [s.legendsCard, pressed && { opacity: 0.85 }]}
-          onPress={() => router.push('/legends' as any)}
-        >
-          <Text style={s.legendsEmoji}>⚔️</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={s.legendsTitle}>MODO LENDAS</Text>
-            <Text style={s.legendsSub}>Corra contra o fantasma de Senna, Verstappen e mais</Text>
-          </View>
-          <Text style={s.legendsChevron}>›</Text>
-        </Pressable>
+        {/* Modos lado a lado: Lendas + Ranking */}
+        <View style={s.modesRow}>
+          <Pressable
+            style={({ pressed }) => [s.modeCard, pressed && { opacity: 0.85 }]}
+            onPress={() => router.push('/legends' as any)}
+          >
+            <View style={[s.modeIcon, { backgroundColor: 'rgba(47,107,255,0.12)', borderColor: colors.racingBlue }]}>
+              <Text style={s.modeEmoji}>⚔️</Text>
+            </View>
+            <Text style={s.modeTitle}>LENDAS</Text>
+            <Text style={s.modeSub}>vs fantasma de Senna & cia</Text>
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [s.modeCard, pressed && { opacity: 0.85 }]}
+            onPress={() => router.push('/ranking' as any)}
+          >
+            <View style={[s.modeIcon, { backgroundColor: 'rgba(0,255,136,0.10)', borderColor: colors.success }]}>
+              <Text style={s.modeEmoji}>🏁</Text>
+            </View>
+            <Text style={s.modeTitle}>RANKING</Text>
+            <Text style={s.modeSub}>corra ao vivo no ranking</Text>
+          </Pressable>
+        </View>
 
         {/* CTA — Iniciar Sessão */}
         <Pressable
@@ -438,11 +449,12 @@ const s = StyleSheet.create({
   },
   ctaIcon: { color: '#fff', fontSize: 14, fontWeight: '700' },
   ctaText: { color: '#fff', fontSize: 13, fontWeight: '900', fontStyle: 'italic', letterSpacing: 0.5 },
-  legendsCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.m, marginTop: spacing.m, padding: spacing.l, backgroundColor: colors.surface, borderRadius: radius.l, borderWidth: 1, borderColor: colors.border },
-  legendsEmoji: { fontSize: 22 },
-  legendsTitle: { color: colors.textPrimary, fontSize: 14, fontWeight: '900', fontStyle: 'italic', letterSpacing: 0.5 },
-  legendsSub: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
-  legendsChevron: { color: colors.textMuted, fontSize: 22, fontWeight: '300' },
+  modesRow: { flexDirection: 'row', gap: spacing.s, marginTop: spacing.m },
+  modeCard: { flex: 1, padding: spacing.l, backgroundColor: colors.surface, borderRadius: radius.l, borderWidth: 1, borderColor: colors.border },
+  modeIcon: { width: 44, height: 44, borderRadius: radius.m, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.m },
+  modeEmoji: { fontSize: 20 },
+  modeTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: '900', fontStyle: 'italic', letterSpacing: 0.5 },
+  modeSub: { color: colors.textSecondary, fontSize: 11, marginTop: 3, lineHeight: 15 },
 
   bestNum: {
     color: colors.primary,
