@@ -10,7 +10,7 @@ import { Button, Card, Chart, DecorativeSplash, Icon, Metric } from '../../src/c
 import { SennaQuoteCard } from '../../src/components/SennaQuoteCard';
 import { peakSpeedMsOfLaps, msToKmh } from '../../src/lib/speed';
 import { LapRecord } from '../../src/lib/analysis';
-import { colors, spacing, typography } from '../../src/theme';
+import { colors, spacing, radius, typography } from '../../src/theme';
 import { getPilotType, type PilotType } from '../../src/storage/pilotType';
 import { IndoorHome } from '../../src/components/IndoorHome';
 
@@ -47,6 +47,40 @@ function fmtDate(ts: number) {
     month: '2-digit',
     year: 'numeric',
   });
+}
+
+/** "HOJE" / "ONTEM" / "15 JUN" */
+function relDay(ts: number): string {
+  const d = new Date(ts);
+  d.setHours(0, 0, 0, 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const diff = Math.round((today.getTime() - d.getTime()) / 86400000);
+  if (diff <= 0) return 'HOJE';
+  if (diff === 1) return 'ONTEM';
+  return new Date(ts).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).toUpperCase();
+}
+
+/** Consistência 0-100 a partir das voltas (mesma fórmula do insights). */
+function consistencyPct(laps: number[]): number {
+  if (laps.length < 2) return 0;
+  const sorted = [...laps].sort((a, b) => a - b);
+  const cut = Math.max(2, Math.floor(sorted.length * 0.8));
+  const sample = sorted.slice(0, cut);
+  const best = sample[0];
+  const avg = sample.reduce((a, b) => a + b, 0) / sample.length;
+  const std = Math.sqrt(sample.reduce((a, b) => a + (b - avg) ** 2, 0) / sample.length);
+  return Math.round(Math.max(0, Math.min(100, (1 - (std / best) * 8) * 100)));
+}
+
+function fmtKmh(v: number): string {
+  return v.toFixed(1).replace('.', ',');
+}
+
+/** delta em segundos com sinal: "-4,2s" / "+1,1s" */
+function fmtSecDelta(ms: number): string {
+  const sign = ms <= 0 ? '-' : '+';
+  return `${sign}${Math.abs(ms / 1000).toFixed(1).replace('.', ',')}s`;
 }
 
 export default function Home() {
@@ -94,6 +128,8 @@ export default function Home() {
     .reverse();
 
   const isEmpty = sessions.length === 0;
+  const evoDeltaMs =
+    sparkData.length >= 2 ? sparkData[sparkData.length - 1] - sparkData[0] : null;
 
   // Modo Indoor (competição): home focada em ranking.
   if (pilotType === 'indoor') {
@@ -132,37 +168,36 @@ export default function Home() {
           <SennaQuoteCard />
         </View>
 
-        {/* Card: Última sessão — sem border duro, com mais respiro */}
-        <Card variant="flat" padding="l" style={{ marginTop: spacing.xxl, borderColor: 'transparent', backgroundColor: colors.surface }}>
-          <View style={{ flexDirection: 'row', gap: spacing.m }}>
+        {/* Card: Última sessão — compacto (silhueta + tempo + voltas) */}
+        <Card variant="flat" padding="l" style={s.sessionCard}>
+          <View style={s.sessionRow}>
+            <View style={s.silBox}>
+              {lastSession && lastSession.lapMsList.length > 0 ? (
+                <LastSessionSilhouette sessionId={lastSession.id} size={50} />
+              ) : (
+                <Icon name="map" size={24} color={colors.textMuted} />
+              )}
+            </View>
             <View style={{ flex: 1 }}>
-              <Text style={s.cardLabel}>ÚLTIMA SESSÃO</Text>
+              <Text style={s.cardLabel}>
+                ÚLTIMA SESSÃO{lastSession ? ` · ${relDay(lastSession.startedAt)}` : ''}
+              </Text>
               {lastSession ? (
                 <>
                   <Text style={s.trackName} numberOfLines={1}>
                     {track?.shortName ?? lastSession.trackName}
                   </Text>
-                  <Text style={s.dateText}>{fmtDate(lastSession.startedAt)}</Text>
-                  <View style={{ marginTop: spacing.m }}>
-                    <Metric
-                      label="MELHOR VOLTA"
-                      value={lastSession.bestLapMs != null ? fmtLap(lastSession.bestLapMs) : '—'}
-                      tone="primary"
-                      size="l"
-                      delta={deltaMs != null ? fmtDelta(deltaMs) : undefined}
-                      deltaTone={deltaMs != null && deltaMs < 0 ? 'success' : 'danger'}
-                      hint={deltaMs != null ? 'vs sessão anterior' : undefined}
-                    />
-                  </View>
-                  {lastSession.peakSpeedKmh > 0 && (
-                    <View style={s.peakRow}>
-                      <View style={s.peakDot} />
-                      <Text style={s.peakLabel}>PICO</Text>
-                      <Text style={[s.peakValue, typography.mono]}>
-                        {lastSession.peakSpeedKmh.toFixed(0)} km/h
+                  <View style={s.lastMetaRow}>
+                    <Text style={s.lastLap}>
+                      {lastSession.bestLapMs != null ? fmtLap(lastSession.bestLapMs) : '—'}
+                    </Text>
+                    {deltaMs != null && (
+                      <Text style={[s.lastDelta, { color: deltaMs <= 0 ? colors.success : colors.danger }]}>
+                        {deltaMs <= 0 ? '▼' : '▲'} {Math.abs(deltaMs / 1000).toFixed(1).replace('.', ',')}s
                       </Text>
-                    </View>
-                  )}
+                    )}
+                    <Text style={s.lastLaps}>· {lastSession.lapMsList.length} voltas</Text>
+                  </View>
                 </>
               ) : (
                 <>
@@ -173,21 +208,40 @@ export default function Home() {
                 </>
               )}
             </View>
-            {lastSession && lastSession.lapMsList.length > 0 && (
-              <View style={s.silhouetteWrap}>
-                <LastSessionSilhouette sessionId={lastSession.id} />
-              </View>
-            )}
           </View>
         </Card>
 
-        {/* Card: Desempenho */}
+        {/* 3 métricas */}
+        {lastSession && lastSession.lapMsList.length > 0 && (
+          <View style={s.metricRow}>
+            <View style={s.metricCard}>
+              <Text style={s.metricLabel}>MELHOR VOLTA</Text>
+              <Text style={s.metricValue}>
+                {lastSession.bestLapMs != null ? fmtLap(lastSession.bestLapMs) : '—'}
+              </Text>
+            </View>
+            <View style={s.metricCard}>
+              <Text style={s.metricLabel}>VEL MÁX</Text>
+              <Text style={s.metricValue}>
+                {fmtKmh(lastSession.peakSpeedKmh)}<Text style={s.metricUnit}> km/h</Text>
+              </Text>
+            </View>
+            <View style={s.metricCard}>
+              <Text style={s.metricLabel}>CONSIST.</Text>
+              <Text style={s.metricValue}>
+                {consistencyPct(lastSession.lapMsList)}<Text style={s.metricUnit}>%</Text>
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* Card: Evolução */}
         {sparkData.length >= 2 && (
-          <Card variant="flat" padding="l" style={{ marginTop: spacing.m, borderColor: 'transparent', backgroundColor: colors.surface }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
-              <Text style={s.cardLabel}>DESEMPENHO</Text>
-              <Text style={[s.bestNum, typography.mono]}>
-                {fmtLap(Math.min(...sparkData))}
+          <Card variant="flat" padding="l" style={s.evoCard}>
+            <View style={s.evoHeader}>
+              <Text style={s.cardLabel}>EVOLUÇÃO</Text>
+              <Text style={[s.evoDelta, { color: (evoDeltaMs ?? 0) <= 0 ? colors.success : colors.danger }]}>
+                {evoDeltaMs != null ? fmtSecDelta(evoDeltaMs) : ''} · {sparkData.length} sessões
               </Text>
             </View>
             <View style={{ marginTop: spacing.m }}>
@@ -201,25 +255,24 @@ export default function Home() {
                 highlightLast
               />
             </View>
-            <Text style={s.chartHint}>Melhor volta · últimas {sparkData.length} sessões</Text>
+            <View style={s.evoFooter}>
+              <Text style={s.evoFootText}>há {sparkData.length} sessões</Text>
+              <Text style={s.evoFootText}>melhor: {fmtLap(Math.min(...sparkData))}</Text>
+            </View>
           </Card>
         )}
 
-        {/* CTA — respiro generoso pra separar do conteúdo acima */}
-        <View style={{ marginTop: spacing.huge * 1.5 }}>
-          <Button
-            label="Iniciar Sessão"
-            onPress={() => router.push('/new-session')}
-            variant="primary"
-            size="l"
-            fullWidth
-          />
-        </View>
+        {/* CTA — Iniciar Sessão */}
+        <Pressable
+          style={({ pressed }) => [s.cta, pressed && { opacity: 0.9 }]}
+          onPress={() => router.push('/new-session')}
+        >
+          <Text style={s.ctaIcon}>⏻</Text>
+          <Text style={s.ctaText}>INICIAR SESSÃO</Text>
+        </Pressable>
 
         {isEmpty && (
-          <Text style={s.hintFirst}>
-            Toque acima pra começar sua primeira sessão.
-          </Text>
+          <Text style={s.hintFirst}>Toque pra começar sua primeira sessão.</Text>
         )}
       </ScrollView>
     </View>
@@ -227,7 +280,7 @@ export default function Home() {
 }
 
 /** Mostra a silhueta da melhor volta da sessão. */
-function LastSessionSilhouette({ sessionId }: { sessionId: string }) {
+function LastSessionSilhouette({ sessionId, size = 56 }: { sessionId: string; size?: number }) {
   const [bestSamples, setBestSamples] = useState<any[]>([]);
 
   useFocusEffect(
@@ -242,7 +295,7 @@ function LastSessionSilhouette({ sessionId }: { sessionId: string }) {
   );
 
   if (bestSamples.length < 2) return null;
-  return <TrackSilhouette samples={bestSamples} width={110} height={88} strokeWidth={2.5} />;
+  return <TrackSilhouette samples={bestSamples} width={size} height={size * 0.82} strokeWidth={2} />;
 }
 
 const s = StyleSheet.create({
@@ -292,6 +345,51 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+
+  sessionCard: { marginTop: spacing.xxl, borderColor: 'transparent', backgroundColor: colors.surface },
+  sessionRow: { flexDirection: 'row', gap: spacing.m, alignItems: 'center' },
+  silBox: {
+    width: 64,
+    height: 64,
+    borderRadius: radius.m,
+    backgroundColor: colors.bgElevated,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  lastMetaRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6, marginTop: 4, flexWrap: 'wrap' },
+  lastLap: { color: colors.textPrimary, fontSize: 22, fontWeight: '900', letterSpacing: -0.5, fontVariant: ['tabular-nums'] },
+  lastDelta: { fontSize: 12, fontWeight: '800' },
+  lastLaps: { color: colors.textMuted, fontSize: 12, fontWeight: '600' },
+
+  metricRow: { flexDirection: 'row', gap: spacing.s, marginTop: spacing.m },
+  metricCard: { flex: 1, backgroundColor: colors.surface, borderRadius: radius.m, padding: spacing.m },
+  metricLabel: { color: colors.textMuted, fontSize: 9, fontWeight: '800', letterSpacing: 0.8 },
+  metricValue: { color: colors.textPrimary, fontSize: 18, fontWeight: '900', letterSpacing: -0.5, marginTop: 5, fontVariant: ['tabular-nums'] },
+  metricUnit: { color: colors.textSecondary, fontSize: 11, fontWeight: '700' },
+
+  evoCard: { marginTop: spacing.m, borderColor: 'transparent', backgroundColor: colors.surface },
+  evoHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
+  evoDelta: { fontSize: 12, fontWeight: '800' },
+  evoFooter: { flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.s },
+  evoFootText: { color: colors.textMuted, fontSize: 11, fontWeight: '600' },
+
+  cta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.s,
+    marginTop: spacing.huge,
+    backgroundColor: colors.primary,
+    borderRadius: radius.l,
+    paddingVertical: 18,
+    shadowColor: colors.primary,
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+  },
+  ctaIcon: { color: '#fff', fontSize: 18, fontWeight: '700' },
+  ctaText: { color: '#fff', fontSize: 16, fontWeight: '900', fontStyle: 'italic', letterSpacing: 0.5 },
 
   bestNum: {
     color: colors.primary,
