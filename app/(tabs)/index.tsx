@@ -13,6 +13,7 @@ import { LapRecord } from '../../src/lib/analysis';
 import { colors, spacing, radius, typography } from '../../src/theme';
 import { getPilotType, type PilotType } from '../../src/storage/pilotType';
 import { IndoorHome } from '../../src/components/IndoorHome';
+import { EvolutionChart } from '../../src/components/EvolutionChart';
 
 type SessionWithStats = Session & {
   bestLapMs: number | null;
@@ -89,8 +90,10 @@ export default function Home() {
   const [profile, setProfile] = useState<PilotProfile | null>(null);
   const [sessions, setSessions] = useState<SessionWithStats[]>([]);
   const [pilotType, setPilotTypeState] = useState<PilotType | null>(null);
+  const [evoSel, setEvoSel] = useState<number | null>(null);
 
   const load = useCallback(async () => {
+    setEvoSel(null);
     const [prof, list, pt] = await Promise.all([getProfile(), listSessions(), getPilotType()]);
     setProfile(prof);
     setPilotTypeState(pt);
@@ -130,6 +133,12 @@ export default function Home() {
   const isEmpty = sessions.length === 0;
   const evoDeltaMs =
     sparkData.length >= 2 ? sparkData[sparkData.length - 1] - sparkData[0] : null;
+  // Sessões alinhadas ao sparkData (mesma ordem cronológica) p/ tooltip do gráfico.
+  const sparkSessions = sessions
+    .filter((s) => s.bestLapMs != null)
+    .slice(0, 12)
+    .reverse();
+  const evoSelSession = evoSel != null ? sparkSessions[evoSel] : null;
 
   // Modo Indoor (competição): home focada em ranking.
   if (pilotType === 'indoor') {
@@ -240,24 +249,38 @@ export default function Home() {
           <Card variant="flat" padding="l" style={s.evoCard}>
             <View style={s.evoHeader}>
               <Text style={s.cardLabel}>EVOLUÇÃO</Text>
-              <Text style={[s.evoDelta, { color: (evoDeltaMs ?? 0) <= 0 ? colors.success : colors.danger }]}>
-                {evoDeltaMs != null ? fmtSecDelta(evoDeltaMs) : ''} · {sparkData.length} sessões
-              </Text>
+              {evoSelSession ? (
+                <Text style={[s.evoDelta, { color: colors.accentLime }]}>
+                  {relDay(evoSelSession.startedAt)}
+                </Text>
+              ) : (
+                <Text style={[s.evoDelta, { color: (evoDeltaMs ?? 0) <= 0 ? colors.success : colors.danger }]}>
+                  {evoDeltaMs != null ? fmtSecDelta(evoDeltaMs) : ''} · {sparkData.length} sessões
+                </Text>
+              )}
             </View>
             <View style={{ marginTop: spacing.m }}>
-              <Chart
+              <EvolutionChart
                 data={sparkData}
                 width={320}
                 height={80}
-                color={colors.primary}
-                showArea
-                showDots
-                highlightLast
+                selectedIndex={evoSel}
+                onSelect={setEvoSel}
+                formatValue={fmtLap}
               />
             </View>
             <View style={s.evoFooter}>
-              <Text style={s.evoFootText}>há {sparkData.length} sessões</Text>
-              <Text style={s.evoFootText}>melhor: {fmtLap(Math.min(...sparkData))}</Text>
+              {evoSelSession ? (
+                <>
+                  <Text style={s.evoFootText}>{fmtDate(evoSelSession.startedAt)}</Text>
+                  <Text style={s.evoFootText}>{fmtLap(sparkData[evoSel as number])}</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={s.evoFootText}>Toque no gráfico pra ver cada sessão</Text>
+                  <Text style={s.evoFootText}>melhor: {fmtLap(Math.min(...sparkData))}</Text>
+                </>
+              )}
             </View>
           </Card>
         )}
