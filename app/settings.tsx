@@ -158,6 +158,17 @@ export default function Settings() {
           />
         </Card>
 
+        {/* TEMP: preview da tela de vitória (remover quando a corrida indoor disparar) */}
+        <SectionLabel>DEMO</SectionLabel>
+        <Card variant="default" padding="none" style={s.sectionCard}>
+          <Row
+            label="🏆 Ver tela de vitória"
+            value="Preview"
+            onPress={() => router.push('/victory' as any)}
+            chevron
+          />
+        </Card>
+
         {/* Kart — só faz sentido pra quem tem kart próprio */}
         {pilotType !== 'indoor' && (
           <>
