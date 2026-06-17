@@ -78,6 +78,41 @@ export async function signInWithApple(): Promise<AppleAuthResult> {
   return { ok: true, user: data.user };
 }
 
+export type EmailAuthResult =
+  | { ok: true; user: User; needsConfirm?: boolean }
+  | { ok: false; reason: 'no-supabase' | 'invalid' | 'error'; message?: string };
+
+/** Login por e-mail/senha; se a conta não existir, cria. */
+export async function signInOrUpWithEmail(email: string, password: string): Promise<EmailAuthResult> {
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, reason: 'no-supabase' };
+  const e = email.trim().toLowerCase();
+  if (!e.includes('@') || password.length < 6) {
+    return { ok: false, reason: 'invalid', message: 'E-mail válido e senha de 6+ caracteres.' };
+  }
+
+  // Tenta entrar primeiro.
+  const signIn = await supabase.auth.signInWithPassword({ email: e, password });
+  if (signIn.data.user && !signIn.error) {
+    return { ok: true, user: signIn.data.user };
+  }
+
+  // Não entrou → tenta criar conta.
+  const signUp = await supabase.auth.signUp({ email: e, password });
+  if (signUp.error) {
+    return { ok: false, reason: 'error', message: signUp.error.message };
+  }
+  if (signUp.data.session && signUp.data.user) {
+    return { ok: true, user: signUp.data.user };
+  }
+  // Sem sessão → confirmação de e-mail está ligada no Supabase.
+  return {
+    ok: signUp.data.user ? true : false,
+    user: signUp.data.user as User,
+    needsConfirm: true,
+  } as EmailAuthResult;
+}
+
 export async function signOut(): Promise<void> {
   const supabase = getSupabase();
   if (supabase) await supabase.auth.signOut().catch(() => {});

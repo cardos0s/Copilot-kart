@@ -6,13 +6,14 @@ import { isAppleAuthAvailable, signInWithApple, type AppleAuthResult } from '../
 type Props = {
   onResult: (r: AppleAuthResult) => void;
   style?: object;
+  buttonType?: AppleAuthentication.AppleAuthenticationButtonType;
 };
 
 /**
  * Botão nativo "Sign in with Apple". Só renderiza no iOS quando disponível.
  * Em outras plataformas (ou se indisponível) não mostra nada.
  */
-export function AppleSignInButton({ onResult, style }: Props) {
+export function AppleSignInButton({ onResult, style, buttonType }: Props) {
   const [available, setAvailable] = useState(false);
 
   useEffect(() => {
@@ -25,7 +26,7 @@ export function AppleSignInButton({ onResult, style }: Props) {
   return (
     <View style={style}>
       <AppleAuthentication.AppleAuthenticationButton
-        buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+        buttonType={buttonType ?? AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
         buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
         cornerRadius={12}
         style={styles.button}

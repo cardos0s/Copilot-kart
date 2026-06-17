@@ -27,6 +27,10 @@ export const colors = {
   warning: '#FFA502',
   warningDim: '#CC8400',
 
+  // Azul de corrida — identidade COCKPIT (splash, onboarding, auth)
+  racingBlue: '#2F6BFF',
+  racingBlueDim: '#1E49B5',
+
   // Accents (usar como destaques em gráficos, splashes, gradients)
   accentMagenta: '#FF3DCB',
   accentCyan: '#3DDCFF',

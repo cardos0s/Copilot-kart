@@ -114,7 +114,7 @@ const s = StyleSheet.create({
     borderRadius: 2,
   },
   stepBarActive: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.racingBlue,
   },
   skip: {
     color: colors.textMuted,
@@ -133,7 +133,8 @@ const s = StyleSheet.create({
   title: {
     color: colors.textPrimary,
     fontSize: 26,
-    fontWeight: '800',
+    fontWeight: '900',
+    fontStyle: 'italic',
     letterSpacing: -0.3,
     marginTop: spacing.s,
     lineHeight: 32,

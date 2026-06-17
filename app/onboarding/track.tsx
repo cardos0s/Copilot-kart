@@ -26,7 +26,7 @@ function TrackIcon({ trackId }: { trackId: string }) {
     <Svg width={36} height={28} viewBox="0 0 36 28">
       <Path
         d={paths[trackId] ?? paths['leandro-melo']}
-        stroke={colors.accentMagenta}
+        stroke={colors.racingBlue}
         strokeWidth={2}
         fill="none"
         strokeLinecap="round"
@@ -148,7 +148,7 @@ export default function OnboardingTrack() {
 
       {locating && (
         <View style={s.locatingBox}>
-          <ActivityIndicator size="small" color={colors.primary} />
+          <ActivityIndicator size="small" color={colors.racingBlue} />
           <Text style={s.locatingText}>Localizando pra calcular distâncias...</Text>
         </View>
       )}
@@ -238,9 +238,9 @@ const s = StyleSheet.create({
     marginBottom: spacing.s,
   },
   rowActive: {
-    borderColor: colors.primary,
+    borderColor: colors.racingBlue,
     borderWidth: 1.5,
-    backgroundColor: 'rgba(0, 255, 136, 0.06)',
+    backgroundColor: 'rgba(47, 107, 255, 0.08)',
   },
   iconBox: {
     width: 44,
@@ -260,7 +260,7 @@ const s = StyleSheet.create({
     fontWeight: '700',
   },
   rowTitleActive: {
-    color: colors.primary,
+    color: colors.racingBlue,
   },
   rowMeta: {
     color: colors.textMuted,
@@ -269,7 +269,7 @@ const s = StyleSheet.create({
     fontWeight: '500',
   },
   check: {
-    color: colors.primary,
+    color: colors.racingBlue,
     fontSize: 18,
     fontWeight: '800',
   },

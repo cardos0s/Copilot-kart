@@ -318,7 +318,7 @@ export default function OnboardingIntro() {
   const insets = useSafeAreaInsets();
   const [step, setStep] = useState(0);
 
-  const goToCadastro = () => router.push('/onboarding/name');
+  const goToCadastro = () => router.push('/onboarding/auth');
   const advance = () => {
     if (step < STEPS.length - 1) setStep((sp) => sp + 1);
     else goToCadastro();

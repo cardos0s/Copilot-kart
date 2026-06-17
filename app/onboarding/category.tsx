@@ -116,8 +116,8 @@ const s = StyleSheet.create({
     borderRadius: radius.m,
   },
   chipActive: {
-    backgroundColor: 'rgba(0, 255, 136, 0.08)',
-    borderColor: colors.primary,
+    backgroundColor: 'rgba(47, 107, 255, 0.10)',
+    borderColor: colors.racingBlue,
     borderWidth: 1.5,
   },
   chipTitle: {
@@ -126,7 +126,7 @@ const s = StyleSheet.create({
     fontWeight: '700',
   },
   chipTitleActive: {
-    color: colors.primary,
+    color: colors.racingBlue,
     fontWeight: '800',
   },
   chipSub: {
@@ -136,7 +136,7 @@ const s = StyleSheet.create({
     fontWeight: '500',
   },
   chipSubActive: {
-    color: '#88c5a8',
+    color: '#8FB0F0',
   },
   otherChip: {
     marginTop: spacing.m,
@@ -148,8 +148,8 @@ const s = StyleSheet.create({
     alignItems: 'center',
   },
   otherChipActive: {
-    borderColor: colors.primary,
-    backgroundColor: 'rgba(0, 255, 136, 0.05)',
+    borderColor: colors.racingBlue,
+    backgroundColor: 'rgba(47, 107, 255, 0.06)',
     borderStyle: 'solid',
   },
   otherText: {
@@ -158,6 +158,6 @@ const s = StyleSheet.create({
     fontWeight: '600',
   },
   otherTextActive: {
-    color: colors.primary,
+    color: colors.racingBlue,
   },
 });

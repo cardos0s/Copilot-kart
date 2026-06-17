@@ -91,7 +91,7 @@ const s = StyleSheet.create({
     fontWeight: '500',
   },
   inputActive: {
-    borderColor: colors.primary,
+    borderColor: colors.racingBlue,
   },
   tip: {
     marginTop: spacing.xl,
@@ -102,7 +102,7 @@ const s = StyleSheet.create({
     borderColor: colors.border,
   },
   tipLabel: {
-    color: colors.primary,
+    color: colors.racingBlue,
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1,
