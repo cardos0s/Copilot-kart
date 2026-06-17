@@ -14,6 +14,7 @@ import { colors, radius, spacing } from '../src/theme';
 
 const BLUE = colors.racingBlue;
 const DOT = 16;
+const GHOST = 24;
 
 function fmtSec(ms: number) {
   return (ms / 1000).toFixed(2);
@@ -48,7 +49,7 @@ export default function LegendRace() {
   });
   const legStyle = useAnimatedStyle(() => {
     const p = legT.value % 1;
-    return { transform: [{ translateX: interpolate(p, RACE_IN, RACE_TRACK.xs) - DOT / 2 }, { translateY: interpolate(p, RACE_IN, RACE_TRACK.ys) - DOT / 2 }] };
+    return { transform: [{ translateX: interpolate(p, RACE_IN, RACE_TRACK.xs) - GHOST / 2 }, { translateY: interpolate(p, RACE_IN, RACE_TRACK.ys) - GHOST / 2 }] };
   });
 
   const beginCountdown = () => {
@@ -129,7 +130,7 @@ export default function LegendRace() {
             <Path d={RACE_TRACK.d} stroke="#2a2a36" strokeWidth={18} fill="none" strokeLinejoin="round" strokeLinecap="round" />
             <Path d={RACE_TRACK.d} stroke="#3a3a48" strokeWidth={1.5} fill="none" strokeDasharray="2 10" />
           </Svg>
-          <Animated.View style={[s.dot, { backgroundColor: legend.helmet }, legStyle]} />
+          <Animated.View style={[s.ghostDot, { borderColor: legend.helmet }, legStyle]} />
           <Animated.View style={[s.dot, { backgroundColor: BLUE }, youStyle]} />
         </View>
         <View style={s.legendRow}>
@@ -238,6 +239,7 @@ const s = StyleSheet.create({
   mapWrap: { alignItems: 'center', marginTop: spacing.l },
   mapBox: { width: 340, height: 250 },
   dot: { position: 'absolute', left: 0, top: 0, width: DOT, height: DOT, borderRadius: DOT / 2, borderWidth: 2, borderColor: colors.bg },
+  ghostDot: { position: 'absolute', left: 0, top: 0, width: GHOST, height: GHOST, borderRadius: GHOST / 2, borderWidth: 3, backgroundColor: 'transparent' },
   legendRow: { flexDirection: 'row', gap: spacing.xl, marginTop: spacing.s },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   ldot: { width: 8, height: 8, borderRadius: 4 },
