@@ -11,6 +11,8 @@ import { SennaQuoteCard } from '../../src/components/SennaQuoteCard';
 import { peakSpeedMsOfLaps, msToKmh } from '../../src/lib/speed';
 import { LapRecord } from '../../src/lib/analysis';
 import { colors, spacing, typography } from '../../src/theme';
+import { getPilotType, type PilotType } from '../../src/storage/pilotType';
+import { IndoorHome } from '../../src/components/IndoorHome';
 
 type SessionWithStats = Session & {
   bestLapMs: number | null;
@@ -52,10 +54,12 @@ export default function Home() {
   const insets = useSafeAreaInsets();
   const [profile, setProfile] = useState<PilotProfile | null>(null);
   const [sessions, setSessions] = useState<SessionWithStats[]>([]);
+  const [pilotType, setPilotTypeState] = useState<PilotType | null>(null);
 
   const load = useCallback(async () => {
-    const [prof, list] = await Promise.all([getProfile(), listSessions()]);
+    const [prof, list, pt] = await Promise.all([getProfile(), listSessions(), getPilotType()]);
     setProfile(prof);
+    setPilotTypeState(pt);
     const enriched = await Promise.all(
       list.map(async (sess) => {
         const laps = await getLapsForSession(sess.id);
@@ -90,6 +94,11 @@ export default function Home() {
     .reverse();
 
   const isEmpty = sessions.length === 0;
+
+  // Modo Indoor (competição): home focada em ranking.
+  if (pilotType === 'indoor') {
+    return <IndoorHome />;
+  }
 
   return (
     <View style={s.root}>

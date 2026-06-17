@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { OnboardingShell } from '../../src/components/OnboardingShell';
 import { colors, spacing, radius, typography } from '../../src/theme';
 import { saveProfile, getProfile } from '../../src/storage/profile';
+import { getPilotType } from '../../src/storage/pilotType';
 
 export default function OnboardingName() {
   const router = useRouter();
@@ -21,7 +22,13 @@ export default function OnboardingName() {
       homeTrackId: existing?.homeTrackId ?? null,
       createdAt: existing?.createdAt ?? Date.now(),
     });
-    router.push('/onboarding/category');
+    // Indoor (competição) pula categoria/pista e vai direto pra home de ranking.
+    const pt = await getPilotType();
+    if (pt === 'indoor') {
+      router.replace('/');
+    } else {
+      router.push('/onboarding/category');
+    }
   };
 
   return (

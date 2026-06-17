@@ -59,7 +59,8 @@ export async function publishLeaderboardEntry(args: {
 export async function fetchLeaderboard(
   trackId: string,
   layoutId: string | null,
-  limit: number = 20
+  limit: number = 20,
+  sinceMs?: number
 ): Promise<LeaderboardEntry[]> {
   const supabase = getSupabase();
   if (!supabase) return [];
@@ -72,6 +73,9 @@ export async function fetchLeaderboard(
 
   if (layoutId) {
     query = query.eq('layout_id', layoutId);
+  }
+  if (sinceMs) {
+    query = query.gte('created_at', new Date(sinceMs).toISOString());
   }
 
   const { data, error } = await query.limit(limit);
