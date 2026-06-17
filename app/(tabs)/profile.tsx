@@ -14,6 +14,7 @@ import { computePilotStats, PilotStats } from '../../src/lib/pilotStats';
 import { getGamificationState, listUnlockedAchievements } from '../../src/storage/db';
 import { ACHIEVEMENTS, levelForXp, xpProgressInLevel } from '../../src/lib/gamification';
 import { findTrackById } from '../../src/data/tracks';
+import { Icon } from '../../src/components/ui';
 import { colors, radius, spacing } from '../../src/theme';
 
 const LIME = colors.accentLime;
@@ -119,9 +120,14 @@ export default function Profile() {
         {/* Header */}
         <View style={s.headerRow}>
           <Text style={s.headerTitle}>MEU PERFIL</Text>
-          <Pressable style={s.editBtn} hitSlop={8} onPress={() => router.push('/profile-edit' as any)}>
-            <Text style={s.editIcon}>✎</Text>
-          </Pressable>
+          <View style={s.headerBtns}>
+            <Pressable style={s.editBtn} hitSlop={8} onPress={() => router.push('/settings' as any)}>
+              <Icon name="gear" size={18} color={colors.textSecondary} />
+            </Pressable>
+            <Pressable style={s.editBtn} hitSlop={8} onPress={() => router.push('/profile-edit' as any)}>
+              <Text style={s.editIcon}>✎</Text>
+            </Pressable>
+          </View>
         </View>
 
         {/* Carteira de piloto (virável) */}
@@ -283,6 +289,7 @@ function BigStat({ label, value, color }: { label: string; value: number; color:
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  headerBtns: { flexDirection: 'row', gap: spacing.s },
   headerTitle: { color: colors.textPrimary, fontSize: 18, fontWeight: '900', fontStyle: 'italic', letterSpacing: 1 },
   editBtn: { width: 36, height: 36, borderRadius: radius.m, backgroundColor: colors.bgElevated, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
   editIcon: { color: colors.textSecondary, fontSize: 15 },
