@@ -11,13 +11,13 @@ export const colors = {
   // Borders
   border: '#22222E',
   borderStrong: '#2E2E3C',
-  borderActive: '#D4FF3A',
+  borderActive: '#2F6BFF',
 
-  // Brand
-  primary: '#D4FF3A',
-  primaryDim: '#A8CC2E',
-  primaryGlow: 'rgba(212, 255, 58, 0.18)',
-  textOnPrimary: '#08080C',
+  // Brand — azul de corrida COCKPIT (lime virou acento secundário: colors.accentLime)
+  primary: '#2F6BFF',
+  primaryDim: '#1E49B5',
+  primaryGlow: 'rgba(47, 107, 255, 0.20)',
+  textOnPrimary: '#FFFFFF',
 
   // Status
   success: '#00FF88',
@@ -32,6 +32,7 @@ export const colors = {
   racingBlueDim: '#1E49B5',
 
   // Accents (usar como destaques em gráficos, splashes, gradients)
+  accentLime: '#D4FF3A',
   accentMagenta: '#FF3DCB',
   accentCyan: '#3DDCFF',
   accentPurple: '#9D5BFF',

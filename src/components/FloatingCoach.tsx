@@ -348,7 +348,7 @@ const s = StyleSheet.create({
     width: BUTTON_SIZE,
     height: BUTTON_SIZE,
     borderRadius: BUTTON_SIZE / 2,
-    backgroundColor: 'rgba(212, 255, 58, 0.18)',
+    backgroundColor: 'rgba(47, 107, 255, 0.18)',
     borderWidth: 1.5,
     borderColor: colors.primary,
     alignItems: 'center',

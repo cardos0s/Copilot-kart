@@ -417,7 +417,7 @@ function ReplayMap({
               ['get', 'highlighted'],
               '#00FF88',
               ['get', 'isPb'],
-              '#A8CC2E',
+              '#1E49B5',
               '#3A506B',
             ],
             lineWidth: ['case', ['get', 'highlighted'], 5, 2.5],
@@ -455,7 +455,7 @@ function ReplayMap({
           id="kartHalo"
           style={{
             circleRadius: 14,
-            circleColor: '#D4FF3A',
+            circleColor: '#2F6BFF',
             circleOpacity: 0.25,
           }}
         />
@@ -463,7 +463,7 @@ function ReplayMap({
           id="kartDot"
           style={{
             circleRadius: 7,
-            circleColor: '#D4FF3A',
+            circleColor: '#2F6BFF',
             circleStrokeColor: '#08080C',
             circleStrokeWidth: 2,
           }}

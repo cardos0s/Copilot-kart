@@ -18,7 +18,7 @@ import { colors, spacing, radius } from '../../src/theme';
 
 const ACCENT = '#2F6BFF';
 const ACCENT_DIM = '#1E49B5';
-const LIME = colors.primary;
+const LIME = colors.accentLime;
 
 const STEPS = [
   {

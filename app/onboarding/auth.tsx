@@ -8,7 +8,7 @@ import { signOut } from '../../src/lib/auth';
 import type { AppleAuthResult } from '../../src/lib/auth';
 import { colors, spacing, radius } from '../../src/theme';
 
-const LIME = colors.primary;
+const LIME = colors.accentLime;
 const BLUE = colors.racingBlue;
 
 function GridArt() {
