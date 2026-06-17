@@ -33,14 +33,16 @@ export function startDemoLive(setState: (s: any) => void): () => void {
 
   const samples: LiveSample[] = [];
   const laps: LiveLap[] = [];
-  let lapNum = 1;
-  let lapStart = t0;
-  let lapDelta = 320; // gap final desta volta (ms vs ref)
+  let lapsClosed = 0; // voltas já empurradas pra `laps`
+  let lapDelta = 320; // gap (ms vs ref) da volta em curso
 
   const id = setInterval(() => {
     const now = Date.now();
-    const lapEl = now - lapStart;
-    const frac = Math.min(1, lapEl / LAP_MS);
+    // Tempo por MÓDULO — robusto a throttle de aba em background (nunca estoura).
+    const totalEl = now - t0;
+    const lapNum = Math.floor(totalEl / LAP_MS) + 1;
+    const lapEl = totalEl % LAP_MS;
+    const frac = lapEl / LAP_MS;
     const ang = frac * Math.PI * 2 - Math.PI / 2;
 
     const lat = CLAT + RLAT * Math.sin(ang);
@@ -48,6 +50,20 @@ export function startDemoLive(setState: (s: any) => void): () => void {
     const speed = 12 + Math.abs(Math.cos(ang * 2)) * 13; // m/s ~12–25 → 43–90 km/h
     const delta = Math.round(lapDelta * frac * (0.85 + 0.3 * Math.sin(frac * Math.PI * 3)));
     const sectorIdx = (frac < 1 / 3 ? 0 : frac < 2 / 3 ? 1 : 2) as 0 | 1 | 2;
+
+    // Fecha as voltas que passaram (robusto se a aba pulou várias).
+    while (lapsClosed < lapNum - 1) {
+      laps.push({
+        lapNumber: lapsClosed + 1,
+        durationMs: REF_MS + lapDelta,
+        finishedAt: t0 + (lapsClosed + 1) * LAP_MS,
+        s1Ms: 14060,
+        s2Ms: 14100,
+        s3Ms: 14020 + lapDelta,
+      });
+      lapsClosed += 1;
+      lapDelta = 120 + Math.round(Math.random() * 520);
+    }
 
     samples.push({
       t: now,
@@ -66,22 +82,8 @@ export function startDemoLive(setState: (s: any) => void): () => void {
     });
     if (samples.length > 1200) samples.splice(0, samples.length - 1200);
 
-    if (lapEl >= LAP_MS) {
-      laps.push({
-        lapNumber: lapNum,
-        durationMs: REF_MS + lapDelta,
-        finishedAt: now,
-        s1Ms: 14060,
-        s2Ms: 14100,
-        s3Ms: 14020 + lapDelta,
-      });
-      lapNum += 1;
-      lapStart = now;
-      lapDelta = 120 + Math.round(Math.random() * 520);
-    }
-
     setState({ kind: 'live', info, samples: [...samples], laps: [...laps], messages: [] });
-  }, 150);
+  }, 100);
 
   return () => clearInterval(id);
 }
