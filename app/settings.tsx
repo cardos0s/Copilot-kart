@@ -162,6 +162,18 @@ export default function Settings() {
         <SectionLabel>DEMO</SectionLabel>
         <Card variant="default" padding="none" style={s.sectionCard}>
           <Row
+            label="🏎️ Velocímetro (demo)"
+            value="Sessão simulada"
+            onPress={() =>
+              router.push({
+                pathname: '/recording',
+                params: { simulate: '1', trackId: 'leandro-melo', trackName: 'Leandro Merlo' },
+              } as any)
+            }
+            chevron
+          />
+          <Divider />
+          <Row
             label="🏆 Ver tela de vitória"
             value="Preview"
             onPress={() => router.push('/victory' as any)}

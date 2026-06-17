@@ -108,6 +108,7 @@ export default function Recording() {
     trackName: string;
     layoutId?: string;
     kartSetupId?: string;
+    simulate?: string;
   }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -223,7 +224,7 @@ export default function Recording() {
   const handleStart = async () => {
     setStarting(true);
     try {
-      await start();
+      await start({ simulate: params.simulate === '1' });
     } catch (e: any) {
       Alert.alert('Erro', e.message ?? 'Falha ao iniciar GPS');
     }

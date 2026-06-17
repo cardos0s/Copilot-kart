@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
+import { DEMO_LAP } from '../data/demoLap';
 import { Accelerometer, Gyroscope } from 'expo-sensors';
 import { GpsSample, ImuSample, LatLng } from '../lib/geometry';
 import { detectLaps, DetectedLap } from '../lib/lapDetector';
@@ -301,6 +302,7 @@ export function useLapRecorder(options?: LapRecorderOptions) {
   const [liveSamples, setLiveSamples] = useState<GpsSample[]>([]);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const simRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTRef = useRef<number>(0);
   const allSamplesRef = useRef<GpsSample[]>([]);
   // Buffer paralelo de IMU samples. Cresce mais rápido (50Hz vs 10Hz GPS)
@@ -353,7 +355,7 @@ export function useLapRecorder(options?: LapRecorderOptions) {
   // tem ciclo próprio (não some após 1s — fica visível até a próxima volta).
   const lastClosedLapSectorsRef = useRef<SectorTimes | null>(null);
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (startOpts?: { simulate?: boolean }) => {
     setState('requesting');
     buf.samples = [];
     buf.imu = [];
@@ -375,6 +377,28 @@ export function useLapRecorder(options?: LapRecorderOptions) {
     bestSectorsRef.current = { s1: null, s2: null, s3: null };
     lastClosedLapSectorsRef.current = null;
 
+    const simulate = startOpts?.simulate === true;
+    if (simulate) {
+      // Modo demo: replaya o GPX de bench no MESMO buffer (buf.samples) que o
+      // GPS preencheria — todo o pipeline (velocímetro, voltas, setores, save)
+      // roda idêntico, sem precisar de GPS/movimento.
+      await activateKeepAwakeAsync('copilot-recording');
+      let simIdx = 0;
+      let simT0 = Date.now();
+      simRef.current = setInterval(() => {
+        const elapsed = Date.now() - simT0;
+        while (simIdx < DEMO_LAP.length && DEMO_LAP[simIdx].t <= elapsed) {
+          const dp = DEMO_LAP[simIdx];
+          buf.samples.push({ t: simT0 + dp.t, lat: dp.lat, lng: dp.lng, speed: dp.speed, accuracy: 3 });
+          simIdx++;
+        }
+        // Loop contínuo até o usuário tocar em "Encerrar".
+        if (simIdx >= DEMO_LAP.length) {
+          simIdx = 0;
+          simT0 = Date.now();
+        }
+      }, 80);
+    } else {
     const fg = await Location.requestForegroundPermissionsAsync();
     if (fg.status !== 'granted') {
       setState('idle');
@@ -405,6 +429,7 @@ export function useLapRecorder(options?: LapRecorderOptions) {
     // expo-sensors não recebe callbacks (limitação Android/iOS). Pra
     // tela de cockpit isso é OK — ela mantém-se acordada via KeepAwake.
     startImuCapture();
+    }
 
     startTRef.current = Date.now();
     setState('recording');
@@ -687,6 +712,10 @@ export function useLapRecorder(options?: LapRecorderOptions) {
   }, [options?.targetLaps, options?.onTargetReached]);
 
   const stop = useCallback(async (): Promise<RecordingResult> => {
+    if (simRef.current) {
+      clearInterval(simRef.current);
+      simRef.current = null;
+    }
     if (pollRef.current) {
       clearInterval(pollRef.current);
       pollRef.current = null;
@@ -746,6 +775,7 @@ export function useLapRecorder(options?: LapRecorderOptions) {
 
   useEffect(() => {
     return () => {
+      if (simRef.current) clearInterval(simRef.current);
       if (pollRef.current) clearInterval(pollRef.current);
       Location.hasStartedLocationUpdatesAsync(BG_TASK).then((started) => {
         if (started) Location.stopLocationUpdatesAsync(BG_TASK).catch(() => {});
