@@ -285,6 +285,19 @@ export default function Home() {
           </Card>
         )}
 
+        {/* Modo Lendas */}
+        <Pressable
+          style={({ pressed }) => [s.legendsCard, pressed && { opacity: 0.85 }]}
+          onPress={() => router.push('/legends' as any)}
+        >
+          <Text style={s.legendsEmoji}>⚔️</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={s.legendsTitle}>MODO LENDAS</Text>
+            <Text style={s.legendsSub}>Corra contra o fantasma de Senna, Verstappen e mais</Text>
+          </View>
+          <Text style={s.legendsChevron}>›</Text>
+        </Pressable>
+
         {/* CTA — Iniciar Sessão */}
         <Pressable
           style={({ pressed }) => [s.cta, pressed && { opacity: 0.9 }]}
@@ -414,6 +427,11 @@ const s = StyleSheet.create({
   },
   ctaIcon: { color: '#fff', fontSize: 14, fontWeight: '700' },
   ctaText: { color: '#fff', fontSize: 13, fontWeight: '900', fontStyle: 'italic', letterSpacing: 0.5 },
+  legendsCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.m, marginTop: spacing.m, padding: spacing.l, backgroundColor: colors.surface, borderRadius: radius.l, borderWidth: 1, borderColor: colors.border },
+  legendsEmoji: { fontSize: 22 },
+  legendsTitle: { color: colors.textPrimary, fontSize: 14, fontWeight: '900', fontStyle: 'italic', letterSpacing: 0.5 },
+  legendsSub: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
+  legendsChevron: { color: colors.textMuted, fontSize: 22, fontWeight: '300' },
 
   bestNum: {
     color: colors.primary,

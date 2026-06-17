@@ -179,6 +179,13 @@ export default function Settings() {
             onPress={() => router.push('/victory' as any)}
             chevron
           />
+          <Divider />
+          <Row
+            label="⚔️ Modo Lendas"
+            value="Corrida vs lenda"
+            onPress={() => router.push('/legends' as any)}
+            chevron
+          />
         </Card>
 
         {/* Kart — só faz sentido pra quem tem kart próprio */}

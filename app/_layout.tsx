@@ -139,6 +139,8 @@ export default function RootLayout() {
             <Stack.Screen name="track-map" options={{ headerShown: false }} />
             <Stack.Screen name="profile-edit" options={{ headerShown: false }} />
             <Stack.Screen name="victory" options={{ headerShown: false, presentation: 'fullScreenModal' }} />
+            <Stack.Screen name="legends" options={{ headerShown: false }} />
+            <Stack.Screen name="legend-race" options={{ headerShown: false }} />
           </Stack>
           {!ready && (
             <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
