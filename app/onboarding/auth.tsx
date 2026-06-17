@@ -38,7 +38,7 @@ export default function OnboardingAuth() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  const goCadastro = () => router.push('/onboarding/name');
+  const goCadastro = () => router.push('/onboarding/mode');
 
   const handleApple = (r: AppleAuthResult) => {
     if (r.ok) {

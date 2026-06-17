@@ -5,6 +5,7 @@ import { clearProfile, getProfile, PilotProfile } from '../src/storage/profile';
 import { getStoredCredential } from '../src/storage/apiKey';
 import { getClient } from '../src/lib/llm';
 import { useCoachFloatingEnabled } from '../src/storage/preferences';
+import { usePilotType, PILOT_TYPE_LABEL } from '../src/storage/pilotType';
 import { useAuthSession, signOut as authSignOut } from '../src/lib/auth';
 import { AppleSignInButton } from '../src/components/AppleSignInButton';
 import type { AppleAuthResult } from '../src/lib/auth';
@@ -30,6 +31,7 @@ export default function Settings() {
   const [aiProviderLabel, setAiProviderLabel] = useState<string | null>(null);
   const [coachFloatingEnabled, setCoachFloatingEnabled] = useCoachFloatingEnabled();
   const { user } = useAuthSession();
+  const [pilotType, setPilotTypeValue] = usePilotType();
 
   const handleAppleResult = (r: AppleAuthResult) => {
     if (r.ok) {
@@ -111,6 +113,12 @@ export default function Settings() {
         <SectionLabel>GERAL</SectionLabel>
         <Card variant="default" padding="none" style={s.sectionCard}>
           <Row
+            label="Modo de pilotagem"
+            value={PILOT_TYPE_LABEL[pilotType ?? 'owner']}
+            onPress={() => setPilotTypeValue(pilotType === 'indoor' ? 'owner' : 'indoor')}
+          />
+          <Divider />
+          <Row
             label="Unidade de medida"
             value={state.unit === 'metric' ? 'Métrico (km)' : 'Imperial (mi)'}
             onPress={() =>
@@ -150,16 +158,20 @@ export default function Settings() {
           />
         </Card>
 
-        {/* Kart */}
-        <SectionLabel>KART</SectionLabel>
-        <Card variant="default" padding="none" style={s.sectionCard}>
-          <Row
-            label="Setups do kart"
-            value="Gerenciar"
-            onPress={() => router.push('/kart-setups' as any)}
-            chevron
-          />
-        </Card>
+        {/* Kart — só faz sentido pra quem tem kart próprio */}
+        {pilotType !== 'indoor' && (
+          <>
+            <SectionLabel>KART</SectionLabel>
+            <Card variant="default" padding="none" style={s.sectionCard}>
+              <Row
+                label="Setups do kart"
+                value="Gerenciar"
+                onPress={() => router.push('/kart-setups' as any)}
+                chevron
+              />
+            </Card>
+          </>
+        )}
 
         {/* IA */}
         <SectionLabel>COACH IA</SectionLabel>

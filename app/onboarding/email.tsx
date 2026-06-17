@@ -21,12 +21,12 @@ export default function OnboardingEmail() {
     const r = await signInOrUpWithEmail(email, password);
     setLoading(false);
     if (r.ok && !r.needsConfirm) {
-      router.replace('/onboarding/name');
+      router.replace('/onboarding/mode');
     } else if (r.ok && r.needsConfirm) {
       Alert.alert(
         'Confirme seu e-mail',
         'Enviamos um link de confirmação. Confirme e entre de novo para sincronizar.',
-        [{ text: 'OK', onPress: () => router.replace('/onboarding/name') }]
+        [{ text: 'OK', onPress: () => router.replace('/onboarding/mode') }]
       );
     } else if (r.reason === 'no-supabase') {
       Alert.alert('Indisponível', 'Sincronização não está configurada nesta versão.');
