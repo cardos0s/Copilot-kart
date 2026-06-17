@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { getSupabase } from './supabase';
+import { startDemoLive } from './demoLive';
 import { LiveLap, LiveMessage, LiveSample, LiveSessionInfo, MessageSeverity } from './liveTypes';
 
 /**
@@ -113,6 +114,10 @@ export function useLive(code: string | null): LiveState {
 
   useEffect(() => {
     if (!code) return;
+    // Modo demo: dados de exemplo (sem Supabase) pra testar o painel da equipe.
+    if (code.toLowerCase() === 'demo') {
+      return startDemoLive(setState);
+    }
     let cancelled = false;
     let channel: RealtimeChannel | null = null;
     let pollTimer: ReturnType<typeof setInterval> | null = null;
