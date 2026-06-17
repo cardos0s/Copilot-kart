@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ReanimatedSwipeable, {
@@ -14,8 +14,11 @@ import {
 } from '../../src/storage/db';
 import { findTrackById } from '../../src/data/tracks';
 import { TrackSilhouette } from '../../src/components/TrackSilhouette';
-import { Card, DecorativeSplash, Icon, PillTabs } from '../../src/components/ui';
-import { colors, spacing, typography } from '../../src/theme';
+import { Icon, PillTabs } from '../../src/components/ui';
+import { colors, radius, spacing } from '../../src/theme';
+
+const BLUE = colors.racingBlue;
+const MONTHS = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
 
 type Filter = 'all' | 'month' | 'year';
 
@@ -25,33 +28,43 @@ type SessionWithStats = Session & {
   bestSamples: any[] | null;
 };
 
-function fmtLap(ms: number) {
-  const totalS = ms / 1000;
-  const m = Math.floor(totalS / 60);
-  const s = totalS - m * 60;
-  return `${String(m).padStart(2, '0')}:${s.toFixed(3).padStart(6, '0')}`;
+/** Tempo curto: "42.999" (<1min) ou "1:02.500". */
+function fmtShort(ms: number) {
+  if (ms < 60000) return (ms / 1000).toFixed(3);
+  const m = Math.floor(ms / 60000);
+  return `${m}:${((ms % 60000) / 1000).toFixed(3).padStart(6, '0')}`;
 }
-
-function fmtDate(ts: number) {
-  return new Date(ts).toLocaleDateString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
+/** Recorde: "00:41.000". */
+function fmtRecord(ms: number) {
+  const m = Math.floor(ms / 60000);
+  return `${String(m).padStart(2, '0')}:${((ms % 60000) / 1000).toFixed(3).padStart(6, '0')}`;
 }
-
+function fmtDelta(ms: number) {
+  return `+${(ms / 1000).toFixed(3)}`;
+}
 function fmtTime(ts: number) {
-  return new Date(ts).toLocaleTimeString('pt-BR', {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return new Date(ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 }
-
+function fmtDate(ts: number) {
+  return new Date(ts).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+function startOfDay(ts: number) {
+  const d = new Date(ts);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+function dayLabel(ts: number) {
+  const today = startOfDay(Date.now());
+  const d = startOfDay(ts);
+  if (d === today) return 'HOJE';
+  if (today - d === 86400000) return 'ONTEM';
+  const dt = new Date(ts);
+  return `${dt.getDate()} ${MONTHS[dt.getMonth()]}`;
+}
 function isInMonth(ts: number, ref: Date) {
   const d = new Date(ts);
   return d.getFullYear() === ref.getFullYear() && d.getMonth() === ref.getMonth();
 }
-
 function isInYear(ts: number, ref: Date) {
   return new Date(ts).getFullYear() === ref.getFullYear();
 }
@@ -81,18 +94,44 @@ export default function Sessions() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const filtered = useMemo(() => {
+  // Recorde absoluto (entre todas as sessões) — define o delta de cada row.
+  const { recordMs, recordId, recordTrack } = useMemo(() => {
+    let rMs: number | null = null;
+    let rId: string | null = null;
+    let rTrack = '';
+    for (const it of items) {
+      if (it.bestLapMs != null && (rMs == null || it.bestLapMs < rMs)) {
+        rMs = it.bestLapMs;
+        rId = it.id;
+        rTrack = findTrackById(it.trackId ?? '')?.shortName ?? it.trackName;
+      }
+    }
+    return { recordMs: rMs, recordId: rId, recordTrack: rTrack };
+  }, [items]);
+
+  const monthCount = useMemo(() => {
     const now = new Date();
-    return items.filter((s) => {
+    return items.filter((s) => isInMonth(s.startedAt, now)).length;
+  }, [items]);
+
+  const sections = useMemo(() => {
+    const now = new Date();
+    const filtered = items.filter((s) => {
       if (filter === 'month') return isInMonth(s.startedAt, now);
       if (filter === 'year') return isInYear(s.startedAt, now);
       return true;
     });
+    const groups = new Map<number, SessionWithStats[]>();
+    for (const it of filtered) {
+      const k = startOfDay(it.startedAt);
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k)!.push(it);
+    }
+    return Array.from(groups.entries())
+      .sort((a, b) => b[0] - a[0])
+      .map(([k, data]) => ({ title: dayLabel(k), data }));
   }, [items, filter]);
 
-  // Excluir sessão — pede confirmação porque é destrutivo + irrecuperável.
-  // O cascade do SQLite apaga as laps junto. Após excluir, recarrega a
-  // lista pra remover o item da UI.
   const handleDelete = useCallback(
     (sess: SessionWithStats) => {
       Alert.alert(
@@ -100,14 +139,7 @@ export default function Sessions() {
         `${sess.trackName} · ${fmtDate(sess.startedAt)}\n\nEssa ação não pode ser desfeita. As ${sess.lapCount} volta(s) serão apagadas.`,
         [
           { text: 'Cancelar', style: 'cancel' },
-          {
-            text: 'Excluir',
-            style: 'destructive',
-            onPress: async () => {
-              await deleteSession(sess.id);
-              await load();
-            },
-          },
+          { text: 'Excluir', style: 'destructive', onPress: async () => { await deleteSession(sess.id); await load(); } },
         ]
       );
     },
@@ -116,7 +148,6 @@ export default function Sessions() {
 
   return (
     <View style={s.root}>
-      <DecorativeSplash position="top-left" intensity="subtle" palette={['magenta', 'purple']} />
       <View style={[s.header, { paddingTop: insets.top + spacing.s }]}>
         <Text style={s.title}>HISTÓRICO DE SESSÕES</Text>
       </View>
@@ -133,14 +164,45 @@ export default function Sessions() {
         />
       </View>
 
-      <FlatList
-        data={filtered}
+      <SectionList
+        sections={sections}
         keyExtractor={(it) => it.id}
-        contentContainerStyle={{
-          paddingHorizontal: spacing.l,
-          paddingBottom: 120,
-          gap: spacing.m,
-        }}
+        stickySectionHeadersEnabled={false}
+        contentContainerStyle={{ paddingHorizontal: spacing.l, paddingBottom: 120 }}
+        ListHeaderComponent={
+          <View style={s.summaryRow}>
+            <View style={s.recordCard}>
+              <View style={s.recordTop}>
+                <Text style={s.trophy}>🏆</Text>
+                <Text style={s.recordLabel}>RECORDE</Text>
+              </View>
+              <Text style={s.recordTime}>{recordMs != null ? fmtRecord(recordMs) : '—'}</Text>
+              <Text style={s.recordTrack} numberOfLines={1}>{recordTrack || '—'}</Text>
+            </View>
+            <View style={s.summaryCol}>
+              <View style={s.miniCard}>
+                <Text style={s.miniLabel}>SESSÕES</Text>
+                <Text style={s.miniValue}>{items.length}</Text>
+              </View>
+              <View style={s.miniCard}>
+                <Text style={s.miniLabel}>ESTE MÊS</Text>
+                <Text style={s.miniValue}>{monthCount}</Text>
+              </View>
+            </View>
+          </View>
+        }
+        renderSectionHeader={({ section }) => (
+          <Text style={s.sectionLabel}>{section.title}</Text>
+        )}
+        renderItem={({ item }) => (
+          <SessionRow
+            item={item}
+            isRecord={item.id === recordId}
+            deltaMs={item.bestLapMs != null && recordMs != null ? item.bestLapMs - recordMs : null}
+            onPress={() => router.push(`/session/${item.id}`)}
+            onDelete={() => handleDelete(item)}
+          />
+        )}
         ListEmptyComponent={
           <View style={s.empty}>
             <Text style={s.emptyTitle}>
@@ -153,13 +215,6 @@ export default function Sessions() {
             </Text>
           </View>
         }
-        renderItem={({ item }) => (
-          <SessionRow
-            item={item}
-            onPress={() => router.push(`/session/${item.id}`)}
-            onDelete={() => handleDelete(item)}
-          />
-        )}
       />
     </View>
   );
@@ -167,20 +222,21 @@ export default function Sessions() {
 
 function SessionRow({
   item,
+  isRecord,
+  deltaMs,
   onPress,
   onDelete,
 }: {
   item: SessionWithStats;
+  isRecord: boolean;
+  deltaMs: number | null;
   onPress: () => void;
   onDelete: () => void;
 }) {
   const track = item.trackId ? findTrackById(item.trackId) : null;
-  // Ref pro Swipeable — permite fechar programaticamente após o usuário
-  // tocar em "Excluir" (Alert vira modal: se cancelar, a row volta sozinha).
   const swipeRef = useRef<SwipeableMethods>(null);
 
   const handleDelete = () => {
-    // Fecha a row primeiro pra Alert não competir visualmente com swipe aberto.
     swipeRef.current?.close();
     onDelete();
   };
@@ -190,69 +246,49 @@ function SessionRow({
       ref={swipeRef}
       friction={2}
       rightThreshold={48}
-      renderRightActions={(progress) => (
-        <RightDeleteAction progress={progress} onPress={handleDelete} />
-      )}
-      // overshootRight=false impede a row de continuar deslizando além do
-      // botão de delete — sensação mais firme, fim de curso claro.
+      renderRightActions={(progress) => <RightDeleteAction progress={progress} onPress={handleDelete} />}
       overshootRight={false}
+      containerStyle={{ marginBottom: spacing.m }}
     >
-      <Card variant="elevated" padding="m" onPress={onPress}>
-        <View style={{ flexDirection: 'row', gap: spacing.m, alignItems: 'center' }}>
-          <View style={{ flex: 1 }}>
-            <Text style={s.rowTrack} numberOfLines={1}>
-              {track?.shortName ?? item.trackName}
-            </Text>
-            <Text style={s.rowDate}>
-              {fmtDate(item.startedAt)} · {fmtTime(item.startedAt)}
-            </Text>
-            <View style={{ marginTop: spacing.s }}>
-              <Text style={s.rowMetricLabel}>MELHOR VOLTA</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: spacing.s }}>
-                <Text style={[s.rowMetric, typography.mono]}>
-                  {item.bestLapMs != null ? fmtLap(item.bestLapMs) : '—'}
-                </Text>
-                <Text style={s.rowLaps}>
-                  {item.lapCount} {item.lapCount === 1 ? 'volta' : 'voltas'}
-                </Text>
-              </View>
-            </View>
-          </View>
-
+      <Pressable style={({ pressed }) => [s.card, isRecord && s.cardRecord, pressed && { opacity: 0.85 }]} onPress={onPress}>
+        <View style={s.iconBox}>
           {item.bestSamples && item.bestSamples.length > 1 ? (
-            <View style={s.thumb}>
-              <TrackSilhouette samples={item.bestSamples} width={86} height={70} strokeWidth={2} />
-            </View>
+            <TrackSilhouette samples={item.bestSamples} width={48} height={40} strokeWidth={2} />
           ) : (
-            <View style={s.thumbEmpty}>
-              <Icon name="map" color={colors.textDim} size={24} />
-            </View>
+            <Icon name="map" color={colors.textDim} size={22} />
           )}
         </View>
-      </Card>
+
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <View style={s.nameRow}>
+            <Text style={s.rowTrack} numberOfLines={1}>{track?.shortName ?? item.trackName}</Text>
+            {isRecord && (
+              <View style={s.badge}>
+                <Text style={s.badgeText}>RECORDE</Text>
+              </View>
+            )}
+          </View>
+          <Text style={s.rowMeta}>
+            {fmtTime(item.startedAt)} · {item.lapCount} {item.lapCount === 1 ? 'volta' : 'voltas'}
+          </Text>
+        </View>
+
+        <View style={s.rightCol}>
+          <Text style={s.bigLap}>{item.bestLapMs != null ? fmtShort(item.bestLapMs) : '—'}</Text>
+          <Text style={[s.delta, isRecord && s.deltaRecord]}>
+            {isRecord ? 'sua melhor' : deltaMs != null ? fmtDelta(deltaMs) : ''}
+          </Text>
+        </View>
+      </Pressable>
     </ReanimatedSwipeable>
   );
 }
 
-/**
- * Ação revelada ao arrastar a row pra esquerda. Cresce conforme o swipe
- * (`progress` vai de 0 → 1 conforme arrasta), ícone+texto entram com fade.
- * Tap aciona o delete (passa pro pai, que mostra Alert).
- */
-function RightDeleteAction({
-  progress,
-  onPress,
-}: {
-  progress: { value: number };
-  onPress: () => void;
-}) {
-  // Sliding effect — translada de fora pra dentro conforme arrasta. Sem
-  // isso a área fica plana e pouco satisfatória.
+function RightDeleteAction({ progress, onPress }: { progress: { value: number }; onPress: () => void }) {
   const containerStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: interpolate(progress.value, [0, 1], [80, 0]) }],
     opacity: interpolate(progress.value, [0, 0.5, 1], [0, 0.6, 1]),
   }));
-
   return (
     <Animated.View style={[s.swipeAction, containerStyle]}>
       <Pressable onPress={onPress} style={s.swipeActionInner}>
@@ -265,107 +301,42 @@ function RightDeleteAction({
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
-  header: {
-    paddingHorizontal: spacing.l,
-    paddingBottom: spacing.m,
-    alignItems: 'center',
-  },
-  title: {
-    color: colors.textPrimary,
-    fontSize: 13,
-    fontWeight: '800',
-    letterSpacing: 1.5,
-  },
-  filterRow: {
-    paddingHorizontal: spacing.l,
-    paddingBottom: spacing.m,
-    flexDirection: 'row',
-  },
-  rowTrack: {
-    color: colors.textPrimary,
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  rowDate: {
-    color: colors.textMuted,
-    fontSize: 12,
-    fontWeight: '500',
-    marginTop: 2,
-  },
-  rowMetricLabel: {
-    color: colors.textMuted,
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1.2,
-    marginBottom: 2,
-  },
-  rowMetric: {
-    color: colors.primary,
-    fontSize: 22,
-    fontWeight: '900',
-    letterSpacing: -0.5,
-  },
-  rowLaps: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  thumb: {
-    width: 90,
-    height: 70,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  thumbEmpty: {
-    width: 90,
-    height: 70,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  empty: {
-    paddingTop: 80,
-    alignItems: 'center',
-    paddingHorizontal: spacing.xl,
-  },
-  emptyTitle: {
-    color: colors.textPrimary,
-    fontSize: 17,
-    fontWeight: '800',
-  },
-  emptySub: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    textAlign: 'center',
-    marginTop: 8,
-    lineHeight: 19,
-  },
+  header: { paddingHorizontal: spacing.l, paddingBottom: spacing.m, alignItems: 'center' },
+  title: { color: colors.textPrimary, fontSize: 22, fontWeight: '900', fontStyle: 'italic', letterSpacing: 0.5 },
+  filterRow: { paddingHorizontal: spacing.l, paddingBottom: spacing.m, flexDirection: 'row' },
 
-  // ===== Swipe-to-delete =====
-  // Área vermelha que aparece ao arrastar a row pra esquerda. Largura
-  // ~88px = cabe ícone + label "Excluir" + respiro. Tap aciona o Alert
-  // de confirmação.
-  swipeAction: {
-    width: 88,
-    justifyContent: 'center',
-    paddingLeft: spacing.s,
-    // Pequeno gap visual entre a row e o botão — sem isso, encosta no card.
-  },
-  swipeActionInner: {
-    flex: 1,
-    backgroundColor: colors.danger,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-  },
-  swipeActionText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-  },
+  summaryRow: { flexDirection: 'row', gap: spacing.s, marginBottom: spacing.l },
+  recordCard: { flex: 1.5, padding: spacing.l, borderRadius: radius.l, backgroundColor: 'rgba(47,107,255,0.07)', borderWidth: 1.5, borderColor: BLUE },
+  recordTop: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  trophy: { fontSize: 14 },
+  recordLabel: { color: BLUE, fontSize: 11, fontWeight: '800', letterSpacing: 1.5 },
+  recordTime: { color: colors.textPrimary, fontSize: 28, fontWeight: '900', letterSpacing: -0.5, marginTop: spacing.s, fontVariant: ['tabular-nums'] },
+  recordTrack: { color: colors.textSecondary, fontSize: 13, fontWeight: '600', marginTop: 4 },
+  summaryCol: { flex: 1, gap: spacing.s },
+  miniCard: { flex: 1, padding: spacing.m, borderRadius: radius.m, backgroundColor: colors.surface, justifyContent: 'center' },
+  miniLabel: { color: colors.textMuted, fontSize: 9, fontWeight: '800', letterSpacing: 1 },
+  miniValue: { color: colors.textPrimary, fontSize: 22, fontWeight: '900', marginTop: 2 },
+
+  sectionLabel: { color: colors.textMuted, fontSize: 12, fontWeight: '800', letterSpacing: 1.5, marginTop: spacing.m, marginBottom: spacing.s },
+
+  card: { flexDirection: 'row', alignItems: 'center', gap: spacing.m, padding: spacing.m, borderRadius: radius.l, backgroundColor: colors.surface, borderWidth: 1, borderColor: 'transparent' },
+  cardRecord: { borderColor: BLUE, backgroundColor: 'rgba(47,107,255,0.05)' },
+  iconBox: { width: 60, height: 56, borderRadius: 14, backgroundColor: colors.bgElevated, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.s },
+  rowTrack: { color: colors.textPrimary, fontSize: 17, fontWeight: '800', flexShrink: 1 },
+  badge: { backgroundColor: BLUE, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 2 },
+  badgeText: { color: '#fff', fontSize: 9, fontWeight: '900', fontStyle: 'italic', letterSpacing: 0.5 },
+  rowMeta: { color: colors.textMuted, fontSize: 13, fontWeight: '500', marginTop: 3 },
+  rightCol: { alignItems: 'flex-end' },
+  bigLap: { color: BLUE, fontSize: 24, fontWeight: '900', letterSpacing: -0.5, fontVariant: ['tabular-nums'] },
+  delta: { color: colors.textMuted, fontSize: 12, fontWeight: '700', marginTop: 2, fontVariant: ['tabular-nums'] },
+  deltaRecord: { color: colors.textSecondary, fontStyle: 'italic' },
+
+  empty: { paddingTop: 80, alignItems: 'center', paddingHorizontal: spacing.xl },
+  emptyTitle: { color: colors.textPrimary, fontSize: 17, fontWeight: '800' },
+  emptySub: { color: colors.textSecondary, fontSize: 13, textAlign: 'center', marginTop: 8, lineHeight: 19 },
+
+  swipeAction: { width: 88, justifyContent: 'center', paddingLeft: spacing.s },
+  swipeActionInner: { flex: 1, backgroundColor: colors.danger, borderRadius: 14, alignItems: 'center', justifyContent: 'center', gap: 4 },
+  swipeActionText: { color: '#fff', fontSize: 11, fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase' },
 });
