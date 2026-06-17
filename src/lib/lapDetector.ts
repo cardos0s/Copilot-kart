@@ -139,6 +139,36 @@ export function detectLaps(
   let distSinceLapStart = 0;
   let justCrossed = true; // evita múltiplas detecções no mesmo cruzamento
   let prev = samples[movingStartIdx];
+  // Tempo de início da volta atual — INTERPOLADO no cruzamento da linha pra
+  // dar precisão de ms. Sem isso, o tempo "snapa" no sample mais próximo
+  // (GPS ~10Hz), virando múltiplos de ~100ms tipo 43.000 / 43.600.
+  let lapStartT = samples[movingStartIdx].t;
+  const cos0 = Math.cos((startFinishLine.lat * Math.PI) / 180);
+  const refineCrossingT = (idx: number): number => {
+    const Lx = startFinishLine.lng * cos0;
+    const Ly = startFinishLine.lat;
+    let bestD = Infinity;
+    let bestT = samples[idx].t;
+    const segs: [number, number][] = [];
+    if (idx - 1 >= 0) segs.push([idx - 1, idx]);
+    if (idx + 1 < samples.length) segs.push([idx, idx + 1]);
+    for (const [ai, bi] of segs) {
+      const ax = samples[ai].lng * cos0, ay = samples[ai].lat;
+      const bx = samples[bi].lng * cos0, by = samples[bi].lat;
+      const abx = bx - ax, aby = by - ay;
+      const len2 = abx * abx + aby * aby;
+      let f = len2 > 0 ? ((Lx - ax) * abx + (Ly - ay) * aby) / len2 : 0;
+      if (f < 0) f = 0; else if (f > 1) f = 1;
+      const px = ax + f * abx, py = ay + f * aby;
+      const dx = px - Lx, dy = py - Ly;
+      const d = dx * dx + dy * dy;
+      if (d < bestD) {
+        bestD = d;
+        bestT = samples[ai].t + f * (samples[bi].t - samples[ai].t);
+      }
+    }
+    return bestT;
+  };
 
   for (let i = movingStartIdx + 1; i < samples.length; i++) {
     const curr = samples[i];
@@ -162,6 +192,9 @@ export function detectLaps(
 
     if (!isClosingLap) continue;
 
+    // Cruzamento interpolado (sub-sample) → tempo de volta com precisão de ms.
+    const crossT = refineCrossingT(i);
+
     // Volta anormalmente longa (piloto parou no meio, foi no box, etc.)
     // → descarta, mas ainda reseta o ponteiro. A próxima tentativa conta
     // a partir daqui.
@@ -169,16 +202,18 @@ export function detectLaps(
       currentLapStartIdx = i;
       distSinceLapStart = 0;
       justCrossed = true;
+      lapStartT = crossT;
       continue;
     }
 
     laps.push({
       startIdx: currentLapStartIdx,
       endIdx: i,
-      durationMs: elapsed,
-      startedAt: samples[currentLapStartIdx].t,
+      durationMs: Math.round(crossT - lapStartT),
+      startedAt: Math.round(lapStartT),
     });
 
+    lapStartT = crossT;
     currentLapStartIdx = i;
     distSinceLapStart = 0;
     justCrossed = true;
