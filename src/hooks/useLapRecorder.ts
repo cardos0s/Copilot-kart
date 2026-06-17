@@ -383,13 +383,16 @@ export function useLapRecorder(options?: LapRecorderOptions) {
       // GPS preencheria — todo o pipeline (velocímetro, voltas, setores, save)
       // roda idêntico, sem precisar de GPS/movimento.
       await activateKeepAwakeAsync('copilot-recording');
+      // Varia ±4% por sessão → cada run salva uma melhor volta diferente,
+      // pra o gráfico de evolução mostrar uma curva (em vez de reto).
+      const simScale = 0.96 + Math.random() * 0.08;
       let simIdx = 0;
       let simT0 = Date.now();
       simRef.current = setInterval(() => {
         const elapsed = Date.now() - simT0;
-        while (simIdx < DEMO_LAP.length && DEMO_LAP[simIdx].t <= elapsed) {
+        while (simIdx < DEMO_LAP.length && DEMO_LAP[simIdx].t * simScale <= elapsed) {
           const dp = DEMO_LAP[simIdx];
-          buf.samples.push({ t: simT0 + dp.t, lat: dp.lat, lng: dp.lng, speed: dp.speed, accuracy: 3 });
+          buf.samples.push({ t: simT0 + dp.t * simScale, lat: dp.lat, lng: dp.lng, speed: dp.speed, accuracy: 3 });
           simIdx++;
         }
         // Loop contínuo até o usuário tocar em "Encerrar".

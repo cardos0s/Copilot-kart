@@ -285,6 +285,16 @@ export default function Home() {
           </Card>
         )}
 
+        {/* Evolução — placeholder com 1 sessão (precisa de 2 pra traçar a curva) */}
+        {sparkData.length === 1 && (
+          <Card variant="flat" padding="l" style={s.evoCard}>
+            <Text style={s.cardLabel}>EVOLUÇÃO</Text>
+            <Text style={s.evoPlaceholder}>
+              Grave mais uma sessão pra ver sua evolução — o gráfico compara a melhor volta de cada sessão.
+            </Text>
+          </Card>
+        )}
+
         {/* Modo Lendas */}
         <Pressable
           style={({ pressed }) => [s.legendsCard, pressed && { opacity: 0.85 }]}
@@ -409,6 +419,7 @@ const s = StyleSheet.create({
   evoDelta: { fontSize: 12, fontWeight: '800' },
   evoFooter: { flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.s },
   evoFootText: { color: colors.textMuted, fontSize: 11, fontWeight: '600' },
+  evoPlaceholder: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, marginTop: spacing.s },
 
   cta: {
     flexDirection: 'row',
