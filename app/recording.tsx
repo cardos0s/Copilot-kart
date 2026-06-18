@@ -522,61 +522,72 @@ export default function Recording() {
               // "sub-50s", etc baseado na sessão recém salva.
               await refreshTodayChallenges();
 
-              // Empilha insight no Coach flutuante. Tenta gerar texto via LLM
-              // (Gemini/Claude/OpenAI conforme provider configurado); se falhar
-              // ou não houver IA configurada, cai num mock conciso.
-              const peakKmh = msToKmh(peakSpeedMs(best.samples));
-              const profileForInsight = await getProfile().catch(() => null);
-              const aiInsight = await requestQuickInsight({
-                trackName: params.trackName ?? 'Pista',
-                bestLapMs: best.durationMs,
-                previousPbMs: previousPb?.durationMs ?? null,
-                lapCount: lapsToSave.length,
-                peakKmh,
-                pilotName: profileForInsight?.name ?? null,
-              });
-
-              if (aiInsight) {
-                pushCoachInsight({
-                  title: aiInsight.title,
-                  body: aiInsight.body,
-                  metric: aiInsight.metric,
-                  sessionId: session.id,
-                });
-              } else if (result.isNewPb) {
-                // Fallback sem IA: mensagem genérica de PB
-                pushCoachInsight({
-                  title: 'Nova melhor volta',
-                  body: `Você bateu ${(best.durationMs / 1000).toFixed(3)}s. Tenta repetir nas próximas 3 voltas antes de empurrar mais.`,
-                  metric: `${(best.durationMs / 1000).toFixed(3)}s`,
-                  sessionId: session.id,
-                });
-              } else if (result.xpGained >= 50) {
-                pushCoachInsight({
-                  title: 'Sessão registrada',
-                  body: `Volta consistente. Pra próxima, foca em 1 curva específica — mais ganho que tentar a volta inteira.`,
-                  sessionId: session.id,
-                });
-              }
-
-              // Publica PB no leaderboard público (Supabase) — opcional, falha
-              // silenciosa se Supabase não configurado. Só publica novas PBs.
-              if (result.isNewPb && trackIdForGame) {
+              // ===== Background (NÃO bloqueia a navegação) =====
+              // IA (LLM) e publish no leaderboard são chamadas de REDE e podem
+              // demorar/travar. Se a gente desse `await` aqui, a tela do cockpit
+              // congelava esperando a resposta ANTES de navegar pro resumo
+              // (o "trava toda vez ao encerrar"). Roda solto: o insight aparece
+              // no Coach flutuante quando chegar; o leaderboard é best-effort.
+              const isNewPb = result.isNewPb;
+              const xpGained = result.xpGained;
+              void (async () => {
                 try {
-                  const pilotId = await ensurePilot();
-                  if (pilotId) {
-                    await publishLeaderboardEntry({
-                      pilotId,
-                      trackId: trackIdForGame,
-                      layoutId: layoutIdForGame,
-                      bestLapMs: best.durationMs,
+                  const peakKmh = msToKmh(peakSpeedMs(best.samples));
+                  const profileForInsight = await getProfile().catch(() => null);
+                  const aiInsight = await requestQuickInsight({
+                    trackName: params.trackName ?? 'Pista',
+                    bestLapMs: best.durationMs,
+                    previousPbMs: previousPb?.durationMs ?? null,
+                    lapCount: lapsToSave.length,
+                    peakKmh,
+                    pilotName: profileForInsight?.name ?? null,
+                  });
+
+                  if (aiInsight) {
+                    pushCoachInsight({
+                      title: aiInsight.title,
+                      body: aiInsight.body,
+                      metric: aiInsight.metric,
+                      sessionId: session.id,
+                    });
+                  } else if (isNewPb) {
+                    // Fallback sem IA: mensagem genérica de PB
+                    pushCoachInsight({
+                      title: 'Nova melhor volta',
+                      body: `Você bateu ${(best.durationMs / 1000).toFixed(3)}s. Tenta repetir nas próximas 3 voltas antes de empurrar mais.`,
+                      metric: `${(best.durationMs / 1000).toFixed(3)}s`,
+                      sessionId: session.id,
+                    });
+                  } else if (xpGained >= 50) {
+                    pushCoachInsight({
+                      title: 'Sessão registrada',
+                      body: `Volta consistente. Pra próxima, foca em 1 curva específica — mais ganho que tentar a volta inteira.`,
                       sessionId: session.id,
                     });
                   }
                 } catch {
-                  // Sem Supabase / sem internet / RLS reject — engole.
+                  // IA é opcional — engole qualquer erro.
                 }
-              }
+
+                // Publica PB no leaderboard público (Supabase) — opcional, falha
+                // silenciosa se Supabase não configurado. Só publica novas PBs.
+                if (isNewPb && trackIdForGame) {
+                  try {
+                    const pilotId = await ensurePilot();
+                    if (pilotId) {
+                      await publishLeaderboardEntry({
+                        pilotId,
+                        trackId: trackIdForGame,
+                        layoutId: layoutIdForGame,
+                        bestLapMs: best.durationMs,
+                        sessionId: session.id,
+                      });
+                    }
+                  } catch {
+                    // Sem Supabase / sem internet / RLS reject — engole.
+                  }
+                }
+              })();
             } catch {
               // Gamification é "nice to have" — qualquer erro engole e não
               // bloqueia o fluxo principal de salvar a sessão.
