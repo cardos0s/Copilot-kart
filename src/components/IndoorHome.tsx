@@ -15,6 +15,7 @@ import { fetchLeaderboard, LeaderboardEntry } from '../lib/leaderboard';
 import { TRACKS, findTrackById } from '../data/tracks';
 import { getProfile } from '../storage/profile';
 import { Icon } from './ui';
+import { CompetitionEntry } from './CompetitionEntry';
 import { colors, radius, spacing } from '../theme';
 
 const BLUE = colors.racingBlue;
@@ -117,6 +118,12 @@ export function IndoorHome({ showBack }: { showBack?: boolean } = {}) {
           <Pressable style={s.shareBtn} hitSlop={8} onPress={handleShare}>
             <Text style={s.shareIcon}>↗</Text>
           </Pressable>
+        </View>
+
+        {/* Corrida ao vivo — criar/entrar numa partida com a galera */}
+        <View style={s.compSection}>
+          <Text style={s.compLabel}>CORRIDA AO VIVO</Text>
+          <CompetitionEntry />
         </View>
 
         {/* Seletor de pista */}
@@ -231,6 +238,8 @@ export function IndoorHome({ showBack }: { showBack?: boolean } = {}) {
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   kicker: { color: BLUE, fontSize: 11, fontWeight: '800', letterSpacing: 2 },
+  compSection: { marginTop: spacing.l },
+  compLabel: { color: colors.textMuted, fontSize: 11, fontWeight: '800', letterSpacing: 2, marginBottom: spacing.s },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.xs },
   title: { color: colors.textPrimary, fontSize: 34, fontWeight: '900', fontStyle: 'italic', letterSpacing: -0.5 },
   shareBtn: {

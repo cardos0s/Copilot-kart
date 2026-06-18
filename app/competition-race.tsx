@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
@@ -71,6 +71,8 @@ export default function CompetitionRace() {
   const [myName, setMyName] = useState<string>('Você');
   const [peers, setPeers] = useState<Kart[]>([]);
   const [posInfo, setPosInfo] = useState<{ pos: number; delta: number }>({ pos: 1, delta: 0 });
+  // Classificação final congelada quando encerra (mostra o ranking da partida).
+  const [finished, setFinished] = useState<Kart[] | null>(null);
 
   const pilotIdRef = useRef<string>('me');
   const matchRef = useRef<{ leave: () => void } | null>(null);
@@ -250,19 +252,24 @@ export default function CompetitionRace() {
   const posDeltaColor = posInfo.delta > 0 ? colors.success : posInfo.delta < 0 ? colors.danger : colors.textMuted;
 
   const handleEnd = () => {
-    Alert.alert('Encerrar corrida?', 'Você sai da partida e volta.', [
+    Alert.alert('Encerrar corrida?', 'Mostra a classificação final da partida.', [
       { text: 'Continuar', style: 'cancel' },
       {
         text: 'Encerrar',
         style: 'destructive',
         onPress: () => {
+          // Congela a ordem atual como classificação final e mostra o ranking.
+          // Para de transmitir e de gravar, mas mantém a tela pra exibir o pódio.
+          setFinished([...ordered]);
           matchRef.current?.leave();
+          matchRef.current = null;
           stop();
-          router.back();
         },
       },
     ]);
   };
+
+  const myFinalPos = finished ? finished.findIndex((k) => k.isMe) + 1 : 0;
 
   return (
     <View style={[s.root, { paddingTop: insets.top + spacing.s, paddingLeft: insets.left + spacing.l, paddingRight: insets.right + spacing.l, paddingBottom: insets.bottom + spacing.s }]}>
@@ -383,6 +390,38 @@ export default function CompetitionRace() {
       {state === 'requesting' && (
         <View style={s.loading}><Text style={s.loadingText}>abrindo GPS…</Text></View>
       )}
+
+      {/* Classificação final da partida */}
+      <Modal visible={!!finished} animationType="fade" transparent onRequestClose={() => router.back()}>
+        <View style={s.resultBackdrop}>
+          <View style={s.resultCard}>
+            <Text style={s.resultKicker}>FIM DA PARTIDA</Text>
+            <Text style={s.resultPos}>
+              VOCÊ TERMINOU EM <Text style={{ color: colors.accentLime }}>P{myFinalPos}</Text>
+            </Text>
+            <Text style={s.resultSub}>de {finished?.length ?? 0} pilotos</Text>
+
+            <ScrollView style={s.resultList} showsVerticalScrollIndicator={false}>
+              {(finished ?? []).map((k, i) => (
+                <View key={k.pilotId} style={[s.resultRow, k.isMe && s.resultRowMe]}>
+                  <Text style={[s.resultRowPos, i < 3 && { color: ['#F5C84B', '#C9D2DE', '#D98A4B'][i] }]}>
+                    {i + 1}
+                  </Text>
+                  <View style={[s.resultDot, { backgroundColor: k.isMe ? colors.racingBlue : k.color }]} />
+                  <Text style={[s.resultName, k.isMe && { color: colors.racingBlue }]} numberOfLines={1}>
+                    {k.name}{k.isMe ? ' (você)' : ''}
+                  </Text>
+                  <Text style={s.resultLaps}>{Math.max(1, k.lapNumber)}ª volta</Text>
+                </View>
+              ))}
+            </ScrollView>
+
+            <Pressable style={({ pressed }) => [s.resultBtn, pressed && { opacity: 0.85 }]} onPress={() => router.back()}>
+              <Text style={s.resultBtnText}>SAIR</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -460,4 +499,20 @@ const s = StyleSheet.create({
 
   loading: { position: 'absolute', top: spacing.s, left: spacing.l },
   loadingText: { color: colors.textMuted, fontSize: 12, fontStyle: 'italic' },
+
+  // ===== Resultado / classificação final =====
+  resultBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center', padding: spacing.l },
+  resultCard: { width: '100%', maxWidth: 460, backgroundColor: colors.bg, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, padding: spacing.l },
+  resultKicker: { color: colors.danger, fontSize: 11, fontWeight: '900', letterSpacing: 2, textAlign: 'center' },
+  resultPos: { color: colors.textPrimary, fontSize: 24, fontWeight: '900', fontStyle: 'italic', textAlign: 'center', marginTop: 4 },
+  resultSub: { color: colors.textSecondary, fontSize: 13, textAlign: 'center', marginTop: 2, marginBottom: spacing.m },
+  resultList: { maxHeight: 230, alignSelf: 'stretch' },
+  resultRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.m, paddingVertical: 9, paddingHorizontal: spacing.m, borderRadius: radius.s, marginBottom: 4, backgroundColor: colors.bgElevated, borderWidth: 1, borderColor: colors.border },
+  resultRowMe: { borderColor: colors.racingBlue, backgroundColor: 'rgba(47,107,255,0.08)' },
+  resultRowPos: { width: 22, textAlign: 'center', color: colors.textSecondary, fontSize: 15, fontWeight: '900' },
+  resultDot: { width: 11, height: 11, borderRadius: 6 },
+  resultName: { flex: 1, color: colors.textPrimary, fontSize: 14, fontWeight: '700' },
+  resultLaps: { color: colors.textMuted, fontSize: 11, fontWeight: '600' },
+  resultBtn: { marginTop: spacing.m, backgroundColor: colors.racingBlue, borderRadius: radius.m, paddingVertical: 14, alignItems: 'center' },
+  resultBtnText: { color: '#fff', fontSize: 14, fontWeight: '900', letterSpacing: 1 },
 });
