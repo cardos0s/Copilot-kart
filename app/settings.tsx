@@ -174,6 +174,18 @@ export default function Settings() {
           />
           <Divider />
           <Row
+            label="🏁 Velocímetro competição (demo)"
+            value="Corrida com a galera"
+            onPress={() =>
+              router.push({
+                pathname: '/competition-race',
+                params: { simulate: '1', trackId: 'leandro-melo', trackName: 'Leandro Merlo' },
+              } as any)
+            }
+            chevron
+          />
+          <Divider />
+          <Row
             label="🏆 Ver tela de vitória"
             value="Preview"
             onPress={() => router.push('/victory' as any)}

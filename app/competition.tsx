@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -10,7 +11,9 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { RACE_TRACK } from '../src/lib/raceTrack';
+import { TRACKS } from '../src/data/tracks';
 import { getProfile } from '../src/storage/profile';
+import { Icon } from '../src/components/ui';
 import { colors, radius, spacing } from '../src/theme';
 
 const BLUE = colors.racingBlue;
@@ -120,6 +123,9 @@ export default function Competition() {
   const [karts, setKarts] = useState<Kart[]>(() => makeKarts(null));
   const [events, setEvents] = useState<RaceEvent[]>([]);
   const [elapsed, setElapsed] = useState(0);
+  const [trackId, setTrackId] = useState<string>(TRACKS[0].id);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const selectedTrack = TRACKS.find((t) => t.id === trackId) ?? TRACKS[0];
 
   const kartsRef = useRef<Kart[]>(karts);
   const orderRef = useRef<string[]>([]); // ids na ordem da última atualização
@@ -267,6 +273,27 @@ export default function Competition() {
         <Text style={s.title}>COMPETIÇÃO</Text>
         <Text style={s.sub}>{onTrack} karts na pista agora</Text>
 
+        {/* Seletor de pista + iniciar corrida real */}
+        <Pressable style={s.trackChip} onPress={() => setPickerOpen(true)}>
+          <Icon name="map" size={16} color={colors.racingBlue} />
+          <Text style={s.trackChipText} numberOfLines={1}>{selectedTrack.shortName ?? selectedTrack.name}</Text>
+          <Icon name="chevron-right" size={16} color={colors.textMuted} />
+        </Pressable>
+        <Pressable
+          style={({ pressed }) => [s.startBtn, pressed && { opacity: 0.85 }]}
+          onPress={() =>
+            router.push({
+              pathname: '/competition-race',
+              params: { trackId: selectedTrack.id, trackName: selectedTrack.shortName ?? selectedTrack.name },
+            } as any)
+          }
+        >
+          <Text style={s.startBtnText}>▶  INICIAR CORRIDA AO VIVO</Text>
+        </Pressable>
+        <Text style={s.startHint}>
+          Todos que entrarem na corrida nesta pista aparecem no seu mapa ao vivo.
+        </Text>
+
         {/* Mini-mapa da pista com os karts ao vivo */}
         <View style={s.mapBox}>
           <Svg width="100%" height={200} viewBox="0 0 340 250">
@@ -340,6 +367,32 @@ export default function Competition() {
           sincroniza posições, ultrapassagens e velocidade ao vivo.
         </Text>
       </ScrollView>
+
+      {/* Picker de pista */}
+      <Modal visible={pickerOpen} transparent animationType="slide" onRequestClose={() => setPickerOpen(false)}>
+        <Pressable style={s.modalBg} onPress={() => setPickerOpen(false)}>
+          <View style={[s.modalSheet, { paddingBottom: insets.bottom + spacing.l }]}>
+            <Text style={s.modalTitle}>Escolha o kartódromo</Text>
+            <ScrollView style={{ maxHeight: 360 }}>
+              {TRACKS.map((t) => (
+                <Pressable
+                  key={t.id}
+                  style={[s.trackRow, t.id === trackId && s.trackRowActive]}
+                  onPress={() => {
+                    setTrackId(t.id);
+                    setPickerOpen(false);
+                  }}
+                >
+                  <Text style={[s.trackRowName, t.id === trackId && { color: BLUE }]}>
+                    {t.shortName ?? t.name}
+                  </Text>
+                  <Text style={s.trackRowCity}>{t.city}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -361,6 +414,28 @@ const s = StyleSheet.create({
 
   title: { color: colors.textPrimary, fontSize: 34, fontWeight: '900', fontStyle: 'italic', letterSpacing: -0.5, marginTop: spacing.s },
   sub: { color: colors.textSecondary, fontSize: 13, fontWeight: '600', marginTop: 2 },
+
+  trackChip: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.s, marginTop: spacing.l,
+    paddingVertical: 12, paddingHorizontal: spacing.l, backgroundColor: colors.bgElevated,
+    borderRadius: radius.m, borderWidth: 1, borderColor: colors.border,
+  },
+  trackChipText: { flex: 1, color: colors.textPrimary, fontSize: 15, fontWeight: '700' },
+  startBtn: {
+    marginTop: spacing.s, backgroundColor: BLUE, borderRadius: radius.m,
+    paddingVertical: 16, alignItems: 'center',
+    shadowColor: BLUE, shadowOpacity: 0.45, shadowRadius: 14, shadowOffset: { width: 0, height: 4 },
+  },
+  startBtnText: { color: '#fff', fontSize: 16, fontWeight: '900', fontStyle: 'italic', letterSpacing: 0.5 },
+  startHint: { color: colors.textMuted, fontSize: 12, marginTop: spacing.s, lineHeight: 16 },
+
+  modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  modalSheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, padding: spacing.l },
+  modalTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: '800', marginBottom: spacing.m },
+  trackRow: { paddingVertical: 14, paddingHorizontal: spacing.m, borderRadius: radius.m },
+  trackRowActive: { backgroundColor: 'rgba(47,107,255,0.10)' },
+  trackRowName: { color: colors.textPrimary, fontSize: 15, fontWeight: '700' },
+  trackRowCity: { color: colors.textMuted, fontSize: 12, marginTop: 2 },
 
   mapBox: {
     marginTop: spacing.l,
