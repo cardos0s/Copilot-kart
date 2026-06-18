@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLapRecorder } from '../src/hooks/useLapRecorder';
+import { useLockLandscape } from '../src/hooks/useLockLandscape';
 import { RACE_TRACK } from '../src/lib/raceTrack';
 import { joinMatch, MatchPeerState } from '../src/lib/match';
 import { ensurePilot } from '../src/lib/liveSession';
@@ -64,8 +65,9 @@ export default function CompetitionRace() {
   // entra na mesma corrida. No demo não precisa (rivais são simulados).
   const matchCode = (params.code ?? '').toUpperCase();
 
-  // Sem trava de orientação (instável no device). Layout se adapta: duas
-  // colunas em landscape, empilhado em portrait.
+  // Cockpit: força landscape (suporte). Trava robusta + layout responsivo
+  // como rede de segurança (empilha em portrait se a rotação atrasar).
+  useLockLandscape();
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
 

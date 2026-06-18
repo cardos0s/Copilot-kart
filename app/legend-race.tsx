@@ -10,6 +10,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { RACE_TRACK, RACE_IN } from '../src/lib/raceTrack';
 import { legendById, LEGENDS } from '../src/data/legends';
+import { useLockLandscape } from '../src/hooks/useLockLandscape';
 import { colors, radius, spacing } from '../src/theme';
 
 const BLUE = colors.racingBlue;
@@ -26,8 +27,9 @@ export default function LegendRace() {
   const params = useLocalSearchParams<{ id?: string }>();
   const legend = legendById(params.id) ?? LEGENDS[0];
 
-  // Sem trava de orientação (instável no device). Adapta: 2 colunas em
-  // landscape, empilhado em portrait.
+  // Cockpit: força landscape (suporte). Trava robusta + layout responsivo
+  // como rede de segurança.
+  useLockLandscape();
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
 
