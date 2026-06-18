@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLapRecorder } from '../src/hooks/useLapRecorder';
-import { useLockLandscape } from '../src/hooks/useLockLandscape';
 import { RACE_TRACK } from '../src/lib/raceTrack';
 import { joinMatch, MatchPeerState } from '../src/lib/match';
 import { ensurePilot } from '../src/lib/liveSession';
@@ -65,7 +64,10 @@ export default function CompetitionRace() {
   // entra na mesma corrida. No demo não precisa (rivais são simulados).
   const matchCode = (params.code ?? '').toUpperCase();
 
-  useLockLandscape();
+  // Sem trava de orientação (instável no device). Layout se adapta: duas
+  // colunas em landscape, empilhado em portrait.
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
 
   const { state, info, start, stop } = useLapRecorder();
 
@@ -277,7 +279,7 @@ export default function CompetitionRace() {
 
   return (
     <View style={[s.root, { paddingTop: insets.top + spacing.s, paddingLeft: insets.left + spacing.l, paddingRight: insets.right + spacing.l, paddingBottom: insets.bottom + spacing.s }]}>
-      <View style={s.body}>
+      <View style={[s.body, !isLandscape && { flexDirection: 'column' }]}>
         {/* ===== ESQUERDA: mapa da galera ===== */}
         <View style={s.left}>
           <View style={s.gridHead}>
@@ -331,7 +333,7 @@ export default function CompetitionRace() {
           </View>
         </View>
 
-        <View style={s.divider} />
+        <View style={[s.divider, !isLandscape && { width: '100%', height: 1, marginVertical: spacing.m }]} />
 
         {/* ===== DIREITA: velocímetro + dados ===== */}
         <View style={s.right}>

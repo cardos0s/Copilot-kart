@@ -14,7 +14,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import QRCode from 'react-native-qrcode-svg';
 import { useLapRecorder, RecordedLap } from '../src/hooks/useLapRecorder';
-import { useLockLandscape } from '../src/hooks/useLockLandscape';
 import {
   saveLap,
   saveLayout,
@@ -117,8 +116,12 @@ export default function Recording() {
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
 
-  // Trava o device em landscape — pra esta tela é o uso esperado.
-  useLockLandscape();
+  // NÃO força orientação. A trava de landscape (ScreenOrientation.lockAsync)
+  // é instável no device com a New Architecture: às vezes não rotaciona de
+  // primeira (tela "não abre", precisa tentar várias vezes) e às vezes trava
+  // em pé ao encerrar (sem como sair, só fechando o app). A tela já funciona
+  // nas DUAS orientações (HUD tem layout portrait e landscape) — então segue
+  // o que o usuário segurar. No kart montado deitado mostra deitado.
 
   const [starting, setStarting] = useState(false);
   const [reference, setReference] = useState<TrackLayout | null>(null);

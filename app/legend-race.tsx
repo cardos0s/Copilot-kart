@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
@@ -10,7 +10,6 @@ import Animated, {
 } from 'react-native-reanimated';
 import { RACE_TRACK, RACE_IN } from '../src/lib/raceTrack';
 import { legendById, LEGENDS } from '../src/data/legends';
-import { useLockLandscape } from '../src/hooks/useLockLandscape';
 import { colors, radius, spacing } from '../src/theme';
 
 const BLUE = colors.racingBlue;
@@ -27,7 +26,10 @@ export default function LegendRace() {
   const params = useLocalSearchParams<{ id?: string }>();
   const legend = legendById(params.id) ?? LEGENDS[0];
 
-  useLockLandscape();
+  // Sem trava de orientação (instável no device). Adapta: 2 colunas em
+  // landscape, empilhado em portrait.
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
 
   // Pace do piloto: às vezes ganha de raspão, geralmente perde por pouco.
   const yourLapMs = useMemo(() => {
@@ -118,7 +120,7 @@ export default function LegendRace() {
         <Text style={s.backIcon}>‹</Text>
       </Pressable>
 
-      <View style={s.body}>
+      <View style={[s.body, !isLandscape && { flexDirection: 'column', justifyContent: 'center' }]}>
         {/* ===== ESQUERDA: mapa (você + lenda) ===== */}
         <View style={s.left}>
           <View style={s.head}>
@@ -146,7 +148,7 @@ export default function LegendRace() {
           </View>
         </View>
 
-        <View style={s.divider} />
+        <View style={[s.divider, !isLandscape && { width: '100%', height: 1, marginVertical: spacing.m }]} />
 
         {/* ===== DIREITA: velocímetro + gap pro recorde ===== */}
         <View style={s.right}>
