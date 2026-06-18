@@ -1,27 +1,31 @@
 import { useCallback } from 'react';
+import { InteractionManager } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import * as ScreenOrientation from 'expo-screen-orientation';
 
 /**
- * Força landscape enquanto a tela está EM FOCO (não só montada).
+ * Força landscape nas telas de cockpit (celular no suporte, deitado).
  *
- * Usa useFocusEffect em vez de useEffect porque com expo-router as telas
- * ficam montadas na pilha — o useEffect de mount não re-dispara ao voltar
- * pra tela, então a trava "não pegava de primeira". Com foco, re-trava
- * sempre que a tela aparece.
+ * PONTO CRÍTICO: trava só DEPOIS da transição de navegação terminar, via
+ * InteractionManager.runAfterInteractions. Travar a orientação NO MEIO da
+ * animação de push cancela a transição — a tela "abre e volta sozinha" e,
+ * quando enfim entra, já perdeu o momento da rotação e fica em pé. Esperando
+ * a transição assentar, a tela entra inteira e só então gira pra landscape.
  *
- * Ao sair, volta explicitamente pra PORTRAIT_UP (e não DEFAULT, que é
- * ambíguo e deixava o app preso na última orientação ao encerrar).
+ * useFocusEffect (não useEffect) porque as telas ficam montadas na pilha com
+ * expo-router — precisa re-travar a cada foco, não só no mount.
  *
- * As telas que usam isto também têm layout responsivo (portrait empilhado),
- * então mesmo no instante antes da rotação concluir elas aparecem usáveis —
- * nunca uma tela quebrada ou travada.
+ * Ao sair, volta pra PORTRAIT_UP explícito (DEFAULT é ambíguo e prendia o app
+ * na última orientação).
  */
 export function useLockLandscape() {
   useFocusEffect(
     useCallback(() => {
-      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
+      const task = InteractionManager.runAfterInteractions(() => {
+        ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
+      });
       return () => {
+        task.cancel();
         ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
       };
     }, []),
