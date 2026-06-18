@@ -187,9 +187,13 @@ export default function CompetitionRace() {
   }, [myName, info.lapsCompleted, info.currentLapElapsedMs, info.lastSpeedKmh, info.previousLapMs, bestMs]);
 
   // ---- Loop da simulação demo (galera) ----
+  // Início adiado pra DEPOIS da transição: setState (setPeers) a cada 250ms
+  // durante a animação de push cancelava a entrada ("não abre de primeira").
   useEffect(() => {
     if (!isDemo) return;
-    const id = setInterval(() => {
+    let id: ReturnType<typeof setInterval> | null = null;
+    const task = InteractionManager.runAfterInteractions(() => {
+      id = setInterval(() => {
       const now = Date.now();
       const dt = demoTickRef.current === 0 ? 0 : now - demoTickRef.current;
       demoTickRef.current = now;
@@ -219,8 +223,12 @@ export default function CompetitionRace() {
           color: KART_COLORS[i % KART_COLORS.length],
         }))
       );
-    }, 250);
-    return () => clearInterval(id);
+      }, 250);
+    });
+    return () => {
+      task.cancel();
+      if (id) clearInterval(id);
+    };
   }, [isDemo]);
 
   // ---- Monta o grid completo (eu + galera) e calcula posição ----

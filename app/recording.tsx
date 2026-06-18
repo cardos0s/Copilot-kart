@@ -126,6 +126,7 @@ export default function Recording() {
   const [reference, setReference] = useState<TrackLayout | null>(null);
   const [idlePrompt, setIdlePrompt] = useState(false);
   const [confirmingFinish, setConfirmingFinish] = useState(false);
+  const [pendingRef, setPendingRef] = useState<{ sessionId: string; best: LapRecord; reference: TrackLayout } | null>(null);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const idleDismissedRef = useRef(false);
   // Live broadcasting (Supabase realtime). Quando o piloto ativa, criamos
@@ -596,33 +597,8 @@ export default function Recording() {
             }
 
             if (reference && best.durationMs < reference.durationMs) {
-              Alert.alert(
-                'Nova melhor volta! 🏆',
-                `Você fez ${fmtLap(best.durationMs)} (referência atual: ${fmtLap(reference.durationMs)}).\n\nQuer atualizar a referência do "${reference.name}"?`,
-                [
-                  {
-                    text: 'Manter a antiga',
-                    style: 'cancel',
-                    onPress: () => router.replace(`/session/${session.id}`),
-                  },
-                  {
-                    text: 'Atualizar',
-                    onPress: async () => {
-                      // Sobrescreve o layout que tava sendo usado, preservando id/name/isDefault.
-                      await saveLayout({
-                        ...reference,
-                        samples: best.samples,
-                        durationMs: best.durationMs,
-                        lengthM: polylineLength(best.samples),
-                        recordedAt: Date.now(),
-                        sourceSessionId: session.id,
-                        sourceLapId: best.id,
-                      });
-                      router.replace(`/session/${session.id}`);
-                    },
-                  },
-                ]
-              );
+              // Pergunta IN-APP (não Alert nativo, que vira a orientação e trava).
+              setPendingRef({ sessionId: session.id, best, reference });
             } else {
               router.replace(`/session/${session.id}`);
             }
@@ -954,6 +930,48 @@ export default function Recording() {
               style={({ pressed }) => [s.idleDismiss, pressed && { opacity: 0.5 }]}
             >
               <Text style={s.idleDismissText}>Continuar correndo</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+
+      {/* Nova melhor volta vs referência — overlay in-app (não Alert nativo). */}
+      {pendingRef && (
+        <View style={s.idleOverlay}>
+          <View style={s.idleCard}>
+            <Text style={s.idlePromptTitle}>NOVA MELHOR VOLTA! 🏆</Text>
+            <Text style={s.idlePromptSub}>
+              Você fez {fmtLap(pendingRef.best.durationMs)} (referência: {fmtLap(pendingRef.reference.durationMs)}). Atualizar a referência do "{pendingRef.reference.name}"?
+            </Text>
+            <Pressable
+              style={({ pressed }) => [s.idleEndBtn, pressed && { opacity: 0.8 }]}
+              onPress={async () => {
+                const { best, reference, sessionId } = pendingRef;
+                await saveLayout({
+                  ...reference,
+                  samples: best.samples,
+                  durationMs: best.durationMs,
+                  lengthM: polylineLength(best.samples),
+                  recordedAt: Date.now(),
+                  sourceSessionId: sessionId,
+                  sourceLapId: best.id,
+                });
+                setPendingRef(null);
+                router.replace(`/session/${sessionId}`);
+              }}
+            >
+              <Text style={s.idleEndText}>ATUALIZAR REFERÊNCIA</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                const id = pendingRef.sessionId;
+                setPendingRef(null);
+                router.replace(`/session/${id}`);
+              }}
+              hitSlop={12}
+              style={({ pressed }) => [s.idleDismiss, pressed && { opacity: 0.5 }]}
+            >
+              <Text style={s.idleDismissText}>Manter a antiga</Text>
             </Pressable>
           </View>
         </View>
