@@ -56,6 +56,8 @@ import {
 import { polylineLength } from '../src/lib/geometry';
 import { LapRecord } from '../src/lib/analysis';
 import { Button, Card, Icon } from '../src/components/ui';
+import { TrackSilhouette } from '../src/components/TrackSilhouette';
+import { findTrackById } from '../src/data/tracks';
 import { LapResultOverlay } from '../src/components/LapResultOverlay';
 import { PilotMessageOverlay } from '../src/components/PilotMessageOverlay';
 import { colors, radius, spacing, typography } from '../src/theme';
@@ -683,6 +685,7 @@ export default function Recording() {
     return (
       <IdleView
         trackName={params.trackName ?? 'Pista'}
+        trackId={params.trackId ?? null}
         reference={reference}
         starting={starting}
         onStart={handleStart}
@@ -1105,6 +1108,7 @@ function SectorPanel({
 /** Tela de "pronto pra correr" antes do GPS começar. Funciona em portrait ou landscape. */
 function IdleView({
   trackName,
+  trackId,
   reference,
   starting,
   onStart,
@@ -1116,6 +1120,7 @@ function IdleView({
   onDisableLive,
 }: {
   trackName: string;
+  trackId: string | null;
   reference: TrackLayout | null;
   starting: boolean;
   onStart: () => void;
@@ -1127,78 +1132,114 @@ function IdleView({
   onDisableLive: () => Promise<void> | void;
 }) {
   const insets = useSafeAreaInsets();
+  const track = trackId ? findTrackById(trackId) : undefined;
+  // Nome em destaque (sem o prefixo "Kartódromo") + localização embaixo.
+  const bigName = (track?.shortName ?? trackName).toUpperCase();
+  const location = track ? `${track.city}, ${track.state}` : null;
+
+  // ===== Coluna ESQUERDA: identidade da sessão (marca + pista) =====
+  const identity = (
+    <View style={s.idLeft}>
+      <View style={s.liveTag}>
+        <View style={s.liveTagDot} />
+        <Text style={s.liveTagText}>SESSÃO AO VIVO</Text>
+      </View>
+
+      <View style={s.silBox}>
+        {reference && reference.samples.length >= 2 ? (
+          <TrackSilhouette
+            samples={reference.samples}
+            width={120}
+            height={88}
+            strokeColor={colors.primary}
+            strokeWidth={3}
+          />
+        ) : (
+          <Icon name="map" size={44} color={colors.primaryDim} />
+        )}
+      </View>
+
+      <Text style={s.kartodromoLabel}>KARTÓDROMO</Text>
+      <Text style={s.bigName} numberOfLines={2}>{bigName}</Text>
+      {location && <Text style={s.locationText}>{location}</Text>}
+    </View>
+  );
+
+  // ===== Card "PRONTO PRA CORRER?" com 3 passos numerados =====
+  const STEPS = [
+    'Encaixe o celular no suporte horizontal',
+    'Aperte "Começar a correr"',
+    'A análise aparece ao encerrar',
+  ];
+  const readyCard = (
+    <Card variant="default" padding="l">
+      <View style={s.readyHead}>
+        <View style={s.readyBadge}>
+          <Text style={s.readyBadgeText}>!</Text>
+        </View>
+        <Text style={s.readyTitle}>PRONTO PRA CORRER?</Text>
+      </View>
+      <View style={s.stepsRow}>
+        {STEPS.map((txt, i) => (
+          <View key={i} style={s.stepCol}>
+            <View style={s.stepNum}>
+              <Text style={s.stepNumText}>{i + 1}</Text>
+            </View>
+            <Text style={s.stepText}>{txt}</Text>
+          </View>
+        ))}
+      </View>
+    </Card>
+  );
+
+  const startBtn = (
+    <Button
+      label={starting ? 'Abrindo GPS…' : 'Começar a correr'}
+      onPress={onStart}
+      variant="primary"
+      size="l"
+      fullWidth
+      loading={starting}
+      iconRight={
+        !starting ? <Icon name="arrow-right" size={20} color={colors.textOnPrimary} /> : undefined
+      }
+    />
+  );
+
+  // Coluna DIREITA: card de passos → toggle compartilhar → botão começar.
+  const controls = (
+    <View style={s.idRight}>
+      {readyCard}
+      {/* Compartilhar ao vivo — ativa AQUI pra equipe scanear o QR antes do
+        * cronômetro começar (sem janela de "esperando spectator"). */}
+      <LiveTogglePanel
+        live={live}
+        liveStarting={liveStarting}
+        onEnable={onEnableLive}
+        onDisable={onDisableLive}
+      />
+      {startBtn}
+    </View>
+  );
+
   return (
     <View style={[s.idleRoot, { paddingTop: insets.top + spacing.s }]}>
-      <View style={s.idleHeader}>
-        <Pressable hitSlop={12} onPress={onCancel} style={s.iconBtn}>
-          <Text style={s.close}>✕</Text>
-        </Pressable>
-        <Text style={s.idleTitle}>SESSÃO AO VIVO</Text>
-        <View style={s.iconBtn} />
-      </View>
+      {/* ✕ discreto pra cancelar — o mockup não tem header, então fica no canto. */}
+      <Pressable hitSlop={16} onPress={onCancel} style={[s.idleClose, { top: insets.top + spacing.xs }]}>
+        <Text style={s.close}>✕</Text>
+      </Pressable>
 
       <ScrollView
         contentContainerStyle={[
           s.idleBody,
-          isLandscape && { flexDirection: 'row', gap: spacing.l },
+          isLandscape && s.idleBodyRow,
+          { paddingBottom: insets.bottom + spacing.l },
         ]}
         showsVerticalScrollIndicator={false}
       >
-        <View style={{ flex: 1 }}>
-          <Text style={s.idleTrack}>{trackName}</Text>
-          {reference && (
-            <Card variant="glow" padding="m" style={{ marginTop: spacing.l }}>
-              <Text style={s.refLabel}>REFERÊNCIA DA PISTA</Text>
-              <View style={s.refRow}>
-                <Text style={[s.refTime, typography.mono]}>{fmtLap(reference.durationMs)}</Text>
-                <Text style={s.refMeta}>{reference.lengthM.toFixed(0)}m</Text>
-              </View>
-            </Card>
-          )}
-
-          {/* Compartilhar ao vivo — toggle + QR antes de começar.
-            * A ideia é ativar AQUI, mostrar o QR pra equipe scanear no
-            * conforto da box, e SÓ DEPOIS apertar "Começar". Assim quando
-            * o cronômetro começa, a equipe já está conectada e não tem
-            * janela de "esperando spectator" com tempo correndo.
-            *
-            * Se tocar de novo (já ativo), pergunta se quer desativar. */}
-          <LiveTogglePanel
-            live={live}
-            liveStarting={liveStarting}
-            onEnable={onEnableLive}
-            onDisable={onDisableLive}
-          />
-
-          <Card variant="default" padding="l" style={{ marginTop: spacing.l }}>
-            <Text style={s.instructionTitle}>Pronto pra correr?</Text>
-            <Text style={s.instructionText}>
-              Encaixe o celular no suporte horizontal do kart, aperte "Começar". A análise
-              aparece quando você encerrar.
-            </Text>
-          </Card>
-        </View>
-
-        <View
-          style={{
-            paddingTop: isLandscape ? 0 : spacing.l,
-            paddingBottom: insets.bottom + spacing.l,
-            justifyContent: 'flex-end',
-            ...(isLandscape && { width: 240 }),
-          }}
-        >
-          <Button
-            label={starting ? 'Abrindo GPS…' : 'Começar a correr'}
-            onPress={onStart}
-            variant="primary"
-            size="l"
-            fullWidth
-            loading={starting}
-            iconRight={
-              !starting ? <Icon name="arrow-right" size={20} color={colors.textOnPrimary} /> : undefined
-            }
-          />
-        </View>
+        {identity}
+        {isLandscape && <View style={s.idDivider} />}
+        {controls}
       </ScrollView>
     </View>
   );
@@ -1251,27 +1292,29 @@ function LiveTogglePanel({
         variant={isOn ? 'glow' : 'default'}
         padding="m"
         style={{
-          marginTop: spacing.l,
-          ...(isOn && { borderColor: colors.success, borderWidth: 1 }),
+          ...(isOn && { borderColor: colors.primary, borderWidth: 1 }),
         }}
       >
         <View style={s.liveRowHead}>
+          <View style={[s.liveIconBox, isOn && { borderColor: colors.primary }]}>
+            <Text style={s.liveIconEmoji}>📡</Text>
+          </View>
           <View style={{ flex: 1 }}>
-            <Text style={[s.liveRowTitle, isOn && { color: colors.success }]}>
-              📡 Compartilhar ao vivo
+            <Text style={[s.liveRowTitle, isOn && { color: colors.primary }]}>
+              COMPARTILHAR AO VIVO
             </Text>
             <Text style={s.liveRowSub}>
               {liveStarting
                 ? 'Conectando ao servidor…'
                 : isOn
                   ? 'Equipe pode acompanhar pelo navegador'
-                  : 'Ativa antes pra equipe estar pronta no início'}
+                  : 'Sua equipe acompanha em tempo real'}
             </Text>
           </View>
           <View
             style={[
               s.liveToggleTrack,
-              isOn && { backgroundColor: colors.success },
+              isOn && { backgroundColor: colors.primary, borderColor: colors.primary },
               liveStarting && { opacity: 0.5 },
             ]}
           >
@@ -1315,19 +1358,120 @@ const s = StyleSheet.create({
 
   /* IDLE */
   idleRoot: { flex: 1, backgroundColor: colors.bg, paddingHorizontal: spacing.l },
-  idleHeader: {
-    flexDirection: 'row',
+  idleClose: {
+    position: 'absolute',
+    left: spacing.s,
+    zIndex: 10,
+    width: 40,
+    height: 40,
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingBottom: spacing.m,
+    justifyContent: 'center',
   },
-  idleTitle: { color: colors.textPrimary, fontSize: 13, fontWeight: '800', letterSpacing: 1.5 },
   // flexGrow ao invés de flex pra funcionar como contentContainerStyle de
-  // ScrollView (idleBody virou scrollable depois de adicionar o card de
-  // live com QR — conteúdo pode passar da viewport em portrait).
-  // Padding horizontal vem do idleRoot (que envolve o ScrollView), então
-  // aqui não duplicar.
-  idleBody: { flexGrow: 1 },
+  // ScrollView (conteúdo pode passar da viewport em portrait).
+  idleBody: { flexGrow: 1, justifyContent: 'center', gap: spacing.l },
+  // Em landscape: duas colunas (identidade | controles) com divisória.
+  idleBodyRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: spacing.xl,
+    justifyContent: 'center',
+  },
+
+  // Coluna esquerda — identidade da sessão (marca + silhueta + pista).
+  idLeft: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.m,
+  },
+  idRight: { flex: 1.25, justifyContent: 'center', gap: spacing.m },
+  idDivider: { width: 1, alignSelf: 'stretch', backgroundColor: colors.border },
+
+  liveTag: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: spacing.l },
+  liveTagDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.danger },
+  liveTagText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '800',
+    fontStyle: 'italic',
+    letterSpacing: 2,
+  },
+  silBox: {
+    width: 132,
+    height: 116,
+    borderRadius: radius.xl,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.l,
+  },
+  kartodromoLabel: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 2.5,
+    marginBottom: 4,
+  },
+  bigName: {
+    color: colors.textPrimary,
+    fontSize: 30,
+    fontWeight: '900',
+    fontStyle: 'italic',
+    letterSpacing: -0.5,
+    textAlign: 'center',
+    lineHeight: 32,
+  },
+  locationText: { color: colors.textSecondary, fontSize: 14, marginTop: 6, textAlign: 'center' },
+
+  // Card "Pronto pra correr?" — header com badge "!" + 3 passos numerados.
+  readyHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.s, marginBottom: spacing.l },
+  readyBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: radius.s,
+    backgroundColor: colors.accentLime,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  readyBadgeText: { color: '#0A0A0A', fontSize: 16, fontWeight: '900', fontStyle: 'italic' },
+  readyTitle: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '900',
+    fontStyle: 'italic',
+    letterSpacing: 0.5,
+  },
+  stepsRow: { flexDirection: 'row', gap: spacing.m },
+  stepCol: { flex: 1 },
+  stepNum: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.surfaceHigh,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.s,
+  },
+  stepNumText: { color: colors.textSecondary, fontSize: 13, fontWeight: '800' },
+  stepText: { color: colors.textPrimary, fontSize: 13, lineHeight: 18, fontWeight: '600' },
+
+  // Caixa de ícone do card "Compartilhar ao vivo".
+  liveIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.m,
+    backgroundColor: colors.primaryGlow,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  liveIconEmoji: { fontSize: 18 },
 
   // ===== Live toggle panel (no idle) =====
   liveRowHead: {
