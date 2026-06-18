@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
+import Svg, { Circle, Path } from 'react-native-svg';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useLapRecorder } from '../src/hooks/useLapRecorder';
 import { useLockLandscape } from '../src/hooks/useLockLandscape';
 import { RACE_TRACK } from '../src/lib/raceTrack';
@@ -73,6 +74,9 @@ export default function CompetitionRace() {
   const [posInfo, setPosInfo] = useState<{ pos: number; delta: number }>({ pos: 1, delta: 0 });
   // Classificação final congelada quando encerra (mostra o ranking da partida).
   const [finished, setFinished] = useState<Kart[] | null>(null);
+  // Tamanho medido do mapa — SVG precisa de width/height NUMÉRICOS (percentual
+  // em SVG quebra em release/Fabric).
+  const [mapSize, setMapSize] = useState({ w: 0, h: 0 });
 
   const pilotIdRef = useRef<string>('me');
   const matchRef = useRef<{ leave: () => void } | null>(null);
@@ -290,8 +294,12 @@ export default function CompetitionRace() {
             </View>
           )}
 
-          <View style={s.mapWrap}>
-            <Svg width="100%" height="100%" viewBox="0 0 340 250">
+          <View
+            style={s.mapWrap}
+            onLayout={(e) => setMapSize({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
+          >
+            {mapSize.w > 0 && mapSize.h > 0 && (
+            <Svg width={mapSize.w} height={mapSize.h} viewBox="0 0 340 250">
               <Path d={RACE_TRACK.d} stroke="#23232e" strokeWidth={22} fill="none" strokeLinejoin="round" strokeLinecap="round" />
               <Path d={RACE_TRACK.d} stroke="#3a3a48" strokeWidth={2} fill="none" strokeDasharray="2 12" />
               {grid.map((k) => {
@@ -313,6 +321,7 @@ export default function CompetitionRace() {
                 );
               })}
             </Svg>
+            )}
           </View>
 
           <View style={s.legendRow}>
@@ -343,18 +352,16 @@ export default function CompetitionRace() {
             <Text style={s.speedLabel}>VELOCIDADE</Text>
           </View>
 
-          {/* Barra de velocidade */}
+          {/* Barra de velocidade — Views + gradiente nativo (sem SVG, que com
+            * porcentagem quebrava em release/Fabric). */}
           <View style={s.barTrack}>
-            <Svg width="100%" height={14}>
-              <Defs>
-                <LinearGradient id="spd" x1="0" y1="0" x2="1" y2="0">
-                  <Stop offset="0" stopColor={colors.racingBlue} />
-                  <Stop offset="1" stopColor={colors.success} />
-                </LinearGradient>
-              </Defs>
-              <Rect x="0" y="5" width="100%" height="4" rx="2" fill="#23232e" />
-              <Rect x="0" y="5" width={`${speedFrac * 100}%`} height="4" rx="2" fill="url(#spd)" />
-            </Svg>
+            <View style={s.barBg} />
+            <LinearGradient
+              colors={[colors.racingBlue, colors.success]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={[s.barFill, { width: `${speedFrac * 100}%` }]}
+            />
             <View style={[s.barThumb, { left: `${speedFrac * 100}%` }]} />
           </View>
 
@@ -476,11 +483,13 @@ const s = StyleSheet.create({
   speedUnit: { color: colors.textSecondary, fontSize: 22, fontWeight: '700', marginBottom: 16, marginLeft: 6 },
   speedLabel: { color: colors.textMuted, fontSize: 12, fontWeight: '800', letterSpacing: 1.5, marginBottom: 18 },
 
-  barTrack: { marginTop: spacing.s, justifyContent: 'center' },
+  barTrack: { marginTop: spacing.s, height: 16, justifyContent: 'center' },
+  barBg: { position: 'absolute', left: 0, right: 0, height: 4, borderRadius: 2, backgroundColor: '#23232e' },
+  barFill: { position: 'absolute', left: 0, height: 4, borderRadius: 2 },
   barThumb: {
     position: 'absolute',
     width: 16, height: 16, borderRadius: 8, backgroundColor: '#fff',
-    marginLeft: -8, top: 4,
+    marginLeft: -8, top: 0,
     shadowColor: colors.success, shadowOpacity: 0.6, shadowRadius: 6,
   },
 

@@ -1229,18 +1229,26 @@ function IdleView({
         <Text style={s.close}>✕</Text>
       </Pressable>
 
-      <ScrollView
-        contentContainerStyle={[
-          s.idleBody,
-          isLandscape && s.idleBodyRow,
-          { paddingBottom: insets.bottom + spacing.l },
-        ]}
-        showsVerticalScrollIndicator={false}
-      >
-        {identity}
-        {isLandscape && <View style={s.idDivider} />}
-        {controls}
-      </ScrollView>
+      {isLandscape ? (
+        // Landscape (uso travado no cockpit): flex View — NÃO ScrollView.
+        // Um flexDirection:row dentro do contentContainer de um ScrollView não
+        // restringe a largura dos filhos flex de forma confiável no device, e a
+        // coluna direita estourava/sumia. Um flex View comum distribui a largura
+        // certinho entre as colunas.
+        <View style={[s.idleBodyRow, { flex: 1, paddingBottom: insets.bottom + spacing.s }]}>
+          {identity}
+          <View style={s.idDivider} />
+          {controls}
+        </View>
+      ) : (
+        <ScrollView
+          contentContainerStyle={[s.idleBody, { paddingBottom: insets.bottom + spacing.l }]}
+          showsVerticalScrollIndicator={false}
+        >
+          {identity}
+          {controls}
+        </ScrollView>
+      )}
     </View>
   );
 }
