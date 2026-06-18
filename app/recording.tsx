@@ -125,6 +125,7 @@ export default function Recording() {
   const [starting, setStarting] = useState(false);
   const [reference, setReference] = useState<TrackLayout | null>(null);
   const [idlePrompt, setIdlePrompt] = useState(false);
+  const [confirmingFinish, setConfirmingFinish] = useState(false);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const idleDismissedRef = useRef(false);
   // Live broadcasting (Supabase realtime). Quando o piloto ativa, criamos
@@ -392,16 +393,13 @@ export default function Recording() {
     setLatestTeamMessage((curr) => (curr?.id === msgId ? null : curr));
   };
 
-  const handleFinish = () => {
-    Alert.alert(
-      'Encerrar sessão?',
-      `Vamos processar ${info.lapsCompleted} volta(s) e mostrar a análise.`,
-      [
-        { text: 'Continuar', style: 'cancel' },
-        {
-          text: 'Encerrar',
-          style: 'destructive',
-          onPress: async () => {
+  // Confirmação IN-APP (não Alert nativo): no iOS, alert nativo sobre tela
+  // travada em landscape vira a orientação pra portrait e não restaura,
+  // travando o app (fica em pé, toque morto). Overlay mantém tudo em landscape.
+  const handleFinish = () => setConfirmingFinish(true);
+
+  const doFinish = async () => {
+            setConfirmingFinish(false);
             // Encerra live primeiro pra spectators verem "AO VIVO" sumir.
             if (live) {
               await endLiveSession(live.code).catch(() => {});
@@ -628,10 +626,6 @@ export default function Recording() {
             } else {
               router.replace(`/session/${session.id}`);
             }
-          },
-        },
-      ]
-    );
   };
 
   const handleCancel = () => {
@@ -931,6 +925,31 @@ export default function Recording() {
             </Pressable>
             <Pressable
               onPress={handleDismissIdle}
+              hitSlop={12}
+              style={({ pressed }) => [s.idleDismiss, pressed && { opacity: 0.5 }]}
+            >
+              <Text style={s.idleDismissText}>Continuar correndo</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+
+      {/* Confirmar encerrar — overlay in-app (NÃO Alert nativo, que vira a
+          orientação em landscape e trava o app). */}
+      {confirmingFinish && (
+        <View style={s.idleOverlay}>
+          <View style={s.idleCard}>
+            <Text style={s.idlePromptTitle}>ENCERRAR SESSÃO?</Text>
+            <Text style={s.idlePromptSub}>Vamos processar {info.lapsCompleted} volta(s) e mostrar a análise.</Text>
+            <Pressable
+              style={({ pressed }) => [s.idleEndBtn, pressed && { opacity: 0.8 }]}
+              onPress={doFinish}
+            >
+              <Icon name="stop" size={22} color={colors.textPrimary} />
+              <Text style={s.idleEndText}>ENCERRAR</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setConfirmingFinish(false)}
               hitSlop={12}
               style={({ pressed }) => [s.idleDismiss, pressed && { opacity: 0.5 }]}
             >
