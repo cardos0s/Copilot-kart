@@ -78,6 +78,7 @@ export default function CompetitionRace() {
   const [posInfo, setPosInfo] = useState<{ pos: number; delta: number }>({ pos: 1, delta: 0 });
   // Classificação final congelada quando encerra (mostra o ranking da partida).
   const [finished, setFinished] = useState<Kart[] | null>(null);
+  const [confirmingEnd, setConfirmingEnd] = useState(false);
   // Tamanho medido do mapa — SVG precisa de width/height NUMÉRICOS (percentual
   // em SVG quebra em release/Fabric).
   const [mapSize, setMapSize] = useState({ w: 0, h: 0 });
@@ -265,22 +266,19 @@ export default function CompetitionRace() {
   const posDeltaIcon = posInfo.delta > 0 ? '▲' : posInfo.delta < 0 ? '▼' : '—';
   const posDeltaColor = posInfo.delta > 0 ? colors.success : posInfo.delta < 0 ? colors.danger : colors.textMuted;
 
-  const handleEnd = () => {
-    Alert.alert('Encerrar corrida?', 'Mostra a classificação final da partida.', [
-      { text: 'Continuar', style: 'cancel' },
-      {
-        text: 'Encerrar',
-        style: 'destructive',
-        onPress: () => {
-          // Congela a ordem atual como classificação final e mostra o ranking.
-          // Para de transmitir e de gravar, mas mantém a tela pra exibir o pódio.
-          setFinished([...ordered]);
-          matchRef.current?.leave();
-          matchRef.current = null;
-          stop();
-        },
-      },
-    ]);
+  // Confirmação IN-APP (não Alert nativo): no iOS, alert nativo sobre tela
+  // travada em landscape vira a orientação pra portrait e não restaura, deixando
+  // a tela num meio-termo com toque quebrado (trava o app).
+  const handleEnd = () => setConfirmingEnd(true);
+
+  const doEnd = () => {
+    // Congela a ordem atual como classificação final e mostra o ranking.
+    // Para de transmitir e de gravar, mas mantém a tela pra exibir o pódio.
+    setConfirmingEnd(false);
+    setFinished([...ordered]);
+    matchRef.current?.leave();
+    matchRef.current = null;
+    stop();
   };
 
   const myFinalPos = finished ? finished.findIndex((k) => k.isMe) + 1 : 0;
@@ -406,6 +404,25 @@ export default function CompetitionRace() {
       </Pressable>
       {state === 'requesting' && (
         <View style={s.loading}><Text style={s.loadingText}>abrindo GPS…</Text></View>
+      )}
+
+      {/* Confirmação de encerrar — overlay in-app (não Alert nativo). */}
+      {confirmingEnd && !finished && (
+        <View style={s.resultBackdrop}>
+          <View style={s.resultCard}>
+            <Text style={s.resultKicker}>ENCERRAR CORRIDA?</Text>
+            <Text style={[s.resultSub, { marginTop: spacing.s }]}>Mostra a classificação final da partida.</Text>
+            <Pressable
+              style={({ pressed }) => [s.resultBtn, { backgroundColor: colors.danger, marginTop: spacing.l }, pressed && { opacity: 0.85 }]}
+              onPress={doEnd}
+            >
+              <Text style={s.resultBtnText}>ENCERRAR</Text>
+            </Pressable>
+            <Pressable style={s.confirmCancel} onPress={() => setConfirmingEnd(false)}>
+              <Text style={s.confirmCancelText}>Continuar correndo</Text>
+            </Pressable>
+          </View>
+        </View>
       )}
 
       {/* Classificação final da partida — overlay (não Modal: Modal + orientação
@@ -535,4 +552,6 @@ const s = StyleSheet.create({
   resultLaps: { color: colors.textMuted, fontSize: 11, fontWeight: '600' },
   resultBtn: { marginTop: spacing.m, backgroundColor: colors.racingBlue, borderRadius: radius.m, paddingVertical: 14, alignItems: 'center' },
   resultBtnText: { color: '#fff', fontSize: 14, fontWeight: '900', letterSpacing: 1 },
+  confirmCancel: { paddingVertical: spacing.m, marginTop: spacing.xs, alignItems: 'center' },
+  confirmCancelText: { color: colors.textSecondary, fontSize: 14, fontWeight: '700' },
 });
