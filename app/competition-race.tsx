@@ -54,12 +54,15 @@ export default function CompetitionRace() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{
+    code?: string;
     trackId?: string;
     trackName?: string;
     simulate?: string;
   }>();
   const isDemo = params.simulate === '1';
-  const trackId = params.trackId ?? 'leandro-melo';
+  // Código da partida — define o canal Realtime. Quem tem o mesmo código
+  // entra na mesma corrida. No demo não precisa (rivais são simulados).
+  const matchCode = (params.code ?? '').toUpperCase();
 
   useLockLandscape();
 
@@ -108,12 +111,12 @@ export default function CompetitionRace() {
         Alert.alert('Erro', e?.message ?? 'Falha ao iniciar GPS');
       }
 
-      if (!isDemo) {
+      if (!isDemo && matchCode) {
         const pid = await ensurePilot().catch(() => null);
         if (pid) pilotIdRef.current = pid;
         if (alive) {
           matchRef.current = joinMatch(
-            trackId,
+            matchCode,
             () => buildMyState(),
             (list) => {
               if (!alive) return;
@@ -273,6 +276,12 @@ export default function CompetitionRace() {
             </View>
             <Text style={s.pilotsCount}>{nPilots} PILOTOS</Text>
           </View>
+          {!!matchCode && (
+            <View style={s.codePill}>
+              <Text style={s.codePillLabel}>CÓDIGO DA PARTIDA</Text>
+              <Text style={s.codePillValue}>{matchCode}</Text>
+            </View>
+          )}
 
           <View style={s.mapWrap}>
             <Svg width="100%" height="100%" viewBox="0 0 340 250">
@@ -389,6 +398,20 @@ const s = StyleSheet.create({
   liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.danger },
   liveTagText: { color: colors.textSecondary, fontSize: 12, fontWeight: '800', fontStyle: 'italic', letterSpacing: 1.2 },
   pilotsCount: { color: colors.textSecondary, fontSize: 12, fontWeight: '800', letterSpacing: 1 },
+  codePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: spacing.s,
+    paddingVertical: 6,
+    paddingHorizontal: spacing.m,
+    borderRadius: radius.s,
+    backgroundColor: 'rgba(47,107,255,0.10)',
+    borderWidth: 1,
+    borderColor: colors.racingBlue,
+  },
+  codePillLabel: { color: colors.textSecondary, fontSize: 10, fontWeight: '800', letterSpacing: 1 },
+  codePillValue: { color: colors.racingBlue, fontSize: 18, fontWeight: '900', letterSpacing: 3, fontVariant: ['tabular-nums'] },
   mapWrap: { flex: 1, marginVertical: spacing.s },
   legendRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.l },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },

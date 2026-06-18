@@ -1,20 +1,32 @@
 import { getSupabase } from './supabase';
 
 /**
- * Sincronização de "partida" ao vivo entre pilotos na MESMA pista.
+ * Sincronização de "partida" ao vivo entre pilotos, por CÓDIGO de partida.
  *
- * Modelo leve: cada piloto entra num canal Realtime `match:<trackId>` e faz
+ * Modelo leve: cada piloto entra num canal Realtime `match:<code>` e faz
  * BROADCAST da própria posição a ~1.4Hz. Todos recebem a posição de todos —
  * sem tabela, sem RLS, efêmero. Quem para de transmitir some em 5s.
  *
- * Auto-match por pista: todo mundo gravando no mesmo kartódromo cai na mesma
- * partida automaticamente, sem lobby/código. Perfeito pra um grupo de testes
- * num mesmo kartódromo.
+ * Fluxo: um piloto CRIA a partida (gera um código de 6 dígitos) e compartilha;
+ * os outros DIGITAM o código pra entrar na mesma corrida. Como o canal é só o
+ * nome `match:<code>`, não precisa persistir nada — quem tem o código entra.
  *
  * Depende do Supabase configurado (env vars) E do projeto ATIVO (não pausado).
  * Sem Supabase, joinMatch vira no-op e o piloto corre sozinho (a UI cai pro
  * fallback demo quando não há peers).
  */
+
+// Alfabeto sem caracteres ambíguos (0/O, 1/I) — código fácil de ditar/digitar.
+const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+/** Gera um código de partida de 6 caracteres (ex: "K7P2QX"). */
+export function generateMatchCode(len = 6): string {
+  let out = '';
+  for (let i = 0; i < len; i++) {
+    out += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
+  }
+  return out;
+}
 
 export type MatchPeerState = {
   pilotId: string;
@@ -34,19 +46,19 @@ export type MatchHandle = { leave: () => void };
 const STALE_MS = 5000;
 
 export function joinMatch(
-  trackId: string,
+  code: string,
   getMyState: () => MatchPeerState | null,
   onPeers: (peers: MatchPeerState[]) => void
 ): MatchHandle {
   const supabase = getSupabase();
-  if (!supabase || !trackId) {
+  if (!supabase || !code) {
     return { leave: () => {} };
   }
 
   const peers = new Map<string, MatchPeerState>();
   let subscribed = false;
 
-  const channel = supabase.channel(`match:${trackId}`, {
+  const channel = supabase.channel(`match:${code.toUpperCase()}`, {
     config: { broadcast: { self: false } },
   });
 

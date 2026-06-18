@@ -4,6 +4,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
   Pressable,
 } from 'react-native';
@@ -11,9 +12,8 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { RACE_TRACK } from '../src/lib/raceTrack';
-import { TRACKS } from '../src/data/tracks';
+import { generateMatchCode } from '../src/lib/match';
 import { getProfile } from '../src/storage/profile';
-import { Icon } from '../src/components/ui';
 import { colors, radius, spacing } from '../src/theme';
 
 const BLUE = colors.racingBlue;
@@ -123,9 +123,8 @@ export default function Competition() {
   const [karts, setKarts] = useState<Kart[]>(() => makeKarts(null));
   const [events, setEvents] = useState<RaceEvent[]>([]);
   const [elapsed, setElapsed] = useState(0);
-  const [trackId, setTrackId] = useState<string>(TRACKS[0].id);
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const selectedTrack = TRACKS.find((t) => t.id === trackId) ?? TRACKS[0];
+  const [joinOpen, setJoinOpen] = useState(false);
+  const [codeInput, setCodeInput] = useState('');
 
   const kartsRef = useRef<Kart[]>(karts);
   const orderRef = useRef<string[]>([]); // ids na ordem da última atualização
@@ -273,25 +272,30 @@ export default function Competition() {
         <Text style={s.title}>COMPETIÇÃO</Text>
         <Text style={s.sub}>{onTrack} karts na pista agora</Text>
 
-        {/* Seletor de pista + iniciar corrida real */}
-        <Pressable style={s.trackChip} onPress={() => setPickerOpen(true)}>
-          <Icon name="map" size={16} color={colors.racingBlue} />
-          <Text style={s.trackChipText} numberOfLines={1}>{selectedTrack.shortName ?? selectedTrack.name}</Text>
-          <Icon name="chevron-right" size={16} color={colors.textMuted} />
-        </Pressable>
+        {/* Criar partida (gera código) ou entrar com código */}
         <Pressable
           style={({ pressed }) => [s.startBtn, pressed && { opacity: 0.85 }]}
           onPress={() =>
             router.push({
               pathname: '/competition-race',
-              params: { trackId: selectedTrack.id, trackName: selectedTrack.shortName ?? selectedTrack.name },
+              params: { code: generateMatchCode() },
             } as any)
           }
         >
-          <Text style={s.startBtnText}>▶  INICIAR CORRIDA AO VIVO</Text>
+          <Text style={s.startBtnText}>▶  CRIAR PARTIDA</Text>
+        </Pressable>
+        <Pressable
+          style={({ pressed }) => [s.joinBtn, pressed && { opacity: 0.85 }]}
+          onPress={() => {
+            setCodeInput('');
+            setJoinOpen(true);
+          }}
+        >
+          <Text style={s.joinBtnText}>ENTRAR COM CÓDIGO</Text>
         </Pressable>
         <Text style={s.startHint}>
-          Todos que entrarem na corrida nesta pista aparecem no seu mapa ao vivo.
+          Crie a partida e compartilhe o código. Quem digitar o código entra na MESMA
+          corrida e aparece no seu mapa ao vivo.
         </Text>
 
         {/* Mini-mapa da pista com os karts ao vivo */}
@@ -368,29 +372,38 @@ export default function Competition() {
         </Text>
       </ScrollView>
 
-      {/* Picker de pista */}
-      <Modal visible={pickerOpen} transparent animationType="slide" onRequestClose={() => setPickerOpen(false)}>
-        <Pressable style={s.modalBg} onPress={() => setPickerOpen(false)}>
-          <View style={[s.modalSheet, { paddingBottom: insets.bottom + spacing.l }]}>
-            <Text style={s.modalTitle}>Escolha o kartódromo</Text>
-            <ScrollView style={{ maxHeight: 360 }}>
-              {TRACKS.map((t) => (
-                <Pressable
-                  key={t.id}
-                  style={[s.trackRow, t.id === trackId && s.trackRowActive]}
-                  onPress={() => {
-                    setTrackId(t.id);
-                    setPickerOpen(false);
-                  }}
-                >
-                  <Text style={[s.trackRowName, t.id === trackId && { color: BLUE }]}>
-                    {t.shortName ?? t.name}
-                  </Text>
-                  <Text style={s.trackRowCity}>{t.city}</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-          </View>
+      {/* Entrar com código */}
+      <Modal visible={joinOpen} transparent animationType="slide" onRequestClose={() => setJoinOpen(false)}>
+        <Pressable style={s.modalBg} onPress={() => setJoinOpen(false)}>
+          <Pressable style={[s.modalSheet, { paddingBottom: insets.bottom + spacing.l }]} onPress={() => {}}>
+            <Text style={s.modalTitle}>Entrar com código</Text>
+            <Text style={s.modalSub}>Digite o código que quem criou a partida compartilhou.</Text>
+            <TextInput
+              style={s.codeInput}
+              value={codeInput}
+              onChangeText={(t) => setCodeInput(t.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6))}
+              placeholder="K7P2QX"
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              maxLength={6}
+            />
+            <Pressable
+              style={({ pressed }) => [
+                s.startBtn,
+                { marginTop: spacing.m },
+                codeInput.length < 4 && { opacity: 0.4 },
+                pressed && { opacity: 0.85 },
+              ]}
+              disabled={codeInput.length < 4}
+              onPress={() => {
+                setJoinOpen(false);
+                router.push({ pathname: '/competition-race', params: { code: codeInput } } as any);
+              }}
+            >
+              <Text style={s.startBtnText}>ENTRAR NA CORRIDA</Text>
+            </Pressable>
+          </Pressable>
         </Pressable>
       </Modal>
     </View>
@@ -427,7 +440,18 @@ const s = StyleSheet.create({
     shadowColor: BLUE, shadowOpacity: 0.45, shadowRadius: 14, shadowOffset: { width: 0, height: 4 },
   },
   startBtnText: { color: '#fff', fontSize: 16, fontWeight: '900', fontStyle: 'italic', letterSpacing: 0.5 },
+  joinBtn: {
+    marginTop: spacing.s, borderRadius: radius.m, paddingVertical: 14, alignItems: 'center',
+    backgroundColor: colors.bgElevated, borderWidth: 1, borderColor: colors.border,
+  },
+  joinBtnText: { color: colors.textPrimary, fontSize: 14, fontWeight: '800', letterSpacing: 0.5 },
   startHint: { color: colors.textMuted, fontSize: 12, marginTop: spacing.s, lineHeight: 16 },
+  modalSub: { color: colors.textSecondary, fontSize: 13, marginBottom: spacing.m, lineHeight: 18 },
+  codeInput: {
+    backgroundColor: colors.bgElevated, borderWidth: 1, borderColor: colors.border, borderRadius: radius.m,
+    paddingVertical: 14, paddingHorizontal: spacing.l, color: colors.textPrimary,
+    fontSize: 26, fontWeight: '900', letterSpacing: 8, textAlign: 'center',
+  },
 
   modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
   modalSheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, padding: spacing.l },
