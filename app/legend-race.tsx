@@ -118,7 +118,7 @@ export default function LegendRace() {
         </Pressable>
         <View style={{ flex: 1, alignItems: 'center' }}>
           <Text style={s.vsTitle}>VS {legend.name.toUpperCase()}</Text>
-          <Text style={s.fantasma}>fantasma {fmtSec(legend.lapMs)}</Text>
+          <Text style={s.fantasma}>recorde {fmtSec(legend.lapMs)}</Text>
         </View>
         <View style={[s.helmetDot, { backgroundColor: legend.helmet }]} />
       </View>
@@ -142,7 +142,7 @@ export default function LegendRace() {
       {/* Gap */}
       <View style={s.gapCard}>
         <View>
-          <Text style={s.gapLabel}>GAP PRO FANTASMA</Text>
+          <Text style={s.gapLabel}>GAP PRO RECORDE</Text>
           <Text style={[s.gapValue, { color: gapMs <= 0 ? colors.success : colors.danger }]}>
             {gapMs <= 0 ? '−' : '+'}{Math.abs(gapMs / 1000).toFixed(2)}s
           </Text>

@@ -34,7 +34,7 @@ export default function Legends() {
       </Pressable>
 
       <Text style={s.title}>MODO LENDAS</Text>
-      <Text style={s.subtitle}>Corra contra o fantasma dos maiores — no tempo convertido pra kart.</Text>
+      <Text style={s.subtitle}>Bata o recorde dos maiores — no tempo convertido pra kart.</Text>
 
       <ScrollView style={{ marginTop: spacing.l }} contentContainerStyle={{ paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
         {LEGENDS.map((l) => {

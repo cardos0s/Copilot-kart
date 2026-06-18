@@ -142,6 +142,7 @@ export default function RootLayout() {
             <Stack.Screen name="legends" options={{ headerShown: false }} />
             <Stack.Screen name="legend-race" options={{ headerShown: false }} />
             <Stack.Screen name="ranking" options={{ headerShown: false }} />
+            <Stack.Screen name="competition" options={{ headerShown: false }} />
           </Stack>
           {!ready && (
             <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>

@@ -295,7 +295,7 @@ export default function Home() {
           </Card>
         )}
 
-        {/* Modos lado a lado: Lendas + Ranking */}
+        {/* Modos lado a lado: Lendas + Competição */}
         <View style={s.modesRow}>
           <Pressable
             style={({ pressed }) => [s.modeCard, pressed && { opacity: 0.85 }]}
@@ -305,17 +305,17 @@ export default function Home() {
               <Text style={s.modeEmoji}>⚔️</Text>
             </View>
             <Text style={s.modeTitle}>LENDAS</Text>
-            <Text style={s.modeSub}>vs fantasma de Senna & cia</Text>
+            <Text style={s.modeSub}>bata o recorde de Senna & cia</Text>
           </Pressable>
           <Pressable
             style={({ pressed }) => [s.modeCard, pressed && { opacity: 0.85 }]}
-            onPress={() => router.push('/ranking' as any)}
+            onPress={() => router.push('/competition' as any)}
           >
             <View style={[s.modeIcon, { backgroundColor: 'rgba(0,255,136,0.10)', borderColor: colors.success }]}>
               <Text style={s.modeEmoji}>🏁</Text>
             </View>
-            <Text style={s.modeTitle}>RANKING</Text>
-            <Text style={s.modeSub}>corra ao vivo no ranking</Text>
+            <Text style={s.modeTitle}>COMPETIÇÃO</Text>
+            <Text style={s.modeSub}>partida ao vivo na pista</Text>
           </Pressable>
         </View>
 
