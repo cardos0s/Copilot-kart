@@ -10,6 +10,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { RACE_TRACK, RACE_IN } from '../src/lib/raceTrack';
 import { legendById, LEGENDS } from '../src/data/legends';
+import { useLockLandscape } from '../src/hooks/useLockLandscape';
 import { colors, radius, spacing } from '../src/theme';
 
 const BLUE = colors.racingBlue;
@@ -25,6 +26,8 @@ export default function LegendRace() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ id?: string }>();
   const legend = legendById(params.id) ?? LEGENDS[0];
+
+  useLockLandscape();
 
   // Pace do piloto: às vezes ganha de raspão, geralmente perde por pouco.
   const yourLapMs = useMemo(() => {
@@ -110,70 +113,86 @@ export default function LegendRace() {
   const beat = marginMs < 0;
 
   return (
-    <View style={[s.root, { paddingTop: insets.top + spacing.s }]}>
-      {/* Header */}
-      <View style={s.header}>
-        <Pressable onPress={() => router.back()} hitSlop={16}>
-          <Text style={s.backIcon}>‹</Text>
-        </Pressable>
-        <View style={{ flex: 1, alignItems: 'center' }}>
-          <Text style={s.vsTitle}>VS {legend.name.toUpperCase()}</Text>
-          <Text style={s.fantasma}>recorde {fmtSec(legend.lapMs)}</Text>
+    <View style={[s.root, { paddingTop: insets.top + spacing.s, paddingLeft: insets.left + spacing.l, paddingRight: insets.right + spacing.l, paddingBottom: insets.bottom + spacing.s }]}>
+      <Pressable onPress={() => router.back()} hitSlop={16} style={[s.close, { top: insets.top + spacing.xs }]}>
+        <Text style={s.backIcon}>‹</Text>
+      </Pressable>
+
+      <View style={s.body}>
+        {/* ===== ESQUERDA: mapa (você + lenda) ===== */}
+        <View style={s.left}>
+          <View style={s.head}>
+            <View style={s.liveTag}>
+              <View style={[s.helmetDot, { backgroundColor: legend.helmet }]} />
+              <Text style={s.vsTitle}>VS {legend.name.toUpperCase()}</Text>
+            </View>
+            <Text style={s.recorde}>recorde {fmtSec(legend.lapMs)}</Text>
+          </View>
+
+          <View style={s.mapWrap}>
+            <View style={s.mapBox}>
+              <Svg width={340} height={250} viewBox="0 0 340 250">
+                <Path d={RACE_TRACK.d} stroke="#23232e" strokeWidth={20} fill="none" strokeLinejoin="round" strokeLinecap="round" />
+                <Path d={RACE_TRACK.d} stroke="#3a3a48" strokeWidth={1.5} fill="none" strokeDasharray="2 10" />
+              </Svg>
+              <Animated.View style={[s.ghostDot, { borderColor: legend.helmet }, legStyle]} />
+              <Animated.View style={[s.dot, { backgroundColor: BLUE }, youStyle]} />
+            </View>
+          </View>
+
+          <View style={s.legendRow}>
+            <View style={s.legendItem}><View style={[s.ldot, { backgroundColor: BLUE }]} /><Text style={s.ltext}>VOCÊ</Text></View>
+            <View style={s.legendItem}><View style={[s.ldot, { backgroundColor: legend.helmet }]} /><Text style={s.ltext}>{legend.short.toUpperCase()}</Text></View>
+          </View>
         </View>
-        <View style={[s.helmetDot, { backgroundColor: legend.helmet }]} />
+
+        <View style={s.divider} />
+
+        {/* ===== DIREITA: velocímetro + gap pro recorde ===== */}
+        <View style={s.right}>
+          <View style={s.speedRow}>
+            <View style={s.speedNumWrap}>
+              <Text style={s.speedNum}>{speed}</Text>
+              <Text style={s.speedUnit}>km/h</Text>
+            </View>
+            <Text style={s.speedLabel}>VELOCIDADE</Text>
+          </View>
+
+          <View style={s.gapCard}>
+            <View>
+              <Text style={s.gapLabel}>GAP PRO RECORDE</Text>
+              <Text style={[s.gapValue, { color: gapMs <= 0 ? colors.success : colors.danger }]}>
+                {gapMs <= 0 ? '−' : '+'}{Math.abs(gapMs / 1000).toFixed(2)}s
+              </Text>
+            </View>
+            <View style={{ alignItems: 'flex-end' }}>
+              <Text style={s.gapLabel}>{gapMs <= 0 ? 'NA FRENTE DE' : 'ATRÁS DE'}</Text>
+              <Text style={s.gapWho}>{legend.short}</Text>
+            </View>
+          </View>
+
+          <View style={s.statsRow}>
+            <View style={s.stat}>
+              <Text style={s.statLabel}>SUA VOLTA</Text>
+              <Text style={s.statValue}>{fmtSec(lapMs)}</Text>
+            </View>
+            <View style={s.stat}>
+              <Text style={s.statLabel}>SEU RITMO</Text>
+              <Text style={[s.statValue, { color: colors.accentLime }]}>{fmtSec(yourLapMs)}</Text>
+            </View>
+          </View>
+
+          {(phase === 'ready' || phase === 'racing') && (
+            <Pressable
+              disabled={phase === 'racing'}
+              style={({ pressed }) => [s.cta, phase === 'racing' && { opacity: 0.5 }, pressed && { opacity: 0.9 }]}
+              onPress={beginCountdown}
+            >
+              <Text style={s.ctaText}>{phase === 'racing' ? 'CORRENDO…' : '🏁 DAR LARGADA'}</Text>
+            </Pressable>
+          )}
+        </View>
       </View>
-
-      {/* Mapa */}
-      <View style={s.mapWrap}>
-        <View style={s.mapBox}>
-          <Svg width={340} height={250} viewBox="0 0 340 250">
-            <Path d={RACE_TRACK.d} stroke="#2a2a36" strokeWidth={18} fill="none" strokeLinejoin="round" strokeLinecap="round" />
-            <Path d={RACE_TRACK.d} stroke="#3a3a48" strokeWidth={1.5} fill="none" strokeDasharray="2 10" />
-          </Svg>
-          <Animated.View style={[s.ghostDot, { borderColor: legend.helmet }, legStyle]} />
-          <Animated.View style={[s.dot, { backgroundColor: BLUE }, youStyle]} />
-        </View>
-        <View style={s.legendRow}>
-          <View style={s.legendItem}><View style={[s.ldot, { backgroundColor: BLUE }]} /><Text style={s.ltext}>VOCÊ</Text></View>
-          <View style={s.legendItem}><View style={[s.ldot, { backgroundColor: legend.helmet }]} /><Text style={s.ltext}>{legend.short.toUpperCase()}</Text></View>
-        </View>
-      </View>
-
-      {/* Gap */}
-      <View style={s.gapCard}>
-        <View>
-          <Text style={s.gapLabel}>GAP PRO RECORDE</Text>
-          <Text style={[s.gapValue, { color: gapMs <= 0 ? colors.success : colors.danger }]}>
-            {gapMs <= 0 ? '−' : '+'}{Math.abs(gapMs / 1000).toFixed(2)}s
-          </Text>
-        </View>
-        <View style={{ alignItems: 'flex-end' }}>
-          <Text style={s.gapLabel}>{gapMs <= 0 ? 'NA FRENTE DE' : 'ATRÁS DE'}</Text>
-          <Text style={s.gapWho}>{legend.short}</Text>
-        </View>
-      </View>
-
-      {/* Stats */}
-      <View style={s.stats}>
-        <Stat label="VELOCIDADE" value={`${speed}`} unit="km/h" />
-        <Stat label="SUA VOLTA" value={fmtSec(lapMs)} />
-        <Stat label="MELHOR" value={fmtSec(yourLapMs)} color={colors.accentLime} />
-      </View>
-
-      <View style={{ flex: 1 }} />
-
-      {/* Botão largada */}
-      {(phase === 'ready' || phase === 'racing') && (
-        <View style={[s.footer, { paddingBottom: insets.bottom + spacing.l }]}>
-          <Pressable
-            disabled={phase === 'racing'}
-            style={({ pressed }) => [s.cta, phase === 'racing' && { opacity: 0.5 }, pressed && { opacity: 0.9 }]}
-            onPress={beginCountdown}
-          >
-            <Text style={s.ctaText}>{phase === 'racing' ? 'CORRENDO…' : '🏁 DAR LARGADA'}</Text>
-          </Pressable>
-        </View>
-      )}
 
       {/* Countdown */}
       {phase === 'countdown' && (
@@ -229,15 +248,30 @@ function Stat({ label, value, unit, color }: { label: string; value: string; uni
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg, paddingHorizontal: spacing.l },
-  header: { flexDirection: 'row', alignItems: 'center', gap: spacing.s },
-  backIcon: { color: colors.textSecondary, fontSize: 30, fontWeight: '400', width: 24 },
-  vsTitle: { color: colors.textPrimary, fontSize: 15, fontWeight: '900', fontStyle: 'italic', letterSpacing: 0.5 },
-  fantasma: { color: colors.textMuted, fontSize: 11, fontWeight: '600', marginTop: 1 },
-  helmetDot: { width: 20, height: 20, borderRadius: 10 },
+  root: { flex: 1, backgroundColor: colors.bg },
+  close: { position: 'absolute', left: spacing.s, zIndex: 10, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  backIcon: { color: colors.textSecondary, fontSize: 30, fontWeight: '400' },
 
-  mapWrap: { alignItems: 'center', marginTop: spacing.l },
+  body: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.l },
+  left: { flex: 1.1, alignItems: 'center', justifyContent: 'center', gap: spacing.s },
+  right: { flex: 1, justifyContent: 'center', gap: spacing.m },
+  divider: { width: 1, alignSelf: 'stretch', backgroundColor: colors.border, marginVertical: spacing.l },
+
+  head: { alignItems: 'center' },
+  liveTag: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  vsTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: '900', fontStyle: 'italic', letterSpacing: 0.5 },
+  recorde: { color: colors.textMuted, fontSize: 11, fontWeight: '600', marginTop: 2 },
+  helmetDot: { width: 14, height: 14, borderRadius: 7 },
+
+  mapWrap: { alignItems: 'center' },
   mapBox: { width: 340, height: 250 },
+
+  speedRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
+  speedNumWrap: { flexDirection: 'row', alignItems: 'flex-end' },
+  speedNum: { color: colors.textPrimary, fontSize: 88, fontWeight: '900', letterSpacing: -3, lineHeight: 92, fontVariant: ['tabular-nums'] },
+  speedUnit: { color: colors.textSecondary, fontSize: 20, fontWeight: '700', marginBottom: 14, marginLeft: 6 },
+  speedLabel: { color: colors.textMuted, fontSize: 12, fontWeight: '800', letterSpacing: 1.5, marginBottom: 16 },
+  statsRow: { flexDirection: 'row', gap: spacing.s },
   dot: { position: 'absolute', left: 0, top: 0, width: DOT, height: DOT, borderRadius: DOT / 2, borderWidth: 2, borderColor: colors.bg },
   ghostDot: { position: 'absolute', left: 0, top: 0, width: GHOST, height: GHOST, borderRadius: GHOST / 2, borderWidth: 3, backgroundColor: 'transparent' },
   legendRow: { flexDirection: 'row', gap: spacing.xl, marginTop: spacing.s },
