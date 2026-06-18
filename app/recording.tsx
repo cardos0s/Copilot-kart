@@ -1146,7 +1146,7 @@ function IdleView({
       </View>
 
       <View style={s.silBox}>
-        {reference && reference.samples.length >= 2 ? (
+        {reference?.samples && reference.samples.length >= 2 ? (
           <TrackSilhouette
             samples={reference.samples}
             width={120}
