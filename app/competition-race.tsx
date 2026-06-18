@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Alert, InteractionManager, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
@@ -109,37 +109,43 @@ export default function CompetitionRace() {
   const demoTickRef = useRef<number>(0);
 
   // ---- Início: carrega perfil, começa gravação, entra na partida ----
+  // Adia GPS + Realtime pra DEPOIS da transição de navegação assentar
+  // (runAfterInteractions). Iniciar isso no mount, durante a animação de push,
+  // jankava a entrada e exigia "clicar duas vezes". Igual ao lock de orientação.
   useEffect(() => {
     let alive = true;
-    (async () => {
-      const prof = await getProfile().catch(() => null);
-      if (alive && prof?.name) setMyName(prof.name);
+    const task = InteractionManager.runAfterInteractions(() => {
+      (async () => {
+        const prof = await getProfile().catch(() => null);
+        if (alive && prof?.name) setMyName(prof.name);
 
-      try {
-        await start({ simulate: isDemo });
-      } catch (e: any) {
-        Alert.alert('Erro', e?.message ?? 'Falha ao iniciar GPS');
-      }
-
-      if (!isDemo && matchCode) {
-        const pid = await ensurePilot().catch(() => null);
-        if (pid) pilotIdRef.current = pid;
-        if (alive) {
-          matchRef.current = joinMatch(
-            matchCode,
-            () => buildMyState(),
-            (list) => {
-              if (!alive) return;
-              setPeers(
-                list.map((p, i) => ({ ...p, isMe: false, color: KART_COLORS[(p.colorIdx ?? i) % KART_COLORS.length] }))
-              );
-            }
-          );
+        try {
+          await start({ simulate: isDemo });
+        } catch (e: any) {
+          Alert.alert('Erro', e?.message ?? 'Falha ao iniciar GPS');
         }
-      }
-    })();
+
+        if (!isDemo && matchCode) {
+          const pid = await ensurePilot().catch(() => null);
+          if (pid) pilotIdRef.current = pid;
+          if (alive) {
+            matchRef.current = joinMatch(
+              matchCode,
+              () => buildMyState(),
+              (list) => {
+                if (!alive) return;
+                setPeers(
+                  list.map((p, i) => ({ ...p, isMe: false, color: KART_COLORS[(p.colorIdx ?? i) % KART_COLORS.length] }))
+                );
+              }
+            );
+          }
+        }
+      })();
+    });
     return () => {
       alive = false;
+      task.cancel();
       matchRef.current?.leave();
       stop();
     };
@@ -402,8 +408,9 @@ export default function CompetitionRace() {
         <View style={s.loading}><Text style={s.loadingText}>abrindo GPS…</Text></View>
       )}
 
-      {/* Classificação final da partida */}
-      <Modal visible={!!finished} animationType="fade" transparent onRequestClose={() => router.back()}>
+      {/* Classificação final da partida — overlay (não Modal: Modal + orientação
+          travada crasha no iOS com New Architecture). */}
+      {finished && (
         <View style={s.resultBackdrop}>
           <View style={s.resultCard}>
             <Text style={s.resultKicker}>FIM DA PARTIDA</Text>
@@ -432,7 +439,7 @@ export default function CompetitionRace() {
             </Pressable>
           </View>
         </View>
-      </Modal>
+      )}
     </View>
   );
 }
@@ -514,7 +521,7 @@ const s = StyleSheet.create({
   loadingText: { color: colors.textMuted, fontSize: 12, fontStyle: 'italic' },
 
   // ===== Resultado / classificação final =====
-  resultBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center', padding: spacing.l },
+  resultBackdrop: { ...StyleSheet.absoluteFillObject, zIndex: 100, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center', padding: spacing.l },
   resultCard: { width: '100%', maxWidth: 460, backgroundColor: colors.bg, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, padding: spacing.l },
   resultKicker: { color: colors.danger, fontSize: 11, fontWeight: '900', letterSpacing: 2, textAlign: 'center' },
   resultPos: { color: colors.textPrimary, fontSize: 24, fontWeight: '900', fontStyle: 'italic', textAlign: 'center', marginTop: 4 },
