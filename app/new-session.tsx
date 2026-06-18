@@ -179,6 +179,27 @@ export default function NewSession() {
         </Text>
       </View>
 
+      {/* Pista livre — grava sem kartódromo cadastrado. Ideal pra testar
+        * dirigindo (carro/rua): velocímetro, GPS e detecção de volta rodam
+        * normalmente, só não há referência/setores de pista. */}
+      <Pressable
+        onPress={() =>
+          router.push({ pathname: '/recording' as any, params: { trackName: 'Treino livre' } })
+        }
+        style={({ pressed }) => [s.freeCard, pressed && { opacity: 0.9 }]}
+      >
+        <View style={s.freeIcon}>
+          <Text style={{ fontSize: 22 }}>🚗</Text>
+        </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={s.freeTitle}>Pista livre</Text>
+          <Text style={s.freeSub} numberOfLines={2}>
+            Grave em qualquer lugar, sem kartódromo. Velocímetro, voltas e GPS rodando.
+          </Text>
+        </View>
+        <Text style={s.chevron}>›</Text>
+      </Pressable>
+
       <View style={s.searchBox}>
         <Text style={s.searchIcon}>🔍</Text>
         <TextInput
@@ -277,6 +298,28 @@ const s = StyleSheet.create({
     marginTop: spacing.s,
     lineHeight: 19,
   },
+  freeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.m,
+    marginHorizontal: spacing.xl,
+    marginBottom: spacing.l,
+    padding: spacing.m,
+    backgroundColor: 'rgba(47,107,255,0.10)',
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: radius.l,
+  },
+  freeIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.m,
+    backgroundColor: colors.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  freeTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: '800' },
+  freeSub: { color: colors.textSecondary, fontSize: 12, marginTop: 2, lineHeight: 16 },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
