@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { LEGENDS, LEVEL_COLOR, type Legend } from '../src/data/legends';
+import { useDefeatedLegends } from '../src/storage/legendsDefeated';
 import { colors, radius, spacing } from '../src/theme';
 
 const BLUE = colors.racingBlue;
@@ -26,6 +27,10 @@ export default function Legends() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [selected, setSelected] = useState<Legend>(LEGENDS[0]);
+  const { defeated, reload } = useDefeatedLegends();
+  // Recarrega a coleção ao voltar de uma corrida (pode ter vencido uma lenda).
+  useFocusEffect(useCallback(() => { reload(); }, [reload]));
+  const wonCount = Object.keys(defeated).length;
 
   return (
     <View style={[s.root, { paddingTop: insets.top + spacing.s }]}>
@@ -35,10 +40,15 @@ export default function Legends() {
 
       <Text style={s.title}>MODO LENDAS</Text>
       <Text style={s.subtitle}>Bata o recorde dos maiores — no tempo convertido pra kart.</Text>
+      <View style={s.collectBar}>
+        <Text style={s.collectText}>LENDAS VENCIDAS</Text>
+        <Text style={s.collectCount}>{wonCount}<Text style={s.collectTotal}> / {LEGENDS.length}</Text></Text>
+      </View>
 
       <ScrollView style={{ marginTop: spacing.l }} contentContainerStyle={{ paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
         {LEGENDS.map((l) => {
           const active = selected.id === l.id;
+          const won = defeated[l.id];
           return (
             <Pressable
               key={l.id}
@@ -47,13 +57,22 @@ export default function Legends() {
             >
               <View style={s.helmetBox}>
                 <HelmetIcon color={l.helmet} />
+                {won && (
+                  <View style={s.wonCheck}><Text style={s.wonCheckText}>✓</Text></View>
+                )}
               </View>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={s.name} numberOfLines={1}>{l.name}</Text>
                 <View style={s.metaRow}>
-                  <View style={[s.levelBadge, { backgroundColor: `${LEVEL_COLOR[l.level]}22` }]}>
-                    <Text style={[s.levelText, { color: LEVEL_COLOR[l.level] }]}>{l.level.toUpperCase()}</Text>
-                  </View>
+                  {won ? (
+                    <View style={s.wonBadge}>
+                      <Text style={s.wonBadgeText}>VENCIDA · {fmtLap(won.yourBestMs)}</Text>
+                    </View>
+                  ) : (
+                    <View style={[s.levelBadge, { backgroundColor: `${LEVEL_COLOR[l.level]}22` }]}>
+                      <Text style={[s.levelText, { color: LEVEL_COLOR[l.level] }]}>{l.level.toUpperCase()}</Text>
+                    </View>
+                  )}
                   <Text style={s.country}>{l.country}</Text>
                 </View>
               </View>
@@ -84,8 +103,16 @@ const s = StyleSheet.create({
   backIcon: { color: colors.textSecondary, fontSize: 30, fontWeight: '400' },
   title: { color: colors.textPrimary, fontSize: 24, fontWeight: '900', fontStyle: 'italic', letterSpacing: 0.5, marginTop: spacing.s },
   subtitle: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, marginTop: spacing.s },
+  collectBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.m, paddingHorizontal: spacing.m, paddingVertical: spacing.s, backgroundColor: colors.surface, borderRadius: radius.m },
+  collectText: { color: colors.textMuted, fontSize: 10, fontWeight: '800', letterSpacing: 1 },
+  collectCount: { color: colors.success, fontSize: 18, fontWeight: '900', fontStyle: 'italic' },
+  collectTotal: { color: colors.textMuted, fontSize: 13, fontWeight: '800' },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.m, padding: spacing.m, marginBottom: spacing.s, backgroundColor: colors.surface, borderRadius: radius.l, borderWidth: 1.5, borderColor: 'transparent' },
   helmetBox: { width: 48, height: 48, borderRadius: 12, backgroundColor: colors.bgElevated, alignItems: 'center', justifyContent: 'center' },
+  wonCheck: { position: 'absolute', top: -4, right: -4, width: 18, height: 18, borderRadius: 9, backgroundColor: colors.success, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.surface },
+  wonCheckText: { color: '#04210f', fontSize: 10, fontWeight: '900' },
+  wonBadge: { borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 2, backgroundColor: `${colors.success}22` },
+  wonBadgeText: { color: colors.success, fontSize: 9, fontWeight: '900', letterSpacing: 0.5, fontVariant: ['tabular-nums'] },
   name: { color: colors.textPrimary, fontSize: 16, fontWeight: '800' },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.s, marginTop: 4 },
   levelBadge: { borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 2 },

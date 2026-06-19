@@ -198,6 +198,18 @@ export default function Settings() {
             onPress={() => router.push('/legends' as any)}
             chevron
           />
+          <Divider />
+          <Row
+            label="⚔️ Corrida vs Lenda (demo)"
+            value="Simulada"
+            onPress={() =>
+              router.push({
+                pathname: '/legend-race',
+                params: { simulate: '1', id: 'senna' },
+              } as any)
+            }
+            chevron
+          />
         </Card>
 
         {/* Kart — só faz sentido pra quem tem kart próprio */}
