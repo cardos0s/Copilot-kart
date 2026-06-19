@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { useLapRecorder } from '../src/hooks/useLapRecorder';
 import { useLockLandscape } from '../src/hooks/useLockLandscape';
 import { RACE_TRACK } from '../src/lib/raceTrack';
@@ -287,9 +288,50 @@ export default function CompetitionRace() {
     matchRef.current?.leave();
     matchRef.current = null;
     stop();
+    // Corrida acabou: libera a orientação. O resultado passa a seguir o device
+    // (no kart, deitado; na mão, em pé), sem o conflito de ficar travado em
+    // landscape enquanto o device está em portrait — que é o que travava.
+    ScreenOrientation.unlockAsync().catch(() => {});
   };
 
   const myFinalPos = finished ? finished.findIndex((k) => k.isMe) + 1 : 0;
+
+  // Acabou a corrida: renderiza SÓ o ranking (sem o HUD ao vivo — mapa SVG,
+  // gradiente, loop de re-render). Manter o HUD ao vivo embaixo do overlay
+  // durante a troca de orientação pendurava a thread no device (no simulador,
+  // mais rápido, passava). Tela limpa = sem trava.
+  if (finished) {
+    return (
+      <View style={[s.root, { paddingTop: insets.top + spacing.s, paddingLeft: insets.left + spacing.l, paddingRight: insets.right + spacing.l, paddingBottom: insets.bottom + spacing.s }]}>
+        <View style={s.resultBackdrop}>
+          <View style={s.resultCard}>
+            <Text style={s.resultKicker}>FIM DA PARTIDA</Text>
+            <Text style={s.resultPos}>
+              VOCÊ TERMINOU EM <Text style={{ color: colors.accentLime }}>P{myFinalPos}</Text>
+            </Text>
+            <Text style={s.resultSub}>de {finished.length} pilotos</Text>
+            <ScrollView style={s.resultList} showsVerticalScrollIndicator={false}>
+              {finished.map((k, i) => (
+                <View key={k.pilotId} style={[s.resultRow, k.isMe && s.resultRowMe]}>
+                  <Text style={[s.resultRowPos, i < 3 && { color: ['#F5C84B', '#C9D2DE', '#D98A4B'][i] }]}>
+                    {i + 1}
+                  </Text>
+                  <View style={[s.resultDot, { backgroundColor: k.isMe ? colors.racingBlue : k.color }]} />
+                  <Text style={[s.resultName, k.isMe && { color: colors.racingBlue }]} numberOfLines={1}>
+                    {k.name}{k.isMe ? ' (você)' : ''}
+                  </Text>
+                  <Text style={s.resultLaps}>{Math.max(1, k.lapNumber)}ª volta</Text>
+                </View>
+              ))}
+            </ScrollView>
+            <Pressable style={({ pressed }) => [s.resultBtn, pressed && { opacity: 0.85 }]} onPress={() => router.back()}>
+              <Text style={s.resultBtnText}>SAIR</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={[s.root, { paddingTop: insets.top + spacing.s, paddingLeft: insets.left + spacing.l, paddingRight: insets.right + spacing.l, paddingBottom: insets.bottom + spacing.s }]}>
@@ -433,38 +475,6 @@ export default function CompetitionRace() {
         </View>
       )}
 
-      {/* Classificação final da partida — overlay (não Modal: Modal + orientação
-          travada crasha no iOS com New Architecture). */}
-      {finished && (
-        <View style={s.resultBackdrop}>
-          <View style={s.resultCard}>
-            <Text style={s.resultKicker}>FIM DA PARTIDA</Text>
-            <Text style={s.resultPos}>
-              VOCÊ TERMINOU EM <Text style={{ color: colors.accentLime }}>P{myFinalPos}</Text>
-            </Text>
-            <Text style={s.resultSub}>de {finished?.length ?? 0} pilotos</Text>
-
-            <ScrollView style={s.resultList} showsVerticalScrollIndicator={false}>
-              {(finished ?? []).map((k, i) => (
-                <View key={k.pilotId} style={[s.resultRow, k.isMe && s.resultRowMe]}>
-                  <Text style={[s.resultRowPos, i < 3 && { color: ['#F5C84B', '#C9D2DE', '#D98A4B'][i] }]}>
-                    {i + 1}
-                  </Text>
-                  <View style={[s.resultDot, { backgroundColor: k.isMe ? colors.racingBlue : k.color }]} />
-                  <Text style={[s.resultName, k.isMe && { color: colors.racingBlue }]} numberOfLines={1}>
-                    {k.name}{k.isMe ? ' (você)' : ''}
-                  </Text>
-                  <Text style={s.resultLaps}>{Math.max(1, k.lapNumber)}ª volta</Text>
-                </View>
-              ))}
-            </ScrollView>
-
-            <Pressable style={({ pressed }) => [s.resultBtn, pressed && { opacity: 0.85 }]} onPress={() => router.back()}>
-              <Text style={s.resultBtnText}>SAIR</Text>
-            </Pressable>
-          </View>
-        </View>
-      )}
     </View>
   );
 }
