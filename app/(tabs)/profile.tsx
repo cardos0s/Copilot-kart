@@ -203,6 +203,21 @@ export default function Profile() {
           </View>
         </View>
 
+        {/* Pilot DNA — identidade técnica agregada das sessões */}
+        <Pressable
+          onPress={() => router.push('/pilot-dna' as any)}
+          style={({ pressed }) => [s.dnaCard, pressed && { opacity: 0.85 }]}
+        >
+          <View style={s.dnaIcon}>
+            <Text style={{ fontSize: 20 }}>🧬</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={s.dnaTitle}>PILOT DNA</Text>
+            <Text style={s.dnaSub}>Seu estilo de pilotagem, lido das suas voltas</Text>
+          </View>
+          <Text style={s.dnaChevron}>›</Text>
+        </Pressable>
+
         {/* Nível */}
         <View style={s.levelCard}>
           <View style={s.levelTop}>
@@ -341,6 +356,29 @@ const s = StyleSheet.create({
   bestLap: { color: colors.textPrimary, fontSize: 24, fontWeight: '900', letterSpacing: -0.5, marginTop: 2, fontVariant: ['tabular-nums'] },
   bestMeta: { color: colors.textSecondary, fontSize: 12, marginTop: 1, fontWeight: '600' },
   bestEmpty: { color: colors.textSecondary, fontSize: 13, marginTop: 4 },
+
+  dnaCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.m,
+    marginTop: spacing.m,
+    padding: spacing.m,
+    backgroundColor: 'rgba(47,107,255,0.10)',
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: radius.l,
+  },
+  dnaIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.m,
+    backgroundColor: colors.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dnaTitle: { color: colors.textPrimary, fontSize: 14, fontWeight: '800', letterSpacing: 1 },
+  dnaSub: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
+  dnaChevron: { color: colors.textMuted, fontSize: 22, fontWeight: '300' },
 
   levelCard: { marginTop: spacing.m, padding: spacing.l, backgroundColor: colors.surface, borderRadius: radius.l },
   levelTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
