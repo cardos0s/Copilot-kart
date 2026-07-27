@@ -6,6 +6,7 @@ import * as Location from 'expo-location';
 import Svg, { Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TRACKS, TrackRef, distanceKm, findTrackById } from '../src/data/tracks';
+import { addCustomTrack, listCustomTracks } from '../src/storage/customTracks';
 import { listAllLayoutsGrouped, TrackLayout } from '../src/storage/db';
 import { getProfile } from '../src/storage/profile';
 import { TrackSilhouette } from '../src/components/TrackSilhouette';
@@ -69,14 +70,17 @@ export default function NewSession() {
   const [locating, setLocating] = useState(true);
   const [layoutsByTrack, setLayoutsByTrack] = useState<Map<string, TrackLayout[]>>(new Map());
   const [homeTrackId, setHomeTrackId] = useState<string | null>(null);
+  const [customTracks, setCustomTracks] = useState<TrackRef[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    const [grouped, profile] = await Promise.all([
+    const [grouped, profile, customs] = await Promise.all([
       listAllLayoutsGrouped(),
       getProfile(),
+      listCustomTracks(),
     ]);
     setLayoutsByTrack(grouped);
+    setCustomTracks(customs);
     setHomeTrackId(profile?.homeTrackId ?? null);
     setLoading(false);
   }, []);
@@ -103,7 +107,7 @@ export default function NewSession() {
   }, []);
 
   const rows: TrackRow[] = useMemo(() => {
-    const all = TRACKS.map<TrackRow>((t) => {
+    const all = [...customTracks, ...TRACKS].map<TrackRow>((t) => {
       const layouts = layoutsByTrack.get(t.id) ?? [];
       // listAllLayoutsGrouped ordena: is_default DESC, recorded_at DESC.
       // O primeiro é o default (se houver).
@@ -117,7 +121,7 @@ export default function NewSession() {
         lat: t.lat,
         lng: t.lng,
         distanceKm:
-          userLat !== null && userLng !== null
+          userLat !== null && userLng !== null && !(t.lat === 0 && t.lng === 0)
             ? distanceKm(userLat, userLng, t.lat, t.lng)
             : null,
         defaultLayout,
@@ -159,6 +163,20 @@ export default function NewSession() {
         trackId: row.id,
         trackName: row.name,
       },
+    });
+  };
+
+  // Pista não catalogada → cria custom e segue o fluxo normal. Usa a posição
+  // atual como coordenada (quem cadastra costuma estar NA pista).
+  const handleAddCustomTrack = async () => {
+    const name = query.trim();
+    if (name.length < 3) return;
+    const track = await addCustomTrack({ name, lat: userLat, lng: userLng });
+    await load();
+    setQuery('');
+    router.push({
+      pathname: '/track-layouts-picker' as any,
+      params: { trackId: track.id, trackName: track.name },
     });
   };
 
@@ -249,7 +267,7 @@ export default function NewSession() {
                   {row.isHome && <Text style={s.homeBadge}>· casa</Text>}
                 </View>
                 <Text style={s.rowMeta} numberOfLines={1}>
-                  {row.city}, {row.state}
+                  {row.city ? `${row.city}, ${row.state}` : 'Pista personalizada'}
                   {row.distanceKm !== null && ` · ${Math.round(row.distanceKm)} km`}
                 </Text>
                 <View style={s.rowStatus}>
@@ -272,6 +290,27 @@ export default function NewSession() {
           ))}
           {rows.length === 0 && (
             <Text style={s.emptyText}>Nenhuma pista encontrada com "{query}"</Text>
+          )}
+
+          {/* Pista fora do catálogo → cadastra na hora e segue o fluxo */}
+          {query.trim().length >= 3 && (
+            <Pressable
+              onPress={handleAddCustomTrack}
+              style={({ pressed }) => [s.addCustomRow, pressed && { opacity: 0.85 }]}
+            >
+              <View style={s.addCustomIcon}>
+                <Text style={{ fontSize: 20, color: colors.primary }}>＋</Text>
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={s.addCustomTitle} numberOfLines={1}>
+                  Adicionar "{query.trim()}"
+                </Text>
+                <Text style={s.addCustomSub}>
+                  Sua pista não tá no catálogo? Cadastra e grava a primeira volta.
+                </Text>
+              </View>
+              <Text style={s.chevron}>›</Text>
+            </Pressable>
           )}
         </View>
       </ScrollView>
@@ -320,6 +359,27 @@ const s = StyleSheet.create({
   },
   freeTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: '800' },
   freeSub: { color: colors.textSecondary, fontSize: 12, marginTop: 2, lineHeight: 16 },
+  addCustomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.m,
+    marginTop: spacing.m,
+    padding: spacing.m,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    borderStyle: 'dashed',
+    borderRadius: radius.l,
+  },
+  addCustomIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.m,
+    backgroundColor: 'rgba(47,107,255,0.10)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addCustomTitle: { color: colors.textPrimary, fontSize: 15, fontWeight: '700' },
+  addCustomSub: { color: colors.textSecondary, fontSize: 12, marginTop: 2, lineHeight: 16 },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
