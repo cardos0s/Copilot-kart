@@ -27,6 +27,8 @@ import {
   repairDegenerateTimestamps,
 } from './analysis';
 import { buildReferenceLap } from './geometry';
+import { detectCorners } from './corners';
+import { CornerMetric, analyzeCorners } from './cornerAnalysis';
 import { getProfile } from '../storage/profile';
 import { buildHistoryContext, HistoryContext } from './historyContext';
 import { PilotContext } from './analysisPrompt';
@@ -40,6 +42,8 @@ export type CoachContext = {
   refDurationMs: number;
   /** Análise pronta pra enviar pro requestAiAnalysis. */
   analysis: ReturnType<typeof analyzeLap>;
+  /** Métricas por curva (azimute, ápice, delta) — [] se detecção falhou. */
+  cornerMetrics: CornerMetric[];
   /** Nome amigável da pista. */
   trackName: string;
   /** Perfil do piloto, se houver. */
@@ -128,6 +132,15 @@ export async function loadCoachContext(
     const matchedCurrent = matchLapToReference(lap, refLap);
     const analysis = analyzeLap(matchedCurrent, matchedRef, 20);
 
+    // Best-effort: coach funciona sem métricas de curva se a detecção falhar.
+    let cornerMetrics: CornerMetric[] = [];
+    try {
+      const corners = detectCorners(refLap);
+      cornerMetrics = analyzeCorners(corners, refLap, matchedCurrent, matchedRef);
+    } catch {
+      cornerMetrics = [];
+    }
+
     const profile = await getProfile();
     const pilot: PilotContext | null =
       profile && profile.name
@@ -149,6 +162,7 @@ export async function loadCoachContext(
         lap,
         refDurationMs,
         analysis,
+        cornerMetrics,
         trackName: session.trackName,
         pilot,
         history,

@@ -11,6 +11,7 @@
  */
 
 import { LapAnalysis, Sector } from './analysis';
+import { CornerMetric, fmtAzimuth } from './cornerAnalysis';
 import { HistoryContext } from './historyContext';
 
 export type PilotContext = {
@@ -35,6 +36,8 @@ export type AnalysisInput = {
   pilot?: PilotContext | null;
   /** Histórico do piloto nessa pista (opcional — só preenche se há sessões anteriores). */
   history?: HistoryContext | null;
+  /** Métricas por curva (azimute, ápice, delta) da volta vs referência. Opcional. */
+  cornerMetrics?: CornerMetric[] | null;
 };
 
 export type AnalysisPrompt = {
@@ -184,6 +187,45 @@ function buildHistoryBlock(
   return lines.join('\n');
 }
 
+/**
+ * Bloco de análise por curva. Só entra o que é acionável: as curvas com
+ * maior perda (>50ms) e desvios claros de traçado (entrada aberta/fechada
+ * acima do ruído de GPS, ~6°). Máximo 5 linhas pra não afogar a LLM.
+ */
+function buildCornersBlock(metrics: CornerMetric[] | null | undefined): string | null {
+  if (!metrics || metrics.length === 0) return null;
+
+  const withDelta = metrics.filter((m) => m.valid && m.deltaMs !== null);
+  const worst = [...withDelta]
+    .sort((a, b) => (b.deltaMs ?? 0) - (a.deltaMs ?? 0))
+    .filter((m) => (m.deltaMs ?? 0) > 50)
+    .slice(0, 5);
+  if (worst.length === 0) return null;
+
+  const lines = worst.map((m) => {
+    const dir = m.direction === 'left' ? 'esquerda' : 'direita';
+    const parts: string[] = [
+      `Curva ${m.corner.index + 1} (${dir}, ~${Math.round(m.angleDeg)}°, azimute entrada ${fmtAzimuth(m.entryAzimuthDeg)}): perdeu ${((m.deltaMs ?? 0) / 1000).toFixed(2)}s`,
+    ];
+    if (m.minSpeedKmh !== null && m.refMinSpeedKmh !== null) {
+      const diff = m.minSpeedKmh - m.refMinSpeedKmh;
+      parts.push(
+        `ápice ${m.minSpeedKmh.toFixed(0)}km/h vs ${m.refMinSpeedKmh.toFixed(0)} ref (${diff >= 0 ? '+' : ''}${diff.toFixed(0)})`
+      );
+    }
+    if (m.entryOpenDeg !== null && Math.abs(m.entryOpenDeg) >= 6) {
+      parts.push(
+        m.entryOpenDeg > 0
+          ? `entrou ${Math.round(m.entryOpenDeg)}° mais aberto que a referência`
+          : `entrou ${Math.round(-m.entryOpenDeg)}° mais fechado que a referência`
+      );
+    }
+    return `- ${parts.join(' · ')}`;
+  });
+
+  return lines.join('\n');
+}
+
 export function buildAnalysisPrompt(input: AnalysisInput): AnalysisPrompt {
   const { analysis, lapDurationMs, referenceDurationMs, trackName, pilot, history } = input;
   const sectors = analysis.sectors;
@@ -257,6 +299,13 @@ ${lossLines.length > 0 ? lossLines.join('\n') : '- Nenhuma zona de perda signifi
     `ZONAS DE GANHO DE TEMPO (onde foi melhor que a referência):
 ${gainLines.length > 0 ? gainLines.join('\n') : '- Nenhuma zona de ganho significativa'}`
   );
+  const cornersBlock = buildCornersBlock(input.cornerMetrics);
+  if (cornersBlock) {
+    sections.push(
+      `ANÁLISE POR CURVA (curvas com maior perda; use pra dar dica de traçado específica — ex: entrada aberta demais, ápice lento):
+${cornersBlock}`
+    );
+  }
   sections.push('Analise essa volta seguindo as diretrizes do sistema.');
 
   const userPrompt = sections.join('\n\n');

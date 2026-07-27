@@ -115,6 +115,7 @@ export default function CoachScreen() {
           trackName: loadState.context.trackName,
           pilot: loadState.context.pilot,
           history: loadState.context.history,
+          cornerMetrics: loadState.context.cornerMetrics,
         },
         { cacheKey, sessionId: sessionId!, lapId: lapId! }
       );

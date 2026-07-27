@@ -167,9 +167,8 @@ export default function Home() {
               {greeting}{firstName ? `, ${firstName}.` : '.'}
             </Text>
           </View>
-          <Pressable hitSlop={12} onPress={() => { /* placeholder */ }}>
-            <Icon name="bell" size={22} color={colors.textSecondary} />
-          </Pressable>
+          {/* Sino de notificações entra quando houver notificações de verdade —
+              botão morto na home passa impressão de app quebrado. */}
         </View>
 
         {/* Citação Senna — destaque emocional, troca a cada abertura */}

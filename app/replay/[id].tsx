@@ -42,12 +42,16 @@ import Mapbox, {
   MapView,
   RasterDemSource,
   ShapeSource,
+  SymbolLayer,
   Terrain,
 } from '@rnmapbox/maps';
 import type { Feature, FeatureCollection, LineString, Point } from 'geojson';
 import { getLapsForSession, getSession } from '../../src/storage/db';
 import { detectSpins, type SpinEvent } from '../../src/lib/spinDetector';
-import type { GpsSample, ImuSample } from '../../src/lib/geometry';
+import { buildReferenceLap, type GpsSample, type ImuSample } from '../../src/lib/geometry';
+import { matchLapToReference } from '../../src/lib/analysis';
+import { detectCorners } from '../../src/lib/corners';
+import { analyzeCorners, fmtAzimuth, type CornerMetric } from '../../src/lib/cornerAnalysis';
 import { colors, spacing, typography } from '../../src/theme';
 
 // ============================================================================
@@ -75,6 +79,19 @@ type SceneLap = {
   timestamps: number[];
   startT: number;
   endT: number;
+  /** Distância s (m, normalizada na pista) alinhada com coords. Vazio se
+   *  a análise de curvas falhou pra essa volta. */
+  sByCoord: number[];
+  /** Métricas por curva DESSA volta (delta vs PB; PB tem comparativos null). */
+  metrics: CornerMetric[];
+};
+
+type SceneCorner = {
+  number: number;
+  apexLngLat: [number, number];
+  entryLngLat: [number, number];
+  direction: 'left' | 'right';
+  entryAzimuthDeg: number;
 };
 
 type SceneData = {
@@ -82,6 +99,10 @@ type SceneData = {
   spins: Array<{ event: SpinEvent; lngLat: [number, number] }>;
   /** Centro da pista [lng, lat]. */
   center: [number, number];
+  /** Curvas detectadas na volta de referência (PB). Vazio se falhou. */
+  corners: SceneCorner[];
+  /** Comprimento da pista em metros (0 se análise indisponível). */
+  trackLength: number;
 };
 
 // ============================================================================
@@ -174,6 +195,40 @@ export default function ReplayScreen() {
     lastTickRef.current = null;
   }, [selectedLapIdx]);
 
+  // HUD de curva: onde o kart está agora (curva atual ou próxima curva).
+  const cornerHud = useMemo(() => {
+    if (
+      !scene ||
+      !activeLap ||
+      activeLap.metrics.length === 0 ||
+      activeLap.sByCoord.length === 0
+    ) {
+      return null;
+    }
+    const targetT = activeLap.startT + progress * (activeLap.endT - activeLap.startT);
+    const ts = activeLap.timestamps;
+    let idx = 0;
+    for (let i = 0; i < ts.length - 1; i++) {
+      if (ts[i] <= targetT && targetT <= ts[i + 1]) {
+        idx = i;
+        break;
+      }
+    }
+    const sNow = activeLap.sByCoord[idx] ?? 0;
+    // Margem de 5m pros limites — GPS + downsampling deixam a borda difusa
+    const inCorner = activeLap.metrics.find(
+      (m) => sNow >= m.corner.sStart - 5 && sNow <= m.corner.sEnd + 5
+    );
+    if (inCorner) return { kind: 'in' as const, m: inCorner, dist: 0 };
+    const next =
+      activeLap.metrics.find((m) => m.corner.sStart > sNow) ?? activeLap.metrics[0];
+    const dist =
+      next.corner.sStart > sNow
+        ? next.corner.sStart - sNow
+        : scene.trackLength - sNow + next.corner.sStart;
+    return { kind: 'next' as const, m: next, dist };
+  }, [scene, activeLap, progress]);
+
   if (error) {
     return (
       <View style={s.centerRoot}>
@@ -238,6 +293,52 @@ export default function ReplayScreen() {
           />
         ))}
       </View>
+
+      {/* HUD de curva — telemetria viva enquanto o kart anda */}
+      {cornerHud && (
+        <View style={[s.cornerHud, { bottom: insets.bottom + 104 }]}>
+          {cornerHud.kind === 'in' ? (
+            <Text style={s.cornerHudText}>
+              <Text style={s.cornerHudTitle}>
+                CURVA {cornerHud.m.corner.index + 1}{' '}
+              </Text>
+              <Text
+                style={{
+                  color:
+                    cornerHud.m.direction === 'left'
+                      ? colors.accentCyan
+                      : colors.accentOrange,
+                }}
+              >
+                {cornerHud.m.direction === 'left' ? '◀' : '▶'}{' '}
+                {Math.round(cornerHud.m.angleDeg)}°
+              </Text>
+              {'  '}az {fmtAzimuth(cornerHud.m.entryAzimuthDeg)}
+              {cornerHud.m.minSpeedKmh !== null &&
+                `  ápice ${cornerHud.m.minSpeedKmh.toFixed(0)} km/h`}
+              {cornerHud.m.valid && cornerHud.m.deltaMs !== null && (
+                <Text
+                  style={{
+                    color:
+                      cornerHud.m.deltaMs > 0 ? colors.danger : colors.success,
+                  }}
+                >
+                  {'  '}
+                  {cornerHud.m.deltaMs >= 0 ? '+' : '−'}
+                  {Math.abs(cornerHud.m.deltaMs / 1000).toFixed(2)}s
+                </Text>
+              )}
+            </Text>
+          ) : (
+            <Text style={s.cornerHudText}>
+              <Text style={{ color: colors.textMuted }}>RETA · </Text>
+              Curva {cornerHud.m.corner.index + 1}{' '}
+              {cornerHud.m.direction === 'left' ? '◀' : '▶'} em{' '}
+              {Math.max(0, Math.round(cornerHud.dist))}m
+            </Text>
+          )}
+        </View>
+      )}
 
       {/* Bottom controls */}
       <View style={[s.bottomBar, { paddingBottom: insets.bottom + spacing.m }]}>
@@ -358,6 +459,32 @@ function ReplayMap({
     return (Math.atan2(dLng, dLat) * 180) / Math.PI;
   }, [activeLap, progress]);
 
+  // GeoJSON dos badges de curva (ápice) e setas de azimute (entrada).
+  const cornersGeoJson = useMemo<FeatureCollection<Point>>(() => {
+    return {
+      type: 'FeatureCollection',
+      features: scene.corners.map<Feature<Point>>((c) => ({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: c.apexLngLat },
+        properties: { label: String(c.number) },
+      })),
+    };
+  }, [scene.corners]);
+
+  const azimuthGeoJson = useMemo<FeatureCollection<Point>>(() => {
+    return {
+      type: 'FeatureCollection',
+      features: scene.corners.map<Feature<Point>>((c) => ({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: c.entryLngLat },
+        properties: {
+          az: c.entryAzimuthDeg,
+          color: c.direction === 'left' ? '#3DDCFF' : '#FF6B35',
+        },
+      })),
+    };
+  }, [scene.corners]);
+
   // GeoJSON dos spins — uma FeatureCollection de Points.
   const spinsGeoJson = useMemo<FeatureCollection<Point>>(() => {
     return {
@@ -424,6 +551,46 @@ function ReplayMap({
             lineOpacity: ['case', ['get', 'highlighted'], 1, 0.6],
             lineCap: 'round',
             lineJoin: 'round',
+          }}
+        />
+      </ShapeSource>
+
+      {/* Setas de azimute na entrada das curvas — giram com o mapa
+       * (textRotationAlignment map), então apontam o rumo real. */}
+      <ShapeSource id="cornerAzimuth" shape={azimuthGeoJson}>
+        <SymbolLayer
+          id="cornerAzimuthArrow"
+          style={{
+            textField: '▲',
+            textSize: 16,
+            textColor: ['get', 'color'],
+            textRotate: ['get', 'az'],
+            textRotationAlignment: 'map',
+            textAllowOverlap: true,
+            textIgnorePlacement: true,
+          }}
+        />
+      </ShapeSource>
+
+      {/* Badges numerados no ápice de cada curva */}
+      <ShapeSource id="cornerBadges" shape={cornersGeoJson}>
+        <CircleLayer
+          id="cornerBadgeCircle"
+          style={{
+            circleRadius: 10,
+            circleColor: 'rgba(8, 8, 12, 0.85)',
+            circleStrokeColor: '#A0A0B0',
+            circleStrokeWidth: 1,
+          }}
+        />
+        <SymbolLayer
+          id="cornerBadgeNumber"
+          style={{
+            textField: ['get', 'label'],
+            textSize: 11,
+            textColor: '#FFFFFF',
+            textAllowOverlap: true,
+            textIgnorePlacement: true,
           }}
         />
       </ShapeSource>
@@ -575,10 +742,46 @@ function buildScene(
     rawLaps[0]
   );
 
+  // Análise de curvas sobre a volta de referência (PB). Best-effort: se a
+  // volta é curta/ruidosa demais, o replay funciona sem HUD de curvas.
+  let ref: ReturnType<typeof buildReferenceLap> | null = null;
+  let cornerDefs: ReturnType<typeof detectCorners> = [];
+  let matchedBest: ReturnType<typeof matchLapToReference> | null = null;
+  try {
+    if (bestLap.samples.length >= 10) {
+      ref = buildReferenceLap(bestLap.samples, {
+        lat: bestLap.samples[0].lat,
+        lng: bestLap.samples[0].lng,
+      });
+      cornerDefs = detectCorners(ref);
+      matchedBest = matchLapToReference(
+        {
+          id: bestLap.id,
+          sessionId: '',
+          startedAt: bestLap.startedAt,
+          durationMs: bestLap.durationMs,
+          samples: bestLap.samples,
+        },
+        ref
+      );
+    }
+  } catch {
+    ref = null;
+    cornerDefs = [];
+    matchedBest = null;
+  }
+  const refLen = ref?.totalLength ?? 0;
+  const normS = (sv: number) => (refLen > 0 ? ((sv % refLen) + refLen) % refLen : 0);
+
   let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity;
   const sceneLaps: SceneLap[] = rawLaps.map((lap, idx) => {
     const step = Math.max(1, Math.floor(lap.samples.length / 400));
-    const samples = lap.samples.filter((_, i) => i % step === 0);
+    const keptIdx: number[] = [];
+    const samples = lap.samples.filter((_, i) => {
+      const keep = i % step === 0;
+      if (keep) keptIdx.push(i);
+      return keep;
+    });
     const coords: Array<[number, number]> = [];
     const timestamps: number[] = [];
     samples.forEach((s) => {
@@ -589,6 +792,33 @@ function buildScene(
       if (s.lat < minLat) minLat = s.lat;
       if (s.lat > maxLat) maxLat = s.lat;
     });
+
+    // Map matching + métricas por curva (best-effort por volta)
+    let sByCoord: number[] = [];
+    let metrics: CornerMetric[] = [];
+    if (ref && matchedBest && cornerDefs.length > 0) {
+      try {
+        const isPbLap = lap.id === bestLap.id;
+        const matched = isPbLap
+          ? matchedBest
+          : matchLapToReference(
+              {
+                id: lap.id,
+                sessionId: '',
+                startedAt: lap.startedAt,
+                durationMs: lap.durationMs,
+                samples: lap.samples,
+              },
+              ref
+            );
+        sByCoord = keptIdx.map((i) => normS(matched.points[i]?.s ?? 0));
+        metrics = analyzeCorners(cornerDefs, ref, matched, isPbLap ? null : matchedBest);
+      } catch {
+        sByCoord = [];
+        metrics = [];
+      }
+    }
+
     return {
       id: lap.id,
       index: idx,
@@ -599,8 +829,45 @@ function buildScene(
       timestamps,
       startT: timestamps[0],
       endT: timestamps[timestamps.length - 1],
+      sByCoord,
+      metrics,
     };
   });
+
+  // Posições das curvas no mapa: sample da volta PB mais próximo (em s) do
+  // ápice/entrada de cada curva.
+  const corners: SceneCorner[] = [];
+  if (ref && matchedBest && cornerDefs.length > 0) {
+    const pbMetrics =
+      sceneLaps.find((l) => l.isPb)?.metrics ??
+      analyzeCorners(cornerDefs, ref, matchedBest, null);
+    const lngLatAtS = (sTarget: number): [number, number] | null => {
+      let bestIdx = -1;
+      let bestDiff = Infinity;
+      for (let i = 0; i < matchedBest!.points.length; i++) {
+        const d0 = Math.abs(normS(matchedBest!.points[i].s) - sTarget);
+        const d = Math.min(d0, refLen - d0);
+        if (d < bestDiff) {
+          bestDiff = d;
+          bestIdx = i;
+        }
+      }
+      const sample = bestLap.samples[bestIdx];
+      return sample ? [sample.lng, sample.lat] : null;
+    };
+    for (const m of pbMetrics) {
+      const apex = lngLatAtS(m.corner.sApex);
+      const entry = lngLatAtS(m.corner.sStart);
+      if (!apex || !entry) continue;
+      corners.push({
+        number: m.corner.index + 1,
+        apexLngLat: apex,
+        entryLngLat: entry,
+        direction: m.direction,
+        entryAzimuthDeg: m.entryAzimuthDeg,
+      });
+    }
+  }
 
   const spins: SceneData['spins'] = [];
   for (const lap of rawLaps) {
@@ -614,6 +881,8 @@ function buildScene(
     laps: sceneLaps,
     spins,
     center: [(minLng + maxLng) / 2, (minLat + maxLat) / 2],
+    corners,
+    trackLength: refLen,
   };
 }
 
@@ -718,6 +987,28 @@ const s = StyleSheet.create({
     paddingHorizontal: spacing.l,
     paddingTop: spacing.m,
     backgroundColor: 'rgba(8,8,12,0.85)',
+  },
+
+  cornerHud: {
+    position: 'absolute',
+    alignSelf: 'center',
+    backgroundColor: 'rgba(8,8,12,0.85)',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    paddingHorizontal: spacing.l,
+    paddingVertical: spacing.s,
+  },
+  cornerHudText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+  },
+  cornerHudTitle: {
+    color: colors.textPrimary,
+    fontWeight: '900',
+    letterSpacing: 0.5,
   },
   bottomRow: { flexDirection: 'row', alignItems: 'center' },
   playBtn: {

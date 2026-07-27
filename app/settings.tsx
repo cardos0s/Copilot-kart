@@ -7,6 +7,7 @@ import { getClient } from '../src/lib/llm';
 import { useCoachFloatingEnabled } from '../src/storage/preferences';
 import { usePilotType, PILOT_TYPE_LABEL } from '../src/storage/pilotType';
 import { useAuthSession, signOut as authSignOut } from '../src/lib/auth';
+import { removeDemoSession, seedDemoSession } from '../src/lib/demoSession';
 import { AppleSignInButton } from '../src/components/AppleSignInButton';
 import type { AppleAuthResult } from '../src/lib/auth';
 import {
@@ -42,6 +43,30 @@ export default function Settings() {
     } else if (r.reason === 'error') {
       Alert.alert('Não deu pra entrar', r.message ?? 'Tente de novo.');
     }
+  };
+
+  // Modo Pitch: semeia (ou reabre) a sessão demo e vai direto pra análise.
+  const handlePitchSession = async () => {
+    try {
+      const id = await seedDemoSession();
+      router.push({ pathname: '/session/[id]', params: { id } } as any);
+    } catch (e: any) {
+      Alert.alert('Não deu', e?.message ?? 'Erro ao criar a sessão demo.');
+    }
+  };
+
+  const handleRemovePitchSession = () => {
+    Alert.alert('Remover sessão demo?', 'Ela some do histórico. Dá pra criar de novo quando quiser.', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Remover',
+        style: 'destructive',
+        onPress: async () => {
+          const removed = await removeDemoSession();
+          Alert.alert(removed ? 'Removida' : 'Nada a remover', removed ? 'Sessão demo apagada do histórico.' : 'Nenhuma sessão demo no banco.');
+        },
+      },
+    ]);
   };
 
   const handleAuthSignOut = () => {
@@ -161,6 +186,19 @@ export default function Settings() {
         {/* TEMP: preview da tela de vitória (remover quando a corrida indoor disparar) */}
         <SectionLabel>DEMO</SectionLabel>
         <Card variant="default" padding="none" style={s.sectionCard}>
+          <Row
+            label="📊 Sessão demo (análise)"
+            value="Voltas reais, sem GPS"
+            onPress={handlePitchSession}
+            chevron
+          />
+          <Divider />
+          <Row
+            label="🗑️ Remover sessão demo"
+            value=""
+            onPress={handleRemovePitchSession}
+          />
+          <Divider />
           <Row
             label="🏎️ Velocímetro (demo)"
             value="Sessão simulada"
