@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { useLapRecorder } from '../src/hooks/useLapRecorder';
+import { useLockLandscape } from '../src/hooks/useLockLandscape';
 import { listLayoutsForTrack, saveLayout } from '../src/storage/db';
 import { polylineLength, GpsSample } from '../src/lib/geometry';
 import { LapResultOverlay } from '../src/components/LapResultOverlay';
@@ -127,6 +128,8 @@ export default function RecordingReference() {
   }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  // Tela de cockpit (celular no suporte, deitado) — mesma trava do recording
+  useLockLandscape();
   const [targetLaps, setTargetLaps] = useState(3);
   const [starting, setStarting] = useState(false);
   const targetReachedHandledRef = useRef(false);
