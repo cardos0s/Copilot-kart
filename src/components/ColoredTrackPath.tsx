@@ -21,6 +21,13 @@ export type CornerBadge = {
   number: number;
 };
 
+export type AzimuthArrow = {
+  point: { lat: number; lng: number };
+  /** Azimute de bússola em graus (0 = Norte, horário). */
+  azimuthDeg: number;
+  color?: string;
+};
+
 type Props = {
   /** Segmentos coloridos — cada um com seus pontos lat/lng. */
   segments: ColoredSegment[];
@@ -35,6 +42,8 @@ type Props = {
   eventMarkers?: EventMarker[];
   /** Badges numerados nas curvas. */
   cornerBadges?: CornerBadge[];
+  /** Setas de azimute (direção de percurso) — ex: entrada de cada curva. */
+  azimuthArrows?: AzimuthArrow[];
 };
 
 /**
@@ -51,6 +60,7 @@ export function ColoredTrackPath({
   showStart = true,
   eventMarkers = [],
   cornerBadges = [],
+  azimuthArrows = [],
 }: Props) {
   if (segments.length === 0) {
     return <View style={{ width, height }} />;
@@ -130,6 +140,28 @@ export function ColoredTrackPath({
           />
         </G>
       )}
+
+      {/* Setas de azimute — direção de percurso na entrada das curvas.
+          Tela tem norte pra cima (toY inverte lat) e rotate() do SVG é
+          horário, igual azimute de bússola: rotate(azimuthDeg) direto. */}
+      {azimuthArrows.map((ar, i) => {
+        const cx = toX(ar.point.lng);
+        const cy = toY(ar.point.lat);
+        const color = ar.color ?? colors.accentLime;
+        return (
+          <G key={`azimuth-${i}`} transform={`translate(${cx},${cy}) rotate(${ar.azimuthDeg})`}>
+            {/* haste + ponta, apontando pra cima antes da rotação */}
+            <Path
+              d="M0,9 L0,-9 M-4.5,-3.5 L0,-9 L4.5,-3.5"
+              stroke={color}
+              strokeWidth={2.5}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              fill="none"
+            />
+          </G>
+        );
+      })}
 
       {/* Badges numerados nas curvas */}
       {cornerBadges.map((cb, i) => (

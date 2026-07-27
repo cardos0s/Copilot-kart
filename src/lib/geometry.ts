@@ -212,3 +212,32 @@ export function detectLapCompletion(
   const dy = currentXY.y - start.y;
   return Math.sqrt(dx * dx + dy * dy) < 15;
 }
+/**
+ * Média móvel por janela de DISTÂNCIA (±radius m) sobre uma polyline.
+ * Suaviza o jitter do GPS antes de qualquer cálculo de heading/curvatura —
+ * sem isso, ±1m de ruído em samples espaçados 2–4m domina a geometria.
+ * O(n) com two-pointers + somas prefixadas.
+ */
+export function smoothPolylineXY(points: XY[], cum: number[], radius: number): XY[] {
+  const n = points.length;
+  if (n < 3 || radius <= 0) return points.map((p) => ({ x: p.x, y: p.y }));
+  const prefX: number[] = new Array(n + 1).fill(0);
+  const prefY: number[] = new Array(n + 1).fill(0);
+  for (let i = 0; i < n; i++) {
+    prefX[i + 1] = prefX[i] + points[i].x;
+    prefY[i + 1] = prefY[i] + points[i].y;
+  }
+  const out: XY[] = new Array(n);
+  let lo = 0;
+  let hi = 0;
+  for (let i = 0; i < n; i++) {
+    while (lo < i && cum[i] - cum[lo] > radius) lo++;
+    while (hi < n - 1 && cum[hi + 1] - cum[i] <= radius) hi++;
+    const count = hi - lo + 1;
+    out[i] = {
+      x: (prefX[hi + 1] - prefX[lo]) / count,
+      y: (prefY[hi + 1] - prefY[lo]) / count,
+    };
+  }
+  return out;
+}

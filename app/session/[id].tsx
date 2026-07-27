@@ -28,6 +28,8 @@ import {
 } from '../../src/lib/analysis';
 import { buildReferenceLap } from '../../src/lib/geometry';
 import { Corner, describeSector, detectCorners } from '../../src/lib/corners';
+import { CornerMetric, analyzeCorners } from '../../src/lib/cornerAnalysis';
+import { CornerAnalysisPanel } from '../../src/components/CornerAnalysisPanel';
 import { msToKmh, peakSpeedInSectorMs, peakSpeedMs } from '../../src/lib/speed';
 import { consumePendingCelebration } from '../../src/lib/celebrationQueue';
 import {
@@ -47,6 +49,7 @@ import {
   ColoredSegment,
   CornerBadge,
   EventMarker,
+  AzimuthArrow,
 } from '../../src/components/ColoredTrackPath';
 import {
   Card,
@@ -61,7 +64,7 @@ import { colors, radius, spacing, typography } from '../../src/theme';
 // e a silhueta SVG com markers de eventos é mais legível pro caso de uso
 // de análise de volta (sem fotos de satélite a distrair).
 
-type ViewMode = 'comparar' | 'setores' | 'mapa';
+type ViewMode = 'comparar' | 'setores' | 'curvas' | 'mapa';
 type ColorMode = 'delta' | 'speed';
 
 function fmtLap(ms: number) {
@@ -268,6 +271,7 @@ function SessionScreenInner() {
         selected: LapRecord;
         refLap: any;
         corners: Corner[];
+        cornerMetrics: CornerMetric[];
         matchedReferenceProper: any;
         isSelectedReference: boolean;
         matchedCurrent: any;
@@ -320,6 +324,12 @@ function SessionScreenInner() {
         : null;
       const sectors = analysis?.sectors ?? [];
       const maxAbsDelta = Math.max(1, ...sectors.map((x: any) => Math.abs(x.deltaMs)));
+      const cornerMetrics = analyzeCorners(
+        corners,
+        refLap,
+        matchedCurrent,
+        isSelectedReference ? null : matchedReferenceProper
+      );
       return {
         kind: 'ok',
         sessionBest,
@@ -329,6 +339,7 @@ function SessionScreenInner() {
         selected,
         refLap,
         corners,
+        cornerMetrics,
         matchedReferenceProper,
         isSelectedReference,
         matchedCurrent,
@@ -410,6 +421,7 @@ function SessionScreenInner() {
     selected,
     refLap,
     corners,
+    cornerMetrics,
     isSelectedReference,
     matchedCurrent,
     sectors,
@@ -435,6 +447,20 @@ function SessionScreenInner() {
     requestAnimationFrame(() => {
       mapScrollRef.current?.scrollTo({ y: 0, animated: true });
     });
+  };
+
+  // Tap em curva → foca no mapa o setor que contém o ápice dela
+  const handleCornerTap = (metric: CornerMetric) => {
+    if (sectors.length > 0 && refLap.totalLength > 0) {
+      const sectorLen = refLap.totalLength / sectors.length;
+      const idx = Math.min(
+        sectors.length - 1,
+        Math.max(0, Math.floor(metric.corner.sApex / sectorLen))
+      );
+      handleSectorTap(idx);
+    } else {
+      setMode('mapa');
+    }
   };
 
   return (
@@ -581,6 +607,7 @@ function SessionScreenInner() {
             options={[
               { value: 'comparar', label: 'Comparar' },
               { value: 'setores', label: 'Setores' },
+              { value: 'curvas', label: 'Curvas' },
               { value: 'mapa', label: 'Mapa' },
             ]}
           />
@@ -620,6 +647,14 @@ function SessionScreenInner() {
           />
         )}
 
+        {mode === 'curvas' && (
+          <CornerAnalysisPanel
+            metrics={cornerMetrics}
+            isReference={isSelectedReference}
+            onCornerTap={handleCornerTap}
+          />
+        )}
+
         {mode === 'mapa' && (
           <MapPanel
             selected={selected}
@@ -630,6 +665,7 @@ function SessionScreenInner() {
             maxAbsDelta={maxAbsDelta}
             refSamples={refSamples}
             corners={corners}
+            cornerMetrics={cornerMetrics}
             colorMode={colorMode}
             onColorModeChange={setColorMode}
             focusedSectorIdx={focusedSectorIdx}
@@ -668,6 +704,7 @@ function SessionScreenInner() {
               maxAbsDelta={maxAbsDelta}
               refSamples={refSamples}
               corners={corners}
+              cornerMetrics={cornerMetrics}
               colorMode={colorMode}
               onColorModeChange={setColorMode}
               focusedSectorIdx={focusedSectorIdx}
@@ -986,6 +1023,7 @@ function MapPanel({
   maxAbsDelta,
   refSamples,
   corners,
+  cornerMetrics,
   colorMode,
   onColorModeChange,
   focusedSectorIdx,
@@ -1002,6 +1040,7 @@ function MapPanel({
   maxAbsDelta: number;
   refSamples: any[];
   corners: Corner[];
+  cornerMetrics: CornerMetric[];
   colorMode: ColorMode;
   onColorModeChange: (m: ColorMode) => void;
   focusedSectorIdx: number | null;
@@ -1152,6 +1191,23 @@ function MapPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, sectors, isSelectedReference, matchedCurrent]);
 
+  // Setas de azimute na entrada de cada curva — direção de percurso do kart
+  const azimuthArrows = useMemo<AzimuthArrow[]>(() => {
+    if (!cornerMetrics || cornerMetrics.length === 0) return [];
+    return cornerMetrics
+      .map((m): AzimuthArrow | null => {
+        const entry = findLatLngAtS(m.corner.sStart);
+        if (!entry) return null;
+        return {
+          point: entry,
+          azimuthDeg: m.entryAzimuthDeg,
+          color: m.direction === 'left' ? colors.accentCyan : colors.accentOrange,
+        };
+      })
+      .filter((x): x is AzimuthArrow => x !== null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cornerMetrics, matchedCurrent, selected]);
+
   // Badges numerados em cada curva — usa apexS pra mapear pra lat/lng
   const cornerBadges = useMemo<CornerBadge[]>(() => {
     if (!corners || corners.length === 0) return [];
@@ -1244,6 +1300,7 @@ function MapPanel({
           highlightPoint={focusedSectorApex ?? undefined}
           eventMarkers={eventMarkers}
           cornerBadges={cornerBadges}
+          azimuthArrows={azimuthArrows}
         />
       </Card>
 
@@ -1251,6 +1308,8 @@ function MapPanel({
       <View style={s.markersLegend}>
         <MarkerLegendItem color={colors.accentCyan} label="P · pico de velocidade" />
         <MarkerLegendItem color={colors.warning} label="B · freada mais forte" />
+        <MarkerLegendItem color={colors.accentCyan} label="➤ · azimute entrada (esq)" />
+        <MarkerLegendItem color={colors.accentOrange} label="➤ · azimute entrada (dir)" />
         {!isSelectedReference && sectors.length > 0 && (
           <>
             <MarkerLegendItem color={colors.success} label="+ · maior ganho" />
