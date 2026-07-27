@@ -19,6 +19,8 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://cockpit219.com.br"),
+  alternates: { canonical: "/" },
   title: "COCKPIT — Telemetria inteligente para kart",
   description:
     "Telemetria inteligente para quem quer baixar tempo, entender cada volta e evoluir como piloto. Do kart ao legado.",
