@@ -1,5 +1,5 @@
 import { Reveal } from "../ui/Reveal";
-import { Button } from "../ui/Button";
+import { WaitlistForm } from "../ui/WaitlistForm";
 
 export function FinalCTA() {
   return (
@@ -36,10 +36,8 @@ export function FinalCTA() {
             Cada volta conta.
           </p>
         </Reveal>
-        <Reveal delay={0.2}>
-          <Button variant="inverse" href="#" className="px-12 py-5 text-sm">
-            Entrar no cockpit
-          </Button>
+        <Reveal delay={0.2} className="w-full max-w-xl">
+          <WaitlistForm />
         </Reveal>
       </div>
     </section>
