@@ -363,7 +363,7 @@ const s = StyleSheet.create({
     gap: spacing.m,
     marginTop: spacing.m,
     padding: spacing.m,
-    backgroundColor: 'rgba(47,107,255,0.10)',
+    backgroundColor: 'rgba(37, 99, 255,0.10)',
     borderWidth: 1,
     borderColor: colors.primary,
     borderRadius: radius.l,
@@ -405,7 +405,7 @@ const s = StyleSheet.create({
   achGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.s },
   achItem: { width: '22.5%', alignItems: 'center' },
   achIconBox: { width: 52, height: 52, borderRadius: 14, backgroundColor: colors.bgElevated, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
-  achIconBoxGot: { borderColor: BLUE, backgroundColor: 'rgba(47,107,255,0.08)' },
+  achIconBoxGot: { borderColor: BLUE, backgroundColor: 'rgba(37, 99, 255,0.08)' },
   achIcon: { fontSize: 22 },
   achLabel: { color: colors.textMuted, fontSize: 9, fontWeight: '600', marginTop: 5, textAlign: 'center' },
 });

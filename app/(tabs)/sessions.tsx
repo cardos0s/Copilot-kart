@@ -306,7 +306,7 @@ const s = StyleSheet.create({
   filterRow: { paddingHorizontal: spacing.l, paddingBottom: spacing.m, flexDirection: 'row' },
 
   summaryRow: { flexDirection: 'row', gap: spacing.s, marginBottom: spacing.l },
-  recordCard: { flex: 1.5, padding: spacing.l, borderRadius: radius.l, backgroundColor: 'rgba(47,107,255,0.07)', borderWidth: 1.5, borderColor: BLUE },
+  recordCard: { flex: 1.5, padding: spacing.l, borderRadius: radius.l, backgroundColor: 'rgba(37, 99, 255,0.07)', borderWidth: 1.5, borderColor: BLUE },
   recordTop: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   trophy: { fontSize: 14 },
   recordLabel: { color: BLUE, fontSize: 11, fontWeight: '800', letterSpacing: 1.5 },
@@ -320,7 +320,7 @@ const s = StyleSheet.create({
   sectionLabel: { color: colors.textMuted, fontSize: 12, fontWeight: '800', letterSpacing: 1.5, marginTop: spacing.m, marginBottom: spacing.s },
 
   card: { flexDirection: 'row', alignItems: 'center', gap: spacing.m, padding: spacing.m, borderRadius: radius.l, backgroundColor: colors.surface, borderWidth: 1, borderColor: 'transparent' },
-  cardRecord: { borderColor: BLUE, backgroundColor: 'rgba(47,107,255,0.05)' },
+  cardRecord: { borderColor: BLUE, backgroundColor: 'rgba(37, 99, 255,0.05)' },
   iconBox: { width: 60, height: 56, borderRadius: 14, backgroundColor: colors.bgElevated, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.s },
   rowTrack: { color: colors.textPrimary, fontSize: 17, fontWeight: '800', flexShrink: 1 },

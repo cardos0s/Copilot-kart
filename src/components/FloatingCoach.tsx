@@ -348,7 +348,7 @@ const s = StyleSheet.create({
     width: BUTTON_SIZE,
     height: BUTTON_SIZE,
     borderRadius: BUTTON_SIZE / 2,
-    backgroundColor: 'rgba(47, 107, 255, 0.18)',
+    backgroundColor: 'rgba(37, 99, 255, 0.18)',
     borderWidth: 1.5,
     borderColor: colors.primary,
     alignItems: 'center',
@@ -393,7 +393,7 @@ const s = StyleSheet.create({
   panel: {
     width: '100%',
     maxWidth: 360,
-    backgroundColor: 'rgba(16, 16, 24, 0.92)',
+    backgroundColor: 'rgba(18, 21, 27, 0.92)',
     borderRadius: 24,
     overflow: 'hidden',
     borderWidth: 1,

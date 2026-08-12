@@ -179,7 +179,7 @@ export function LapResultOverlay({ result }: LapResultOverlayProps) {
     const isGreen =
       snapshot.deltaVsRefMs === null || snapshot.deltaVsRefMs <= 0;
     bgColor = isGreen ? colors.success : colors.danger;
-    centerColor = isGreen ? '#08080C' : colors.textPrimary;
+    centerColor = isGreen ? '#08090C' : colors.textPrimary;
     // Sem delta na 1ª volta: mostra só o tempo gigante (não temos contra o
     // que comparar). Senão, mostra o delta gigante.
     centerNumber =
@@ -191,7 +191,7 @@ export function LapResultOverlay({ result }: LapResultOverlayProps) {
   } else {
     // 'reference' — sempre verde, mostra progresso "N/TOTAL" como destaque.
     bgColor = colors.success;
-    centerColor = '#08080C';
+    centerColor = '#08090C';
     centerNumber = `L ${snapshot.lapNumber}/${snapshot.totalLaps}  ✓`;
     banner = snapshot.lapNumber >= snapshot.totalLaps ? '★  REFERÊNCIA PRONTA  ★' : null;
     pillText = fmtLap(snapshot.durationMs);
@@ -273,7 +273,7 @@ const s = StyleSheet.create({
     paddingHorizontal: spacing.l,
     paddingVertical: spacing.s,
     borderRadius: radius.pill,
-    backgroundColor: 'rgba(8, 8, 12, 0.85)',
+    backgroundColor: 'rgba(8, 9, 12, 0.85)',
   },
   pillText: {
     color: colors.textPrimary,

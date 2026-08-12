@@ -66,7 +66,7 @@ function severityBg(sev: LiveMessage['severity']): string {
 function severityText(sev: LiveMessage['severity']): string {
   // Em vermelho/critical o texto branco contrasta melhor; nos outros 2,
   // texto preto fica mais legível no fundo claro.
-  return sev === 'critical' ? colors.textPrimary : '#08080C';
+  return sev === 'critical' ? colors.textPrimary : '#08090C';
 }
 
 function severityKicker(sev: LiveMessage['severity']): string {
@@ -231,7 +231,7 @@ const s = StyleSheet.create({
     paddingHorizontal: spacing.m,
     paddingVertical: 6,
     borderRadius: radius.pill,
-    backgroundColor: 'rgba(8, 8, 12, 0.18)',
+    backgroundColor: 'rgba(8, 9, 12, 0.18)',
   },
   byText: {
     fontSize: 12,

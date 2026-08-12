@@ -16,8 +16,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import { colors, spacing, radius } from '../../src/theme';
 
-const ACCENT = '#2F6BFF';
-const ACCENT_DIM = '#1E49B5';
+const ACCENT = '#2563FF';
+const ACCENT_DIM = '#1B4ACC';
 const LIME = colors.accentLime;
 
 const STEPS = [

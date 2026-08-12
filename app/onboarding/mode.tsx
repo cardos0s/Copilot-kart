@@ -132,7 +132,7 @@ const s = StyleSheet.create({
   cardActive: {
     borderColor: BLUE,
     borderWidth: 1.5,
-    backgroundColor: 'rgba(47, 107, 255, 0.08)',
+    backgroundColor: 'rgba(37, 99, 255, 0.08)',
   },
   iconBox: {
     width: 80,

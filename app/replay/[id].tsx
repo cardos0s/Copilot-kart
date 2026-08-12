@@ -544,7 +544,7 @@ function ReplayMap({
               ['get', 'highlighted'],
               '#00FF88',
               ['get', 'isPb'],
-              '#1E49B5',
+              '#1B4ACC',
               '#3A506B',
             ],
             lineWidth: ['case', ['get', 'highlighted'], 5, 2.5],
@@ -578,8 +578,8 @@ function ReplayMap({
           id="cornerBadgeCircle"
           style={{
             circleRadius: 10,
-            circleColor: 'rgba(8, 8, 12, 0.85)',
-            circleStrokeColor: '#A0A0B0',
+            circleColor: 'rgba(8, 9, 12, 0.85)',
+            circleStrokeColor: '#8A93A0',
             circleStrokeWidth: 1,
           }}
         />
@@ -622,7 +622,7 @@ function ReplayMap({
           id="kartHalo"
           style={{
             circleRadius: 14,
-            circleColor: '#2F6BFF',
+            circleColor: '#2563FF',
             circleOpacity: 0.25,
           }}
         />
@@ -630,8 +630,8 @@ function ReplayMap({
           id="kartDot"
           style={{
             circleRadius: 7,
-            circleColor: '#2F6BFF',
-            circleStrokeColor: '#08080C',
+            circleColor: '#2563FF',
+            circleStrokeColor: '#08090C',
             circleStrokeWidth: 2,
           }}
         />
@@ -891,11 +891,11 @@ function buildScene(
 // ============================================================================
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#08080C' },
+  root: { flex: 1, backgroundColor: '#08090C' },
   map: { flex: 1 },
   centerRoot: {
     flex: 1,
-    backgroundColor: '#08080C',
+    backgroundColor: '#08090C',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -941,7 +941,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: spacing.l,
     paddingBottom: spacing.s,
-    backgroundColor: 'rgba(8,8,12,0.55)',
+    backgroundColor: 'rgba(8, 9, 12,0.55)',
   },
   iconBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   iconBtnText: { color: colors.textPrimary, fontSize: 22 },
@@ -966,7 +966,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: 'rgba(16,16,24,0.9)',
+    backgroundColor: 'rgba(18, 21, 27,0.9)',
     borderWidth: 1,
     borderColor: colors.border,
   },
@@ -976,7 +976,7 @@ const s = StyleSheet.create({
   },
   chipPb: { borderColor: colors.success + '88' },
   chipText: { color: colors.textSecondary, fontSize: 11, fontWeight: '800' },
-  chipTextActive: { color: '#08080C' },
+  chipTextActive: { color: '#08090C' },
   chipTextPb: { color: colors.success },
 
   bottomBar: {
@@ -986,13 +986,13 @@ const s = StyleSheet.create({
     right: 0,
     paddingHorizontal: spacing.l,
     paddingTop: spacing.m,
-    backgroundColor: 'rgba(8,8,12,0.85)',
+    backgroundColor: 'rgba(8, 9, 12,0.85)',
   },
 
   cornerHud: {
     position: 'absolute',
     alignSelf: 'center',
-    backgroundColor: 'rgba(8,8,12,0.85)',
+    backgroundColor: 'rgba(8, 9, 12,0.85)',
     borderRadius: 999,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.12)',
@@ -1019,7 +1019,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  playBtnText: { color: '#08080C', fontSize: 20, fontWeight: '900' },
+  playBtnText: { color: '#08090C', fontSize: 20, fontWeight: '900' },
   progressTrack: {
     height: 4,
     backgroundColor: colors.surface,
@@ -1046,5 +1046,5 @@ const s = StyleSheet.create({
   },
   speedChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   speedChipText: { color: colors.textSecondary, fontSize: 11, fontWeight: '800' },
-  speedChipTextActive: { color: '#08080C' },
+  speedChipTextActive: { color: '#08090C' },
 });

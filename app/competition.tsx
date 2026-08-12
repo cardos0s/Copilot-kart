@@ -457,7 +457,7 @@ const s = StyleSheet.create({
   modalSheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, padding: spacing.l },
   modalTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: '800', marginBottom: spacing.m },
   trackRow: { paddingVertical: 14, paddingHorizontal: spacing.m, borderRadius: radius.m },
-  trackRowActive: { backgroundColor: 'rgba(47,107,255,0.10)' },
+  trackRowActive: { backgroundColor: 'rgba(37, 99, 255,0.10)' },
   trackRowName: { color: colors.textPrimary, fontSize: 15, fontWeight: '700' },
   trackRowCity: { color: colors.textMuted, fontSize: 12, marginTop: 2 },
 
@@ -488,7 +488,7 @@ const s = StyleSheet.create({
     borderColor: colors.border,
     marginBottom: spacing.s,
   },
-  rowMe: { borderColor: BLUE, backgroundColor: 'rgba(47,107,255,0.07)' },
+  rowMe: { borderColor: BLUE, backgroundColor: 'rgba(37, 99, 255,0.07)' },
   pos: { width: 22, textAlign: 'center', color: colors.textSecondary, fontSize: 15, fontWeight: '900' },
   dot: { width: 12, height: 12, borderRadius: 6 },
   rowBody: { flex: 1, minWidth: 0 },

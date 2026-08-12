@@ -116,7 +116,7 @@ const s = StyleSheet.create({
     borderRadius: radius.m,
   },
   chipActive: {
-    backgroundColor: 'rgba(47, 107, 255, 0.10)',
+    backgroundColor: 'rgba(37, 99, 255, 0.10)',
     borderColor: colors.racingBlue,
     borderWidth: 1.5,
   },
@@ -149,7 +149,7 @@ const s = StyleSheet.create({
   },
   otherChipActive: {
     borderColor: colors.racingBlue,
-    backgroundColor: 'rgba(47, 107, 255, 0.06)',
+    backgroundColor: 'rgba(37, 99, 255, 0.06)',
     borderStyle: 'solid',
   },
   otherText: {

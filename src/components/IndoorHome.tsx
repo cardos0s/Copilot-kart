@@ -181,7 +181,7 @@ export function IndoorHome({ showBack }: { showBack?: boolean } = {}) {
             return (
               <View key={e.id} style={[s.row, isMe && s.rowMe]}>
                 <View style={[s.pos, i < 3 && { backgroundColor: POS_COLORS[i] }]}>
-                  <Text style={[s.posText, i < 3 && { color: '#08080C' }]}>{i + 1}</Text>
+                  <Text style={[s.posText, i < 3 && { color: '#08090C' }]}>{i + 1}</Text>
                 </View>
                 <View style={s.rowBody}>
                   <Text style={[s.rowName, isMe && s.rowNameMe]} numberOfLines={1}>
@@ -262,7 +262,7 @@ const s = StyleSheet.create({
   segText: { color: colors.textMuted, fontSize: 14, fontWeight: '700' },
   segTextActive: { color: '#fff' },
   youCard: {
-    marginTop: spacing.l, padding: spacing.l, backgroundColor: 'rgba(47,107,255,0.10)',
+    marginTop: spacing.l, padding: spacing.l, backgroundColor: 'rgba(37, 99, 255,0.10)',
     borderRadius: radius.m, borderWidth: 1, borderColor: BLUE,
   },
   youText: { color: colors.textPrimary, fontSize: 14, fontWeight: '600' },
@@ -276,7 +276,7 @@ const s = StyleSheet.create({
     padding: spacing.m, backgroundColor: colors.bgElevated, borderRadius: radius.m,
     borderWidth: 1, borderColor: colors.border,
   },
-  rowMe: { borderColor: BLUE, backgroundColor: 'rgba(47,107,255,0.07)' },
+  rowMe: { borderColor: BLUE, backgroundColor: 'rgba(37, 99, 255,0.07)' },
   pos: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.surfaceHigh, alignItems: 'center', justifyContent: 'center' },
   posText: { color: colors.textSecondary, fontSize: 13, fontWeight: '800' },
   rowBody: { flex: 1, minWidth: 0 },
@@ -296,7 +296,7 @@ const s = StyleSheet.create({
   modalSheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, padding: spacing.l },
   modalTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: '800', marginBottom: spacing.m },
   trackRow: { paddingVertical: 14, paddingHorizontal: spacing.m, borderRadius: radius.m },
-  trackRowActive: { backgroundColor: 'rgba(47,107,255,0.10)' },
+  trackRowActive: { backgroundColor: 'rgba(37, 99, 255,0.10)' },
   trackRowName: { color: colors.textPrimary, fontSize: 15, fontWeight: '700' },
   trackRowCity: { color: colors.textMuted, fontSize: 12, marginTop: 2 },
 });
