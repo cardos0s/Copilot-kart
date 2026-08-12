@@ -9,6 +9,7 @@ import Animated, {
   useSharedValue,
   withDelay,
   withRepeat,
+  withSequence,
   withTiming,
 } from 'react-native-reanimated';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
@@ -25,8 +26,16 @@ type Props = {
 const DESIGN_W = 390;
 const DESIGN_H = 844;
 
-const KART_W = 176;
-const KART_H = 122; // 176 × 456 / 659
+/**
+ * Ajuste fino do conjunto kart + nome. 1 é o tamanho do handoff; baixar daqui
+ * encolhe os dois juntos e mantém a relação entre eles. É o único número a
+ * mexer se a composição ainda parecer grande no device.
+ */
+const COMPOSITION_SCALE = 1;
+
+const KART_W = Math.round(176 * COMPOSITION_SCALE);
+const KART_H = Math.round(KART_W * (456 / 659));
+const WORDMARK_SIZE = Math.round(46 * COMPOSITION_SCALE);
 const KART_TOP = 306;
 const GROUND_TOP = 424;
 /**
@@ -49,6 +58,8 @@ const EXIT_MS = 220;
 
 const SMOKE_STOP_MS = 1150;
 const NAME_DELAY_MS = 1020;
+/** De quanto o lockup sobe ao entrar. */
+const NAME_RISE = 14;
 
 const EASE_KART = Easing.bezier(0.2, 0.75, 0.28, 1);
 const EASE_IN = Easing.bezier(0.16, 1, 0.3, 1);
@@ -112,8 +123,13 @@ function Puff({ size, dx, dy, duration, delay }: (typeof PUFFS)[number]) {
 
 export function SplashLoader({ appReady = false, onFinish }: Props) {
   const { width: screenW, height: screenH } = Dimensions.get('window');
-  /** Layout inteiro numa caixa de design escalada — mantém as proporções medidas. */
-  const scale = Math.min(screenW / DESIGN_W, screenH / DESIGN_H);
+  /**
+   * Layout inteiro numa caixa de design escalada — mantém as proporções
+   * medidas. O teto de 1 é o que importa: as medidas do handoff são pontos
+   * absolutos, então em tela maior que 390 × 844 a composição fica do tamanho
+   * desenhado e sobra respiro. Sem o teto, um Pro Max inflava tudo em ~13%.
+   */
+  const scale = Math.min(1, screenW / DESIGN_W, screenH / DESIGN_H);
   const offsetY = (screenH - DESIGN_H * scale) / 2;
 
   /** O kart parado não solta fumaça: a emissão precisa parar quando ele freia. */
@@ -122,26 +138,59 @@ export function SplashLoader({ appReady = false, onFinish }: Props) {
   const mountedAt = useRef(Date.now());
 
   const kartX = useSharedValue(-250);
+  const kartTilt = useSharedValue(0);
   const groundOpacity = useSharedValue(1);
+  const groundDraw = useSharedValue(0);
   const smokeOpacity = useSharedValue(1);
-  const nameY = useSharedValue(9);
+  const smokeBurst = useSharedValue(1);
+  const nameY = useSharedValue(NAME_RISE);
   const nameOpacity = useSharedValue(0);
+  const lockupScale = useSharedValue(0.96);
   const ruleScale = useSharedValue(0);
-  const numberY = useSharedValue(9);
+  const numberY = useSharedValue(NAME_RISE);
   const numberOpacity = useSharedValue(0);
   const exitOpacity = useSharedValue(1);
 
   useEffect(() => {
     kartX.value = withTiming(0, { duration: 1050, easing: EASE_KART });
+
+    // Mergulho de freada: o nariz afunda quando ele para e volta assentando.
+    // É o mesmo gesto que a especificação já descreve ao dizer que a emissão
+    // de fumaça precisa parar "quando ele freia" — só que visível.
+    kartTilt.value = withDelay(
+      820,
+      withSequence(
+        withTiming(2.2, { duration: 190, easing: Easing.out(Easing.quad) }),
+        withTiming(-0.7, { duration: 260, easing: Easing.inOut(Easing.quad) }),
+        withTiming(0, { duration: 320, easing: EASE_IN })
+      )
+    );
+
+    // A linha de solo é traçada pelo kart em vez de já estar lá: cresce da
+    // esquerda junto com ele, e só então começa a sumir.
+    groundDraw.value = withTiming(1, { duration: 1050, easing: EASE_KART });
     groundOpacity.value = withDelay(550, withTiming(0, { duration: 1600, easing: Easing.linear }));
 
     nameOpacity.value = withDelay(NAME_DELAY_MS, withTiming(1, { duration: 550, easing: EASE_IN }));
     nameY.value = withDelay(NAME_DELAY_MS, withTiming(0, { duration: 550, easing: EASE_IN }));
+    lockupScale.value = withDelay(
+      NAME_DELAY_MS,
+      withTiming(1, { duration: 620, easing: EASE_IN })
+    );
 
     ruleScale.value = withDelay(1160, withTiming(1, { duration: 450, easing: EASE_IN }));
 
     numberOpacity.value = withDelay(1200, withTiming(1, { duration: 500, easing: EASE_IN }));
     numberY.value = withDelay(1200, withTiming(0, { duration: 500, easing: EASE_IN }));
+
+    // A freada chuta uma última golfada antes de a emissão parar.
+    smokeBurst.value = withDelay(
+      860,
+      withSequence(
+        withTiming(1.32, { duration: 240, easing: Easing.out(Easing.quad) }),
+        withTiming(1, { duration: 400, easing: Easing.linear })
+      )
+    );
 
     // O que já está no ar se dissolve; a emissão para junto.
     smokeOpacity.value = withDelay(
@@ -153,20 +202,28 @@ export function SplashLoader({ appReady = false, onFinish }: Props) {
     return () => {
       clearTimeout(stop);
       cancelAnimation(kartX);
+      cancelAnimation(kartTilt);
       cancelAnimation(groundOpacity);
+      cancelAnimation(groundDraw);
       cancelAnimation(smokeOpacity);
+      cancelAnimation(smokeBurst);
       cancelAnimation(nameY);
       cancelAnimation(nameOpacity);
+      cancelAnimation(lockupScale);
       cancelAnimation(ruleScale);
       cancelAnimation(numberY);
       cancelAnimation(numberOpacity);
     };
   }, [
     kartX,
+    kartTilt,
     groundOpacity,
+    groundDraw,
     smokeOpacity,
+    smokeBurst,
     nameY,
     nameOpacity,
+    lockupScale,
     ruleScale,
     numberY,
     numberOpacity,
@@ -196,12 +253,23 @@ export function SplashLoader({ appReady = false, onFinish }: Props) {
   }, [appReady, exitOpacity, onFinish]);
 
   const rootStyle = useAnimatedStyle(() => ({ opacity: exitOpacity.value }));
-  const kartStyle = useAnimatedStyle(() => ({ transform: [{ translateX: kartX.value }] }));
-  const groundStyle = useAnimatedStyle(() => ({ opacity: groundOpacity.value }));
-  const smokeStyle = useAnimatedStyle(() => ({ opacity: smokeOpacity.value }));
+  const kartStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: kartX.value }, { rotateZ: `${kartTilt.value}deg` }],
+  }));
+  const groundStyle = useAnimatedStyle(() => ({
+    opacity: groundOpacity.value,
+    transform: [{ scaleX: groundDraw.value }],
+  }));
+  const smokeStyle = useAnimatedStyle(() => ({
+    opacity: smokeOpacity.value,
+    transform: [{ scale: smokeBurst.value }],
+  }));
   const nameStyle = useAnimatedStyle(() => ({
     opacity: nameOpacity.value,
     transform: [{ translateY: nameY.value }],
+  }));
+  const lockupStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: lockupScale.value }],
   }));
   const ruleStyle = useAnimatedStyle(() => ({ transform: [{ scaleX: ruleScale.value }] }));
   const numberStyle = useAnimatedStyle(() => ({
@@ -244,7 +312,7 @@ export function SplashLoader({ appReady = false, onFinish }: Props) {
         </View>
 
         <View style={[styles.centerRow, { top: NAME_TOP }]}>
-          <View style={styles.lockup}>
+          <Animated.View style={[styles.lockup, lockupStyle]}>
             <Animated.Text style={[styles.word, nameStyle]}>COCKPIT</Animated.Text>
             <View style={styles.numberRow}>
               <Animated.View
@@ -255,7 +323,7 @@ export function SplashLoader({ appReady = false, onFinish }: Props) {
                 style={[styles.rule, { transformOrigin: 'left center' }, ruleStyle]}
               />
             </View>
-          </View>
+          </Animated.View>
         </View>
       </View>
     </Animated.View>
@@ -274,6 +342,8 @@ const styles = StyleSheet.create({
     right: 0,
     height: 1,
     backgroundColor: 'rgba(0,0,0,0.10)',
+    // Cresce da esquerda, no rastro do kart.
+    transformOrigin: 'left center',
   },
   stage: {
     position: 'absolute',
@@ -298,9 +368,16 @@ const styles = StyleSheet.create({
   },
   word: {
     fontFamily: fonts.wordmark,
-    fontSize: 46,
-    lineHeight: 46,
-    letterSpacing: -1.61, // −0.035em
+    fontSize: WORDMARK_SIZE,
+    // Folga vertical: lineHeight igual ao fontSize corta as extremidades do
+    // glifo no RN, e no Android o padding de fonte ainda come mais um pedaço.
+    lineHeight: Math.round(WORDMARK_SIZE * 1.22),
+    includeFontPadding: false,
+    letterSpacing: WORDMARK_SIZE * -0.035,
+    // O itálico avança para fora da caixa que o RN mede, e é isso que decepa
+    // o T final. O padding devolve o espaço que a inclinação ocupa.
+    paddingHorizontal: Math.ceil(WORDMARK_SIZE * 0.18),
+    textAlign: 'center',
     color: colors.ink,
   },
   numberRow: {
