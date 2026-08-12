@@ -79,12 +79,11 @@ module.exports = {
       [
         'expo-splash-screen',
         {
-          // Frame nativo: wordmark COCKPIT 219 (branco+azul) sobre preto.
-          // Mesmo logo usado no SplashLoader (JS) → handoff preto→preto perfeito.
-          image: './assets/splash-logo-f1.png',
-          imageWidth: 300,
-          resizeMode: 'contain',
-          backgroundColor: '#000000',
+          // Frame nativo em branco liso, sem imagem: a splash do Cockpit 219 é
+          // branca e começa com a tela vazia — o kart entra pela esquerda. Um
+          // logo aqui apareceria e sumiria antes da animação começar, e o preto
+          // anterior piscava contra o branco do JS.
+          backgroundColor: '#FFFFFF',
         },
       ],
       [

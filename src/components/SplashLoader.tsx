@@ -1,273 +1,325 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Dimensions, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   cancelAnimation,
   Easing,
+  interpolate,
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withDelay,
   withRepeat,
-  withSequence,
   withTiming,
 } from 'react-native-reanimated';
+import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
+import { KartMark } from './ui/KartMark';
+import { colors, fonts } from '../theme';
 
 type Props = {
+  /** Quando o app terminou de carregar. A splash cobre o carregamento — não o alonga. */
+  appReady?: boolean;
   onFinish?: () => void;
-  durationMs?: number;
 };
 
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+/** O design foi medido sobre uma tela de 390 × 844. */
+const DESIGN_W = 390;
+const DESIGN_H = 844;
 
-const BG = '#000000';
-const BLUE = '#1C8FE5';
-const WHITE = '#F4F4F4';
+const KART_W = 176;
+const KART_H = 122; // 176 × 456 / 659
+const KART_TOP = 306;
+const GROUND_TOP = 424;
+/**
+ * Derivado, não fixado à parte: travar os dois valores separadamente já causou
+ * sobreposição quando a arte trocou.
+ */
+const NAME_TOP = KART_TOP + KART_H + 22;
 
-export function SplashLoader({ onFinish, durationMs = 2600 }: Props) {
-  // Logo: slam-in (entra grande, assenta com leve overshoot).
-  const logoOpacity = useSharedValue(0);
-  const logoScale = useSharedValue(1.25);
+/** Fim da sequência. Depois disso a splash sai de qualquer jeito. */
+const SEQUENCE_MS = 2300;
+/**
+ * Piso de exibição. O handoff pede que a splash não atrase a abertura, mas
+ * cortar assim que o perfil e as fontes resolvem (~300 ms) engoliria a entrada
+ * do kart. 1,6 s é a duração que o próprio handoff nomeia: o kart já chegou,
+ * freou e o nome está na tela.
+ */
+const MIN_VISIBLE_MS = 1600;
+/** Troca de tela. */
+const EXIT_MS = 220;
 
-  // Flash azul no impacto.
-  const flashOpacity = useSharedValue(0);
+const SMOKE_STOP_MS = 1150;
+const NAME_DELAY_MS = 1020;
 
-  // Acento azul (linha que cresce sob o COCKPIT).
-  const accentScaleX = useSharedValue(0);
+const EASE_KART = Easing.bezier(0.2, 0.75, 0.28, 1);
+const EASE_IN = Easing.bezier(0.16, 1, 0.3, 1);
 
-  // "219" entra logo depois do impacto.
-  const subOpacity = useSharedValue(0);
+/**
+ * Seis baforadas em ciclo contínuo, emitidas atrás da roda traseira.
+ * Os valores são deliberadamente irregulares: se as seis compartilharem
+ * duração, o conjunto pulsa em bloco e denuncia que é animação.
+ */
+const PUFFS = [
+  { size: 54, dx: -74, dy: -30, duration: 1300, delay: 0 },
+  { size: 40, dx: -58, dy: -17, duration: 1100, delay: 160 },
+  { size: 64, dx: -92, dy: -40, duration: 1550, delay: 320 },
+  { size: 44, dx: -66, dy: -9, duration: 1200, delay: 480 },
+  { size: 58, dx: -84, dy: -28, duration: 1400, delay: 640 },
+  { size: 36, dx: -52, dy: -20, duration: 1000, delay: 800 },
+];
 
-  // Speed lines azuis (4 trilhas diagonais em loop).
-  const streak1 = useSharedValue(-SCREEN_W);
-  const streak2 = useSharedValue(-SCREEN_W);
-  const streak3 = useSharedValue(-SCREEN_W);
-  const streak4 = useSharedValue(-SCREEN_W);
-
-  // Barra de progresso.
-  const progress = useSharedValue(0);
+function Puff({ size, dx, dy, duration, delay }: (typeof PUFFS)[number]) {
+  const t = useSharedValue(0);
 
   useEffect(() => {
-    const startStreak = (sv: typeof streak1, duration: number, delay: number) => {
-      sv.value = withDelay(
-        delay,
-        withRepeat(
-          withTiming(SCREEN_W * 1.3, { duration, easing: Easing.linear }),
-          -1,
-          false
-        )
-      );
-    };
-    startStreak(streak1, 850, 0);
-    startStreak(streak2, 680, 150);
-    startStreak(streak3, 1050, 80);
-    startStreak(streak4, 760, 280);
-
-    // Logo slam-in
-    logoOpacity.value = withTiming(1, { duration: 220, easing: Easing.out(Easing.quad) });
-    logoScale.value = withTiming(1, { duration: 560, easing: Easing.out(Easing.back(1.6)) });
-
-    // Flash azul no impacto
-    flashOpacity.value = withSequence(
-      withTiming(0.45, { duration: 150, easing: Easing.out(Easing.quad) }),
-      withTiming(0, { duration: 420, easing: Easing.in(Easing.quad) })
+    t.value = withDelay(
+      delay,
+      withRepeat(withTiming(1, { duration, easing: Easing.linear }), -1, false)
     );
+    return () => cancelAnimation(t);
+  }, [t, duration, delay]);
 
-    // Acento + "219"
-    accentScaleX.value = withDelay(
-      400,
-      withTiming(1, { duration: 420, easing: Easing.out(Easing.cubic) })
+  const style = useAnimatedStyle(() => ({
+    opacity: interpolate(t.value, [0, 0.12, 1], [0, 0.5, 0]),
+    transform: [
+      { translateX: interpolate(t.value, [0, 1], [0, dx]) },
+      { translateY: interpolate(t.value, [0, 1], [0, dy]) },
+      { scale: interpolate(t.value, [0, 1], [0.28, 1]) },
+    ],
+  }));
+
+  const gradientId = `puff${size}`;
+
+  return (
+    <Animated.View
+      style={[{ position: 'absolute', left: -size / 2, top: -size / 2 }, style]}
+      pointerEvents="none"
+    >
+      <Svg width={size} height={size}>
+        <Defs>
+          {/* radial-gradient(circle at 42% 40%, …) — o raio 0.834 é a distância
+              até o canto mais distante, que é o padrão do CSS. */}
+          <RadialGradient id={gradientId} cx="0.42" cy="0.40" r="0.834">
+            <Stop offset="0" stopColor="#78808C" stopOpacity="0.72" />
+            <Stop offset="0.46" stopColor="#78808C" stopOpacity="0.34" />
+            <Stop offset="0.72" stopColor="#78808C" stopOpacity="0" />
+          </RadialGradient>
+        </Defs>
+        <Circle cx={size / 2} cy={size / 2} r={size / 2} fill={`url(#${gradientId})`} />
+      </Svg>
+    </Animated.View>
+  );
+}
+
+export function SplashLoader({ appReady = false, onFinish }: Props) {
+  const { width: screenW, height: screenH } = Dimensions.get('window');
+  /** Layout inteiro numa caixa de design escalada — mantém as proporções medidas. */
+  const scale = Math.min(screenW / DESIGN_W, screenH / DESIGN_H);
+  const offsetY = (screenH - DESIGN_H * scale) / 2;
+
+  /** O kart parado não solta fumaça: a emissão precisa parar quando ele freia. */
+  const [emitting, setEmitting] = useState(true);
+  const finished = useRef(false);
+  const mountedAt = useRef(Date.now());
+
+  const kartX = useSharedValue(-250);
+  const groundOpacity = useSharedValue(1);
+  const smokeOpacity = useSharedValue(1);
+  const nameY = useSharedValue(9);
+  const nameOpacity = useSharedValue(0);
+  const ruleScale = useSharedValue(0);
+  const numberY = useSharedValue(9);
+  const numberOpacity = useSharedValue(0);
+  const exitOpacity = useSharedValue(1);
+
+  useEffect(() => {
+    kartX.value = withTiming(0, { duration: 1050, easing: EASE_KART });
+    groundOpacity.value = withDelay(550, withTiming(0, { duration: 1600, easing: Easing.linear }));
+
+    nameOpacity.value = withDelay(NAME_DELAY_MS, withTiming(1, { duration: 550, easing: EASE_IN }));
+    nameY.value = withDelay(NAME_DELAY_MS, withTiming(0, { duration: 550, easing: EASE_IN }));
+
+    ruleScale.value = withDelay(1160, withTiming(1, { duration: 450, easing: EASE_IN }));
+
+    numberOpacity.value = withDelay(1200, withTiming(1, { duration: 500, easing: EASE_IN }));
+    numberY.value = withDelay(1200, withTiming(0, { duration: 500, easing: EASE_IN }));
+
+    // O que já está no ar se dissolve; a emissão para junto.
+    smokeOpacity.value = withDelay(
+      SMOKE_STOP_MS,
+      withTiming(0, { duration: 450, easing: Easing.linear })
     );
-    subOpacity.value = withDelay(560, withTiming(1, { duration: 380 }));
-
-    // Barra de progresso
-    progress.value = withDelay(
-      300,
-      withTiming(1, { duration: durationMs - 300, easing: Easing.out(Easing.cubic) })
-    );
-
-    const t = setTimeout(() => {
-      onFinish?.();
-    }, durationMs);
+    const stop = setTimeout(() => setEmitting(false), SMOKE_STOP_MS + 450);
 
     return () => {
-      clearTimeout(t);
-      cancelAnimation(logoOpacity);
-      cancelAnimation(logoScale);
-      cancelAnimation(flashOpacity);
-      cancelAnimation(accentScaleX);
-      cancelAnimation(subOpacity);
-      cancelAnimation(streak1);
-      cancelAnimation(streak2);
-      cancelAnimation(streak3);
-      cancelAnimation(streak4);
-      cancelAnimation(progress);
+      clearTimeout(stop);
+      cancelAnimation(kartX);
+      cancelAnimation(groundOpacity);
+      cancelAnimation(smokeOpacity);
+      cancelAnimation(nameY);
+      cancelAnimation(nameOpacity);
+      cancelAnimation(ruleScale);
+      cancelAnimation(numberY);
+      cancelAnimation(numberOpacity);
     };
   }, [
-    durationMs,
-    onFinish,
-    logoOpacity,
-    logoScale,
-    flashOpacity,
-    accentScaleX,
-    subOpacity,
-    streak1,
-    streak2,
-    streak3,
-    streak4,
-    progress,
+    kartX,
+    groundOpacity,
+    smokeOpacity,
+    nameY,
+    nameOpacity,
+    ruleScale,
+    numberY,
+    numberOpacity,
   ]);
 
-  const logoStyle = useAnimatedStyle(() => ({
-    opacity: logoOpacity.value,
-    transform: [{ scale: logoScale.value }],
-  }));
-  const flashStyle = useAnimatedStyle(() => ({ opacity: flashOpacity.value }));
-  const accentStyle = useAnimatedStyle(() => ({ transform: [{ scaleX: accentScaleX.value }] }));
-  const subStyle = useAnimatedStyle(() => ({ opacity: subOpacity.value }));
-  const fillStyle = useAnimatedStyle(() => ({ width: `${progress.value * 100}%` }));
+  // Sai no piso de exibição se o app já carregou, e no fim da sequência caso
+  // contrário — o que vier depois manda.
+  useEffect(() => {
+    const leave = () => {
+      if (finished.current) return;
+      finished.current = true;
+      exitOpacity.value = withTiming(
+        0,
+        { duration: EXIT_MS, easing: Easing.out(Easing.quad) },
+        (done) => {
+          if (done && onFinish) runOnJS(onFinish)();
+        }
+      );
+    };
 
-  const streak1Style = useAnimatedStyle(() => ({
-    transform: [{ translateX: streak1.value }, { skewX: '-20deg' }],
+    const elapsed = Date.now() - mountedAt.current;
+    const waitFor = appReady
+      ? Math.max(0, MIN_VISIBLE_MS - elapsed)
+      : Math.max(0, SEQUENCE_MS - elapsed);
+    const t = setTimeout(leave, waitFor);
+    return () => clearTimeout(t);
+  }, [appReady, exitOpacity, onFinish]);
+
+  const rootStyle = useAnimatedStyle(() => ({ opacity: exitOpacity.value }));
+  const kartStyle = useAnimatedStyle(() => ({ transform: [{ translateX: kartX.value }] }));
+  const groundStyle = useAnimatedStyle(() => ({ opacity: groundOpacity.value }));
+  const smokeStyle = useAnimatedStyle(() => ({ opacity: smokeOpacity.value }));
+  const nameStyle = useAnimatedStyle(() => ({
+    opacity: nameOpacity.value,
+    transform: [{ translateY: nameY.value }],
   }));
-  const streak2Style = useAnimatedStyle(() => ({
-    transform: [{ translateX: streak2.value }, { skewX: '-20deg' }],
-  }));
-  const streak3Style = useAnimatedStyle(() => ({
-    transform: [{ translateX: streak3.value }, { skewX: '-20deg' }],
-  }));
-  const streak4Style = useAnimatedStyle(() => ({
-    transform: [{ translateX: streak4.value }, { skewX: '-20deg' }],
+  const ruleStyle = useAnimatedStyle(() => ({ transform: [{ scaleX: ruleScale.value }] }));
+  const numberStyle = useAnimatedStyle(() => ({
+    opacity: numberOpacity.value,
+    transform: [{ translateY: numberY.value }],
   }));
 
   return (
-    <View style={styles.root}>
-      {/* Speed lines (fundo) */}
-      <View style={styles.streaksLayer} pointerEvents="none">
-        <Animated.View style={[styles.streak, { top: '22%', width: 200 }, streak1Style]} />
-        <Animated.View
-          style={[styles.streak, { top: '40%', width: 280, opacity: 0.5 }, streak2Style]}
-        />
-        <Animated.View
-          style={[styles.streak, { top: '64%', width: 180, opacity: 0.7 }, streak3Style]}
-        />
-        <Animated.View
-          style={[styles.streak, { top: '80%', width: 240, opacity: 0.45 }, streak4Style]}
-        />
-      </View>
+    <Animated.View style={[styles.root, rootStyle]}>
+      {/* Linha de solo — sangra a largura toda, fora da caixa de design. */}
+      <Animated.View
+        style={[styles.ground, { top: offsetY + GROUND_TOP * scale }, groundStyle]}
+        pointerEvents="none"
+      />
 
-      {/* Logo COCKPIT 219 (texto nativo, pesado + itálico) */}
-      <Animated.View style={[styles.center, logoStyle]}>
-        <Text style={styles.word}>COCKPIT</Text>
-        <Animated.View style={[styles.accent, accentStyle]} />
-        <Animated.View style={[styles.row, subStyle]}>
-          <Text style={styles.chev}>‹‹‹</Text>
-          <Text style={styles.num}>219</Text>
-          <Text style={styles.chev}>›››</Text>
-        </Animated.View>
-      </Animated.View>
+      <View
+        style={[
+          styles.stage,
+          {
+            width: DESIGN_W,
+            height: DESIGN_H,
+            left: (screenW - DESIGN_W * scale) / 2,
+            top: offsetY,
+            transform: [{ scale }],
+          },
+        ]}
+        pointerEvents="none"
+      >
+        <View style={[styles.centerRow, { top: KART_TOP }]}>
+          <Animated.View style={[{ width: KART_W, height: KART_H }, kartStyle]}>
+            {/* Emitida atrás da roda traseira. */}
+            <Animated.View
+              style={[styles.smokeOrigin, { top: KART_H * 0.68 }, smokeStyle]}
+              pointerEvents="none"
+            >
+              {emitting && PUFFS.map((p, i) => <Puff key={i} {...p} />)}
+            </Animated.View>
+            <KartMark width={KART_W} height={KART_H} />
+          </Animated.View>
+        </View>
 
-      {/* Flash azul no impacto */}
-      <Animated.View style={[styles.flash, flashStyle]} pointerEvents="none" />
-
-      {/* Barra de progresso */}
-      <View style={styles.barWrapper} pointerEvents="none">
-        <View style={styles.barTrack}>
-          <Animated.View style={[styles.barFill, fillStyle]} />
+        <View style={[styles.centerRow, { top: NAME_TOP }]}>
+          <View style={styles.lockup}>
+            <Animated.Text style={[styles.word, nameStyle]}>COCKPIT</Animated.Text>
+            <View style={styles.numberRow}>
+              <Animated.View
+                style={[styles.rule, { transformOrigin: 'right center' }, ruleStyle]}
+              />
+              <Animated.Text style={[styles.number, numberStyle]}>219</Animated.Text>
+              <Animated.View
+                style={[styles.rule, { transformOrigin: 'left center' }, ruleStyle]}
+              />
+            </View>
+          </View>
         </View>
       </View>
-    </View>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
   root: {
-    flex: 1,
-    backgroundColor: BG,
-    justifyContent: 'center',
-    alignItems: 'center',
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.paper,
     overflow: 'hidden',
   },
-  streaksLayer: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  streak: {
-    position: 'absolute',
-    left: 0,
-    height: 3,
-    backgroundColor: BLUE,
-    opacity: 0.6,
-    shadowColor: BLUE,
-    shadowOpacity: 0.9,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 0 },
-  },
-  center: {
-    alignItems: 'center',
-  },
-  word: {
-    color: WHITE,
-    fontSize: 56,
-    fontWeight: '900',
-    fontStyle: 'italic',
-    letterSpacing: -2,
-    textShadowColor: 'rgba(28,143,229,0.55)',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 18,
-  },
-  accent: {
-    width: 200,
-    height: 4,
-    backgroundColor: BLUE,
-    marginTop: 10,
-    borderRadius: 2,
-    shadowColor: BLUE,
-    shadowOpacity: 1,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 0 },
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 14,
-    gap: 12,
-  },
-  chev: {
-    color: BLUE,
-    fontSize: 22,
-    fontWeight: '900',
-    fontStyle: 'italic',
-    letterSpacing: -2,
-  },
-  num: {
-    color: BLUE,
-    fontSize: 30,
-    fontWeight: '900',
-    fontStyle: 'italic',
-    letterSpacing: 2,
-    textShadowColor: 'rgba(28,143,229,0.5)',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 12,
-  },
-  flash: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: BLUE,
-  },
-  barWrapper: {
+  ground: {
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: SCREEN_H * 0.08,
+    height: 1,
+    backgroundColor: 'rgba(0,0,0,0.10)',
+  },
+  stage: {
+    position: 'absolute',
+    transformOrigin: 'left top',
+  },
+  centerRow: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
     alignItems: 'center',
   },
-  barTrack: {
-    width: '52%',
-    height: 4,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderRadius: 2,
-    overflow: 'hidden',
+  smokeOrigin: {
+    // Fica atrás do kart pela ordem de render — zIndex negativo é irregular
+    // no Android.
+    position: 'absolute',
+    left: 10,
+    width: 0,
+    height: 0,
   },
-  barFill: {
-    height: '100%',
-    backgroundColor: BLUE,
-    borderRadius: 2,
+  lockup: {
+    alignItems: 'center',
+  },
+  word: {
+    fontFamily: fonts.wordmark,
+    fontSize: 46,
+    lineHeight: 46,
+    letterSpacing: -1.61, // −0.035em
+    color: colors.ink,
+  },
+  numberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+    marginTop: 5,
+  },
+  rule: {
+    width: 32,
+    height: 1.5,
+    // Sobre branco vale o azul cheio: o azul claro dá 2,48:1 e sai lavado.
+    backgroundColor: colors.blue,
+  },
+  number: {
+    fontFamily: fonts.monoMedium,
+    fontSize: 17,
+    letterSpacing: 5.1, // 0.3em
+    paddingLeft: 5.1, // compensa o tracking do último caractere
+    color: colors.blue,
   },
 });

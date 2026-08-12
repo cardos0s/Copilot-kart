@@ -11,6 +11,19 @@ import {
   PlayfairDisplay_400Regular_Italic,
   useFonts,
 } from '@expo-google-fonts/playfair-display';
+import {
+  Chivo_400Regular,
+  Chivo_500Medium,
+  Chivo_600SemiBold,
+  Chivo_700Bold,
+  Chivo_800ExtraBold,
+  Chivo_800ExtraBold_Italic,
+} from '@expo-google-fonts/chivo';
+import {
+  RobotoMono_400Regular,
+  RobotoMono_500Medium,
+  RobotoMono_600SemiBold,
+} from '@expo-google-fonts/roboto-mono';
 import { getProfile } from '../src/storage/profile';
 import { SplashLoader } from '../src/components/SplashLoader';
 import { colors } from '../src/theme';
@@ -63,15 +76,27 @@ function AuthGate() {
 
 export default function RootLayout() {
   const [profileReady, setProfileReady] = useState(false);
-  const [barFinished, setBarFinished] = useState(false);
-  // Carrega Playfair Display pras telas de celebração (Level Up, Achievements).
+  const [splashDone, setSplashDone] = useState(false);
+  // Chivo é a fonte de interface do Cockpit 219 e Roboto Mono a dos números;
+  // Playfair Display segue pras telas de celebração (Level Up, Achievements).
   // Se falhar carregar, a app cai pro system font sem quebrar.
   const [fontsLoaded] = useFonts({
+    Chivo_400Regular,
+    Chivo_500Medium,
+    Chivo_600SemiBold,
+    Chivo_700Bold,
+    Chivo_800ExtraBold,
+    Chivo_800ExtraBold_Italic,
+    RobotoMono_400Regular,
+    RobotoMono_500Medium,
+    RobotoMono_600SemiBold,
     PlayfairDisplay_400Regular,
     PlayfairDisplay_700Bold,
     PlayfairDisplay_400Regular_Italic,
   });
-  const ready = profileReady && barFinished && fontsLoaded;
+  // A splash cobre o carregamento; quem decide a hora de sair é ela, com este
+  // sinal. Ela não espera mais que o necessário nem some antes da animação.
+  const ready = profileReady && fontsLoaded;
 
   useEffect(() => {
     // Pré-checa o perfil em paralelo à animação da barra, pra que a transição
@@ -88,7 +113,7 @@ export default function RootLayout() {
   }, []);
 
   const handleSplashAnimationFinish = useCallback(() => {
-    setBarFinished(true);
+    setSplashDone(true);
   }, []);
 
   useEffect(() => {
@@ -107,7 +132,8 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <StatusBar style="light" />
+        {/* A splash é branca; o resto do app é escuro. */}
+        <StatusBar style={splashDone ? 'light' : 'dark'} />
         <View style={{ flex: 1, backgroundColor: colors.bg }}>
           <AuthGate />
           <Stack
@@ -121,6 +147,7 @@ export default function RootLayout() {
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen name="onboarding" options={{ headerShown: false }} />
             <Stack.Screen name="new-session" options={{ title: 'Nova sessão' }} />
+            <Stack.Screen name="at-track" options={{ headerShown: false }} />
             <Stack.Screen name="recording" options={{ headerShown: false }} />
             <Stack.Screen name="recording-reference" options={{ headerShown: false }} />
             <Stack.Screen name="session/[id]" options={{ headerShown: false }} />
@@ -145,9 +172,9 @@ export default function RootLayout() {
             <Stack.Screen name="competition" options={{ headerShown: false }} />
             <Stack.Screen name="competition-race" options={{ headerShown: false }} />
           </Stack>
-          {!ready && (
+          {!splashDone && (
             <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
-              <SplashLoader onFinish={handleSplashAnimationFinish} />
+              <SplashLoader appReady={ready} onFinish={handleSplashAnimationFinish} />
             </View>
           )}
         </View>
