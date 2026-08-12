@@ -1,3 +1,5 @@
+export type TrackKind = 'indoor' | 'outdoor';
+
 export type TrackRef = {
   id: string;
   name: string;
@@ -7,6 +9,15 @@ export type TrackRef = {
   lat: number;
   lng: number;
   lengthM: number;
+  /**
+   * Campos que as telas de escolha e confirmação mostram. Ficam opcionais de
+   * propósito: são dados de mundo real que ninguém levantou pista a pista
+   * ainda, e a UI mostra "—" quando falta. Preencher chutando encheria o
+   * catálogo de número errado com cara de número certo.
+   */
+  turns?: number;
+  widthM?: number;
+  kind?: TrackKind;
 };
 
 /**

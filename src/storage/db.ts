@@ -332,6 +332,60 @@ export async function getTrackHistory(
   }));
 }
 
+export type TrackStats = {
+  /** Melhor volta do piloto nesta pista. */
+  bestLapMs: number | null;
+  /** Quantas sessões ele já rodou aqui. */
+  sessionCount: number;
+};
+
+/**
+ * Resumo do piloto numa pista — o "Seu histórico aqui" das telas de escolha
+ * e confirmação. Sessão sem volta completa conta como sessão, mas não entra
+ * na melhor volta.
+ */
+export async function getTrackStats(trackId: string): Promise<TrackStats> {
+  const d = await db();
+  const row = await d.getFirstAsync<any>(
+    `SELECT (SELECT COUNT(*) FROM sessions WHERE track_id = ?)          as sessionCount,
+            (SELECT MIN(l.duration_ms)
+               FROM laps l
+               JOIN sessions s ON s.id = l.session_id
+              WHERE s.track_id = ?)                                     as bestLapMs`,
+    trackId,
+    trackId
+  );
+  return {
+    sessionCount: row?.sessionCount ?? 0,
+    bestLapMs: row?.bestLapMs ?? null,
+  };
+}
+
+/**
+ * Mesmo resumo de `getTrackStats`, para todas as pistas de uma vez — a lista
+ * de kartódromos passa de 60 linhas e uma consulta por linha não se sustenta.
+ */
+export async function getAllTrackStats(): Promise<Map<string, TrackStats>> {
+  const d = await db();
+  const rows = await d.getAllAsync<any>(
+    `SELECT s.track_id                         as trackId,
+            COUNT(DISTINCT s.id)               as sessionCount,
+            MIN(l.duration_ms)                 as bestLapMs
+       FROM sessions s
+       LEFT JOIN laps l ON l.session_id = s.id
+      WHERE s.track_id IS NOT NULL
+      GROUP BY s.track_id`
+  );
+  const map = new Map<string, TrackStats>();
+  for (const r of rows) {
+    map.set(r.trackId, {
+      sessionCount: r.sessionCount ?? 0,
+      bestLapMs: r.bestLapMs ?? null,
+    });
+  }
+  return map;
+}
+
 export async function deleteSession(id: string): Promise<void> {
   const d = await db();
   // FK ON DELETE CASCADE existe no schema, mas PRAGMA foreign_keys não tá

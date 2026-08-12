@@ -300,7 +300,7 @@ export default function Home() {
             style={({ pressed }) => [s.modeCard, pressed && { opacity: 0.85 }]}
             onPress={() => router.push('/legends' as any)}
           >
-            <View style={[s.modeIcon, { backgroundColor: 'rgba(47,107,255,0.12)', borderColor: colors.racingBlue }]}>
+            <View style={[s.modeIcon, { backgroundColor: 'rgba(37, 99, 255,0.12)', borderColor: colors.racingBlue }]}>
               <Text style={s.modeEmoji}>⚔️</Text>
             </View>
             <Text style={s.modeTitle}>LENDAS</Text>
@@ -321,7 +321,10 @@ export default function Home() {
         {/* CTA — Iniciar Sessão */}
         <Pressable
           style={({ pressed }) => [s.cta, pressed && { opacity: 0.9 }]}
-          onPress={() => router.push('/new-session')}
+          // Passa pela detecção: quem está no kartódromo não precisa ver a
+          // lista nacional pra começar. Ela cai em /new-session sozinha quando
+          // não reconhece onde o piloto está.
+          onPress={() => router.push('/at-track' as any)}
         >
           <Text style={s.ctaIcon}>⏻</Text>
           <Text style={s.ctaText}>INICIAR SESSÃO</Text>
