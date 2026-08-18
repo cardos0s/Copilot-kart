@@ -114,7 +114,7 @@ export default function Profile() {
   return (
     <View style={s.root}>
       <ScrollView
-        contentContainerStyle={{ paddingTop: insets.top + spacing.l, paddingBottom: 120, paddingHorizontal: spacing.l }}
+        contentContainerStyle={{ paddingTop: insets.top + spacing.l, paddingBottom: 150, paddingHorizontal: spacing.l }}
         showsVerticalScrollIndicator={false}
       >
         {/* Header */}

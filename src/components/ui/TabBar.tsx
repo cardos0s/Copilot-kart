@@ -5,6 +5,23 @@ import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanim
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, fonts, radius } from '../../theme';
 
+const PILL_HEIGHT = 52;
+const BAR_PADDING = 7;
+
+/** Altura da cápsula: pílula + respiro interno + a borda de 1 px de cada lado. */
+export const TAB_BAR_HEIGHT = PILL_HEIGHT + BAR_PADDING * 2 + 2;
+/** Distância mínima entre a cápsula e a borda de baixo da tela. */
+export const TAB_BAR_GAP = 12;
+
+/**
+ * Quanto a barra ocupa a partir da borda inferior, com folga. Quem desenha
+ * algo flutuante acima dela (FAB, toast) deve partir daqui em vez de chutar
+ * um número — foi assim que o FAB da home indoor quase encostou na barra.
+ */
+export function tabBarSpace(insetBottom: number, gap = 16) {
+  return Math.max(insetBottom, TAB_BAR_GAP) + TAB_BAR_HEIGHT + gap;
+}
+
 export type TabItem<T extends string = string> = {
   key: T;
   label: string;
@@ -58,7 +75,6 @@ export function TabBar<T extends string>({ tabs, activeKey, onChange }: Props<T>
                   <Animated.Text
                     entering={FadeIn.duration(180).delay(60)}
                     exiting={FadeOut.duration(110)}
-                    numberOfLines={1}
                     style={styles.label}
                   >
                     {tab.label}
@@ -84,7 +100,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    padding: 6,
+    padding: BAR_PADDING,
     borderRadius: radius.pill,
     // O overflow é o que faz o blur respeitar a cápsula em vez de vazar nos
     // cantos, e a cor é o piso de legibilidade se o blur não estiver ativo.
@@ -96,9 +112,9 @@ const styles = StyleSheet.create({
   pill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    height: 42,
-    paddingHorizontal: 16,
+    gap: 9,
+    height: PILL_HEIGHT,
+    paddingHorizontal: 18,
     borderRadius: radius.pill,
   },
   pillActive: {
@@ -106,8 +122,12 @@ const styles = StyleSheet.create({
   },
   label: {
     fontFamily: fonts.semibold,
-    fontSize: 14.5,
-    letterSpacing: -0.15,
+    fontSize: 16,
+    letterSpacing: -0.16,
     color: colors.blueSoft,
+    // Sem isto o texto encolhe pra caber na largura transitória da pílula
+    // enquanto ela abre, e chega truncado no fim da animação.
+    flexShrink: 0,
+    includeFontPadding: false,
   },
 });

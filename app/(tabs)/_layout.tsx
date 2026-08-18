@@ -10,28 +10,28 @@ const TABS: TabItem<TabKey>[] = [
     key: 'index',
     label: 'Início',
     icon: (active) => (
-      <Icon name="home" color={active ? colors.blueSoft : colors.muted} size={22} />
+      <Icon name="home" color={active ? colors.blueSoft : colors.muted} size={24} />
     ),
   },
   {
     key: 'sessions',
     label: 'Sessões',
     icon: (active) => (
-      <Icon name="list" color={active ? colors.blueSoft : colors.muted} size={22} />
+      <Icon name="list" color={active ? colors.blueSoft : colors.muted} size={24} />
     ),
   },
   {
     key: 'insights',
     label: 'Insights',
     icon: (active) => (
-      <Icon name="bolt" color={active ? colors.blueSoft : colors.muted} size={22} />
+      <Icon name="bolt" color={active ? colors.blueSoft : colors.muted} size={24} />
     ),
   },
   {
     key: 'profile',
     label: 'Perfil',
     icon: (active) => (
-      <Icon name="person" color={active ? colors.blueSoft : colors.muted} size={22} />
+      <Icon name="person" color={active ? colors.blueSoft : colors.muted} size={24} />
     ),
   },
 ];

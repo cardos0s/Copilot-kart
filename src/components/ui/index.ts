@@ -8,7 +8,7 @@ export { BrandMark } from './BrandMark';
 export { Chart } from './Chart';
 export { Gauge } from './Gauge';
 export { DecorativeSplash } from './DecorativeSplash';
-export { TabBar } from './TabBar';
+export { TabBar, TAB_BAR_HEIGHT, TAB_BAR_GAP, tabBarSpace } from './TabBar';
 export type { TabItem } from './TabBar';
 export { Icon } from './Icon';
 export type { IconName } from './Icon';

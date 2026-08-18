@@ -14,7 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { fetchLeaderboard, LeaderboardEntry } from '../lib/leaderboard';
 import { TRACKS, findTrackById } from '../data/tracks';
 import { getProfile } from '../storage/profile';
-import { Icon } from './ui';
+import { Icon, tabBarSpace } from './ui';
 import { CompetitionEntry } from './CompetitionEntry';
 import { colors, radius, spacing } from '../theme';
 
@@ -199,7 +199,7 @@ export function IndoorHome({ showBack }: { showBack?: boolean } = {}) {
       </ScrollView>
 
       {/* Gravar volta */}
-      <View style={[s.fabWrap, { paddingBottom: insets.bottom + 84 }]} pointerEvents="box-none">
+      <View style={[s.fabWrap, { paddingBottom: tabBarSpace(insets.bottom) }]} pointerEvents="box-none">
         <Pressable style={s.fab} onPress={() => router.push('/new-session' as any)}>
           <Icon name="bolt" size={20} color="#fff" />
           <Text style={s.fabText}>Gravar volta</Text>

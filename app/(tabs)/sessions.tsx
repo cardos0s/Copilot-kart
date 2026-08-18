@@ -168,7 +168,7 @@ export default function Sessions() {
         sections={sections}
         keyExtractor={(it) => it.id}
         stickySectionHeadersEnabled={false}
-        contentContainerStyle={{ paddingHorizontal: spacing.l, paddingBottom: 120 }}
+        contentContainerStyle={{ paddingHorizontal: spacing.l, paddingBottom: 150 }}
         ListHeaderComponent={
           <View style={s.summaryRow}>
             <View style={s.recordCard}>
