@@ -1,7 +1,9 @@
 import { ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { BlurView } from 'expo-blur';
+import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, spacing } from '../../theme';
+import { colors, fonts, radius } from '../../theme';
 
 export type TabItem<T extends string = string> = {
   key: T;
@@ -16,71 +18,96 @@ type Props<T extends string> = {
 };
 
 /**
- * Bottom tab bar custom — visual standalone, sem dependência de @react-navigation.
- * Pra wirear no expo-router, criar um adapter que recebe BottomTabBarProps e mapeia
- * state.routes -> tabs / state.index -> activeKey / navigation.navigate -> onChange.
+ * Barra flutuante de vidro: cápsula centrada por cima do conteúdo, só ícones,
+ * e a aba ativa se abre mostrando o nome dela.
+ *
+ * Ela sobrepõe a tela em vez de ocupar espaço no layout — é isso que dá o que
+ * borrar por trás do vidro. As telas de aba já reservam 120 px no fim do
+ * scroll, então nada fica escondido embaixo.
  */
 export function TabBar<T extends string>({ tabs, activeKey, onChange }: Props<T>) {
   const insets = useSafeAreaInsets();
 
   return (
-    <View
-      style={[
-        styles.root,
-        { paddingBottom: Math.max(insets.bottom, spacing.s) },
-      ]}
-    >
-      <View style={styles.row}>
+    <View style={[styles.root, { bottom: Math.max(insets.bottom, 12) }]} pointerEvents="box-none">
+      <BlurView
+        intensity={Platform.OS === 'ios' ? 42 : 28}
+        tint="dark"
+        // No Android o blur real depende deste método; sem ele o componente
+        // cai no fundo sólido de baixo, que já é legível sozinho.
+        experimentalBlurMethod="dimezisBlurView"
+        style={styles.bar}
+      >
         {tabs.map((tab) => {
           const active = tab.key === activeKey;
           return (
             <Pressable
               key={tab.key}
               onPress={() => onChange(tab.key)}
-              style={({ pressed }) => [
-                styles.tab,
-                pressed && { opacity: 0.6 },
-              ]}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: active }}
+              accessibilityLabel={tab.label}
+              style={({ pressed }) => [pressed && { opacity: 0.7 }]}
             >
-              {tab.icon(active)}
-              <Text style={[styles.label, active && styles.labelActive]}>
-                {tab.label}
-              </Text>
+              <Animated.View
+                layout={LinearTransition.duration(260)}
+                style={[styles.pill, active && styles.pillActive]}
+              >
+                {tab.icon(active)}
+                {active && (
+                  <Animated.Text
+                    entering={FadeIn.duration(180).delay(60)}
+                    exiting={FadeOut.duration(110)}
+                    numberOfLines={1}
+                    style={styles.label}
+                  >
+                    {tab.label}
+                  </Animated.Text>
+                )}
+              </Animated.View>
             </Pressable>
           );
         })}
-      </View>
+      </BlurView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: {
-    backgroundColor: colors.bgElevated,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    paddingTop: spacing.s,
-    paddingHorizontal: spacing.s,
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
   },
-  row: {
+  bar: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
     alignItems: 'center',
-  },
-  tab: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 4,
     gap: 4,
+    padding: 6,
+    borderRadius: radius.pill,
+    // O overflow é o que faz o blur respeitar a cápsula em vez de vazar nos
+    // cantos, e a cor é o piso de legibilidade se o blur não estiver ativo.
+    overflow: 'hidden',
+    backgroundColor: 'rgba(18, 21, 27, 0.72)',
+    borderWidth: 1,
+    borderColor: colors.line2,
+  },
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    height: 42,
+    paddingHorizontal: 16,
+    borderRadius: radius.pill,
+  },
+  pillActive: {
+    backgroundColor: 'rgba(255, 255, 255, 0.10)',
   },
   label: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-    color: colors.textMuted,
-    textTransform: 'uppercase',
-  },
-  labelActive: {
-    color: colors.primary,
+    fontFamily: fonts.semibold,
+    fontSize: 14.5,
+    letterSpacing: -0.15,
+    color: colors.blueSoft,
   },
 });
