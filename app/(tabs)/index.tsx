@@ -50,6 +50,13 @@ export default function Home() {
   // Proporção que deixa o traçado com respiro em volta dos números sem empurrar
   // o gráfico pra fora da primeira tela.
   const heroH = Math.round(heroW * 0.78);
+  /**
+   * Largura em que os números podem viver dentro do traçado. O traçado é a
+   * forma real da pista e muda de proporção a cada uma, então o bloco de dados
+   * se prende a uma fração do herói em vez de ao desenho — e encolhe sozinho
+   * se o conteúdo passar disso (uma volta de mais de um minuto, por exemplo).
+   */
+  const heroInnerW = Math.round(heroW * 0.58);
   const [profile, setProfile] = useState<PilotProfile | null>(null);
   const [sessions, setSessions] = useState<SessionWithStats[]>([]);
   const [pilotType, setPilotTypeState] = useState<PilotType | null>(null);
@@ -129,14 +136,21 @@ export default function Home() {
             </View>
           ) : null}
 
-          <View style={s.heroData}>
+          <View style={[s.heroData, { maxWidth: heroInnerW }]}>
             {lastSession && lastSession.bestLapMs != null ? (
               <>
                 <Text style={s.heroLabel}>TEMPO DA ÚLTIMA VOLTA</Text>
-                <Text style={s.heroValue}>{formatLapPlain(lastSession.bestLapMs)}</Text>
+                <Text
+                  style={s.heroValue}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.6}
+                >
+                  {formatLapPlain(lastSession.bestLapMs)}
+                </Text>
                 <View style={s.heroRule} />
                 <Text style={s.heroLabel}>VELOCIDADE MÁXIMA</Text>
-                <Text style={s.heroValueSmall}>
+                <Text style={s.heroValueSmall} numberOfLines={1} adjustsFontSizeToFit>
                   {fmtKmh(lastSession.peakSpeedKmh)}
                   <Text style={s.heroUnit}> km/h</Text>
                 </Text>
@@ -291,38 +305,38 @@ const s = StyleSheet.create({
   },
   heroLabel: {
     fontFamily: fonts.semibold,
-    fontSize: 10,
-    letterSpacing: 1.2,
+    fontSize: 9,
+    letterSpacing: 1,
     textTransform: 'uppercase',
     color: colors.muted,
   },
   heroValue: {
     fontFamily: fonts.monoMedium,
-    fontSize: 56,
-    lineHeight: 64,
+    fontSize: 42,
+    lineHeight: 48,
     letterSpacing: -1,
     color: colors.text,
     fontVariant: ['tabular-nums'],
     marginTop: 6,
   },
   heroRule: {
-    width: 110,
+    width: 74,
     height: 1,
     backgroundColor: colors.line2,
-    marginVertical: spacing.xl,
+    marginVertical: spacing.l,
   },
   heroValueSmall: {
     fontFamily: fonts.monoMedium,
-    fontSize: 34,
-    lineHeight: 40,
-    letterSpacing: -0.6,
+    fontSize: 26,
+    lineHeight: 32,
+    letterSpacing: -0.5,
     color: colors.text,
     fontVariant: ['tabular-nums'],
     marginTop: 6,
   },
   heroUnit: {
     fontFamily: fonts.regular,
-    fontSize: 15,
+    fontSize: 13,
     color: colors.muted,
   },
   heroEmpty: {
