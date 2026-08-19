@@ -26,7 +26,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import { colors, spacing } from '../theme';
+import { colors, fonts, spacing } from '../theme';
 
 export const SENNA_QUOTES = [
   'Vencer faz parte da vida.',
@@ -50,6 +50,51 @@ function pickDifferentIndex(current: number | null): number {
   let pick = Math.floor(Math.random() * max);
   if (current != null && pick >= current) pick += 1;
   return pick;
+}
+
+/**
+ * Sorteia uma citação diferente da última mostrada e guarda qual foi. O card
+ * e a linha solta da home dividem isto pra não sortearem separado e a mesma
+ * abertura do app mostrar duas citações diferentes.
+ */
+export function useSennaQuote() {
+  const [idx, setIdx] = useState<number | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      let last: number | null = null;
+      try {
+        const raw = await AsyncStorage.getItem(STORAGE_KEY);
+        if (raw != null) last = parseInt(raw, 10);
+        if (Number.isNaN(last as number)) last = null;
+      } catch {
+        last = null;
+      }
+      const next = pickDifferentIndex(last);
+      setIdx(next);
+      AsyncStorage.setItem(STORAGE_KEY, String(next)).catch(() => {});
+    })();
+  }, []);
+
+  return idx == null ? null : SENNA_QUOTES[idx];
+}
+
+/** A citação como linha de texto, sem moldura — é assim que a home usa. */
+export function SennaQuoteLine({ style }: { style?: object }) {
+  const quote = useSennaQuote();
+  const opacity = useSharedValue(0);
+
+  useEffect(() => {
+    if (quote) opacity.value = withTiming(1, { duration: 600, easing: Easing.out(Easing.cubic) });
+  }, [quote, opacity]);
+
+  const aStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
+
+  return (
+    <Animated.Text style={[s.quoteLine, aStyle, style]} numberOfLines={2}>
+      {quote ?? ' '}
+    </Animated.Text>
+  );
 }
 
 export function SennaQuoteCard() {
@@ -120,6 +165,14 @@ export function SennaQuoteCard() {
 
 const s = StyleSheet.create({
   placeholder: { minHeight: 160 },
+
+  quoteLine: {
+    fontFamily: fonts.regular,
+    fontStyle: 'italic',
+    fontSize: 15,
+    lineHeight: 21,
+    color: colors.muted,
+  },
 
   card: {
     paddingTop: spacing.m,

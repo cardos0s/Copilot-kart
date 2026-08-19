@@ -22,3 +22,18 @@ export function orDash(v: number | null | undefined, suffix = ''): string {
   if (v === null || v === undefined || !isFinite(v)) return '—';
   return `${v}${suffix}`;
 }
+
+/**
+ * Volta no formato do herói da home: "50.000" abaixo de um minuto e
+ * "1:02.450" acima. Milésimo importa em kart — uma volta inteira costuma
+ * caber em menos de um minuto, e o "00:" na frente só rouba espaço do dígito
+ * que muda.
+ */
+export function formatLapPlain(ms: number | null | undefined): string {
+  if (ms === null || ms === undefined || !isFinite(ms)) return '—';
+  const totalS = ms / 1000;
+  if (totalS < 60) return totalS.toFixed(3);
+  const m = Math.floor(totalS / 60);
+  const s = totalS - m * 60;
+  return `${m}:${s.toFixed(3).padStart(6, '0')}`;
+}
