@@ -8,6 +8,7 @@ import {
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ErrorBoundary } from '../../src/components/ErrorBoundary';
@@ -29,7 +30,15 @@ import {
 import { buildReferenceLap } from '../../src/lib/geometry';
 import { Corner, describeSector, detectCorners } from '../../src/lib/corners';
 import { CornerMetric, analyzeCorners } from '../../src/lib/cornerAnalysis';
-import { CornerAnalysisPanel } from '../../src/components/CornerAnalysisPanel';
+import {
+  CornerArrow,
+  CornerMap,
+  DeltaBar,
+  LapSummaryHead,
+  deltaTone,
+  fmtDeltaS,
+} from '../../src/components/analysis/parts';
+import { formatLapPlain } from '../../src/lib/format';
 import { msToKmh, peakSpeedInSectorMs, peakSpeedMs } from '../../src/lib/speed';
 import { consumePendingCelebration } from '../../src/lib/celebrationQueue';
 import {
@@ -58,7 +67,7 @@ import {
   ScreenHeader,
   StatRow,
 } from '../../src/components/ui';
-import { colors, radius, spacing, typography } from '../../src/theme';
+import { colors, fonts, radius, spacing, typography } from '../../src/theme';
 
 // react-native-maps removido — crashava no Android sem Google Maps API key,
 // e a silhueta SVG com markers de eventos é mais legível pro caso de uso
@@ -146,6 +155,8 @@ function SessionScreenInner() {
   // degenerados e foi reparada com tempos lineares — mostra um aviso na UI
   // pra deixar claro que os deltas por setor são aproximados.
   const [approxTimestamps, setApproxTimestamps] = useState(false);
+  /** Curva em foco. Curvas e Mapa mostram a mesma — trocar numa troca na outra. */
+  const [selectedCorner, setSelectedCorner] = useState<number | null>(null);
 
   // Lê a queue de celebração na 1ª montagem e monta a fila de modais na
   // ordem PB → Achievements → Level Up. Ao fechar cada um, avança.
@@ -439,9 +450,20 @@ function SessionScreenInner() {
     setFocusedSectorIdx(null);
   };
 
-  // Tap em setor → vai pro mapa naquele ponto
+  // Tap em setor → vai pro mapa na curva daquele trecho. O mapa agora fala em
+  // curvas, então focar um setor sem curva não diria nada ao piloto.
   const handleSectorTap = (idx: number) => {
     setFocusedSectorIdx(idx);
+    if (sectors.length > 0 && refLap.totalLength > 0 && corners.length > 0) {
+      const sStart = (idx / sectors.length) * refLap.totalLength;
+      let nearest = 0;
+      let bestDist = Infinity;
+      corners.forEach((c, i) => {
+        const dist = Math.abs(c.sApex - sStart);
+        if (dist < bestDist) { bestDist = dist; nearest = i; }
+      });
+      setSelectedCorner(nearest);
+    }
     setMode('mapa');
     // Scroll-to-top do conteúdo pra deixar mapa visível
     requestAnimationFrame(() => {
@@ -449,19 +471,7 @@ function SessionScreenInner() {
     });
   };
 
-  // Tap em curva → foca no mapa o setor que contém o ápice dela
-  const handleCornerTap = (metric: CornerMetric) => {
-    if (sectors.length > 0 && refLap.totalLength > 0) {
-      const sectorLen = refLap.totalLength / sectors.length;
-      const idx = Math.min(
-        sectors.length - 1,
-        Math.max(0, Math.floor(metric.corner.sApex / sectorLen))
-      );
-      handleSectorTap(idx);
-    } else {
-      setMode('mapa');
-    }
-  };
+  const handleCornerSelect = (i: number) => setSelectedCorner(i);
 
   return (
     <View style={s.root}>
@@ -479,45 +489,14 @@ function SessionScreenInner() {
         contentContainerStyle={{ paddingBottom: spacing.huge }}
         showsVerticalScrollIndicator={false}
       >
-        <View style={s.compareRow}>
-          <Card variant="elevated" padding="m" style={{ flex: 1 }}>
-            <Metric
-              label="MELHOR VOLTA"
-              value={fmtLap(refDurationMs)}
-              hint={useExternalRef ? 'referência da pista' : `Volta ${lapIndex(laps, sessionBest)}`}
-              tone="success"
-              size="m"
-            />
-          </Card>
-          <Card variant="elevated" padding="m" style={{ flex: 1 }}>
-            <Metric
-              label="VOLTA ATUAL"
-              value={fmtLap(selected.durationMs)}
-              hint={`Volta ${lapIndex(laps, selected)}`}
-              tone="magenta"
-              size="m"
-            />
-          </Card>
-        </View>
-
-        {!isSelectedReference && analysis && (
-          <View style={{ paddingHorizontal: spacing.l, marginTop: spacing.m }}>
-            <Card variant="default" padding="m">
-              <View style={{ alignItems: 'center' }}>
-                <Text style={s.deltaLabel}>DIFERENÇA</Text>
-                <Text
-                  style={[
-                    s.deltaValue,
-                    typography.mono,
-                    { color: analysis.totalDeltaMs > 0 ? colors.danger : colors.success },
-                  ]}
-                >
-                  {fmtDelta(analysis.totalDeltaMs)}
-                </Text>
-              </View>
-            </Card>
-          </View>
-        )}
+        <LapSummaryHead
+          bestMs={refDurationMs}
+          bestLabel={useExternalRef ? 'ref' : `v${lapIndex(laps, sessionBest)}`}
+          currentMs={selected.durationMs}
+          currentLabel={`VOLTA ${lapIndex(laps, selected)}`}
+          deltaMs={selected.durationMs - refDurationMs}
+          isBest={isSelectedReference}
+        />
 
         {/* "Perguntar pra IA" foi removido — agora a função vive no botão
             flutuante (AssistiveTouch-style) que aparece automaticamente em
@@ -574,26 +553,20 @@ function SessionScreenInner() {
             return (
               <Pressable
                 key={lap.id}
-                style={[s.lapChip, isSel && s.lapChipActive, isRef && s.lapChipRef]}
+                style={[s.lapChip, isSel && s.lapChipActive]}
                 onPress={() => handleSelectLap(lap.id)}
               >
-                <Text style={[s.lapChipIdx, isSel && s.lapChipIdxActive]}>V{i + 1}</Text>
-                <Text style={[s.lapChipTime, typography.mono]}>{fmtLap(lap.durationMs)}</Text>
+                <View style={s.lapChipTop}>
+                  <Text style={[s.lapChipIdx, isSel && s.lapChipIdxActive]}>V{i + 1}</Text>
+                  {isRef && <View style={s.lapChipDot} />}
+                </View>
+                <Text style={s.lapChipTime}>{formatLapPlain(lap.durationMs)}</Text>
                 {isRef ? (
-                  <Text style={s.lapChipBadge}>★</Text>
+                  <Text style={s.lapChipBest}>MELHOR</Text>
                 ) : (
-                  <Text
-                    style={[
-                      s.lapChipDelta,
-                      typography.mono,
-                      { color: delta > 0 ? colors.danger : colors.success },
-                    ]}
-                  >
-                    {fmtDelta(delta)}
+                  <Text style={[s.lapChipDelta, { color: deltaTone(delta) }]}>
+                    {fmtDeltaS(delta)}
                   </Text>
-                )}
-                {peakKmh > 0 && (
-                  <Text style={[s.lapChipSpeed, typography.mono]}>{peakKmh.toFixed(0)} km/h</Text>
                 )}
               </Pressable>
             );
@@ -629,54 +602,52 @@ function SessionScreenInner() {
         {mode === 'comparar' && (
           <ComparePanel
             sectors={sectors}
+            corners={corners}
+            cornerMetrics={cornerMetrics}
             refDurationMs={refDurationMs}
             selectedDurationMs={selected.durationMs}
             isSelectedReference={isSelectedReference}
             refPeakKmh={msToKmh(peakSpeedMs(refSamples))}
             selectedPeakKmh={msToKmh(peakSpeedMs(selected.samples))}
+            bestLabel={useExternalRef ? 'REF' : `V${lapIndex(laps, sessionBest)}`}
+            currentLabel={`V${lapIndex(laps, selected)}`}
+            currentIndex={lapIndex(laps, selected)}
+            totalLength={refLap.totalLength}
           />
         )}
 
         {mode === 'setores' && (
           <SectorsPanel
             sectors={sectors}
-            maxAbsDelta={maxAbsDelta}
             corners={corners}
-            matchedCurrent={matchedCurrent}
+            totalLength={refLap.totalLength}
+            currentIndex={lapIndex(laps, selected)}
+            selectedDurationMs={selected.durationMs}
+            refDurationMs={refDurationMs}
+            isSelectedReference={isSelectedReference}
             onSectorTap={handleSectorTap}
           />
         )}
 
         {mode === 'curvas' && (
-          <CornerAnalysisPanel
+          <CornersPanel
             metrics={cornerMetrics}
+            corners={corners}
+            refLap={refLap}
+            selectedCorner={selectedCorner}
+            onSelect={handleCornerSelect}
+            refLabel={useExternalRef ? 'REF' : `V${lapIndex(laps, sessionBest)}`}
             isReference={isSelectedReference}
-            onCornerTap={handleCornerTap}
           />
         )}
 
         {mode === 'mapa' && (
-          <MapPanel
-            selected={selected}
-            sectors={sectors}
-            matchedCurrent={matchedCurrent}
+          <TrackMapPanel
             refLap={refLap}
-            isSelectedReference={isSelectedReference}
-            maxAbsDelta={maxAbsDelta}
-            refSamples={refSamples}
             corners={corners}
-            cornerMetrics={cornerMetrics}
-            colorMode={colorMode}
-            onColorModeChange={setColorMode}
-            focusedSectorIdx={focusedSectorIdx}
-            onClearFocus={() => setFocusedSectorIdx(null)}
-            onExpandRequest={() => setMapFullscreen(true)}
-            onOpenDetailedMap={() =>
-              router.push({
-                pathname: '/track-map' as any,
-                params: { sessionId: id, lapId: selected.id },
-              })
-            }
+            metrics={cornerMetrics}
+            selectedCorner={selectedCorner}
+            onSelect={handleCornerSelect}
           />
         )}
 
@@ -773,200 +744,400 @@ export default function SessionScreen() {
   );
 }
 
+/**
+ * Agrupa os mini-setores em S1/S2/S3 (terços da pista) e diz quais curvas
+ * caem em cada terço. Setor inválido não entra na soma: currentMs=0 viraria
+ * um "ganhou tempo" que não aconteceu.
+ */
+function groupThirds(
+  sectors: any[],
+  corners: Corner[],
+  totalLength: number
+): Array<{ refMs: number; curMs: number | null; deltaMs: number | null; corners: number[] }> {
+  const third = Math.ceil(sectors.length / 3);
+  return [0, 1, 2].map((g) => {
+    const slice = sectors.slice(g * third, (g + 1) * third);
+    const refSum = slice.reduce((a: number, sec: any) => a + (sec.referenceMs ?? 0), 0);
+    const valid = slice.filter((sec: any) => sec.valid !== false);
+    const curSum = valid.length ? valid.reduce((a: number, sec: any) => a + (sec.currentMs ?? 0), 0) : null;
+
+    // Quais curvas ficam neste terço, pela posição do ápice ao longo da volta.
+    const from = totalLength * (g / 3);
+    const to = totalLength * ((g + 1) / 3);
+    const inside = corners
+      .map((c, i) => ({ i: i + 1, s: c.sApex }))
+      .filter((c) => c.s >= from && c.s < to)
+      .map((c) => c.i);
+
+    return {
+      refMs: refSum,
+      curMs: curSum,
+      deltaMs: curSum != null ? curSum - refSum : null,
+      corners: inside,
+    };
+  });
+}
+
+function cornersLabel(list: number[]): string {
+  if (list.length === 0) return '—';
+  if (list.length === 1) return `CURVA ${list[0]}`;
+  return `CURVAS ${list[0]}–${list[list.length - 1]}`;
+}
+
+
+/** Bloco "CURVA N · PERDIDO AQUI · ÁPICE" que Curvas e Mapa compartilham. */
+function CornerReadout({
+  metric,
+  number,
+  withDirection,
+}: {
+  metric: CornerMetric | null;
+  number: number | null;
+  withDirection?: boolean;
+}) {
+  if (!metric || number == null) {
+    return <Text style={s.panelIntro}>Toque numa curva para ver os números dela</Text>;
+  }
+  const dir = metric.direction === 'right' ? 'DIREITA' : 'ESQUERDA';
+  return (
+    <View style={s.readout}>
+      <View style={{ flex: 1 }}>
+        <Text style={s.panelLabel}>
+          CURVA {number}
+          {withDirection ? ` · ${dir}` : ''}
+        </Text>
+        {metric.minSpeedKmh != null && (
+          <Text style={s.readoutApex}>
+            {metric.minSpeedKmh.toFixed(0)}
+            <Text style={s.readoutUnit}> km/h no ápice</Text>
+          </Text>
+        )}
+      </View>
+      <View style={s.readoutRule} />
+      <View style={{ flex: 1 }}>
+        <Text style={s.panelLabel}>PERDIDO AQUI</Text>
+        <Text style={[s.readoutDelta, { color: deltaTone(metric.deltaMs ?? 0) }]}>
+          {metric.deltaMs != null ? (metric.deltaMs / 1000).toFixed(2).replace('-', '−') : '—'}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function CornersPanel({
+  metrics,
+  corners,
+  refLap,
+  selectedCorner,
+  onSelect,
+  refLabel,
+  isReference,
+}: {
+  metrics: CornerMetric[];
+  corners: Corner[];
+  refLap: any;
+  selectedCorner: number | null;
+  onSelect: (i: number) => void;
+  refLabel: string;
+  isReference: boolean;
+}) {
+  if (metrics.length === 0) {
+    return (
+      <View style={s.panel}>
+        <Text style={s.panelIntro}>
+          Nenhuma curva detectada nessa volta — traçado curto demais ou GPS com pouco sinal.
+        </Text>
+      </View>
+    );
+  }
+
+  const lefts = metrics.filter((m) => m.direction === 'left').length;
+  const rights = metrics.length - lefts;
+  const sel = selectedCorner != null ? metrics[selectedCorner] ?? null : null;
+
+  return (
+    <View style={s.panel}>
+      <View style={s.cornerTop}>
+        <CornerMap
+          refLap={refLap}
+          corners={corners}
+          selectedIndex={selectedCorner}
+          size={168}
+          onSelect={onSelect}
+        />
+        <View style={s.cornerTopData}>
+          <CornerReadout
+            metric={sel}
+            number={selectedCorner != null ? selectedCorner + 1 : null}
+          />
+        </View>
+      </View>
+
+      <View style={s.panelRule} />
+
+      <View style={s.cornerListHead}>
+        <Text style={s.panelLabelTight}>
+          {metrics.length} CURVAS · {lefts} À ESQUERDA, {rights} À DIREITA
+        </Text>
+        {!isReference && <Text style={s.panelLabelTight}>VS. {refLabel}</Text>}
+      </View>
+
+      {metrics.map((m, i) => {
+        const on = i === selectedCorner;
+        return (
+          <Pressable
+            key={i}
+            onPress={() => onSelect(i)}
+            style={({ pressed }) => [s.cornerRow, on && s.cornerRowActive, pressed && { opacity: 0.7 }]}
+          >
+            <Text style={[s.cornerNum, on && { color: colors.blueSoft }]}>{i + 1}</Text>
+            <CornerArrow direction={m.direction} color={on ? colors.blueSoft : colors.muted} />
+            <View style={{ flex: 1 }}>
+              <Text style={s.cornerName}>{m.direction === 'right' ? 'Direita' : 'Esquerda'}</Text>
+              {m.minSpeedKmh != null && (
+                <Text style={s.cornerSpeed}>{m.minSpeedKmh.toFixed(0)} km/h no ápice</Text>
+              )}
+            </View>
+            {!isReference && (
+              <Text style={[s.cornerDelta, { color: deltaTone(m.deltaMs ?? 0) }]}>
+                {m.deltaMs != null ? (m.deltaMs / 1000).toFixed(2).replace('-', '−') : '—'}
+              </Text>
+            )}
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+function TrackMapPanel({
+  refLap,
+  corners,
+  metrics,
+  selectedCorner,
+  onSelect,
+}: {
+  refLap: any;
+  corners: Corner[];
+  metrics: CornerMetric[];
+  selectedCorner: number | null;
+  onSelect: (i: number) => void;
+}) {
+  const { width } = useWindowDimensions();
+  const size = Math.min(width - spacing.gutter * 2, 360);
+  const sel = selectedCorner != null ? metrics[selectedCorner] ?? null : null;
+
+  return (
+    <View style={s.panel}>
+      <View style={{ alignItems: 'center' }}>
+        <CornerMap
+          refLap={refLap}
+          corners={corners}
+          selectedIndex={selectedCorner}
+          size={size}
+          onSelect={onSelect}
+        />
+      </View>
+      <Text style={[s.panelIntro, { textAlign: 'center', marginTop: spacing.l }]}>
+        Toque numa curva para ver os números dela
+      </Text>
+      <View style={s.panelRule} />
+      <CornerReadout
+        metric={sel}
+        number={selectedCorner != null ? selectedCorner + 1 : null}
+        withDirection
+      />
+    </View>
+  );
+}
+
 function ComparePanel({
   sectors,
+  corners,
+  cornerMetrics,
   refDurationMs,
   selectedDurationMs,
   isSelectedReference,
   refPeakKmh,
   selectedPeakKmh,
+  bestLabel,
+  currentLabel,
+  currentIndex,
+  totalLength,
 }: {
   sectors: any[];
+  corners: Corner[];
+  cornerMetrics: CornerMetric[];
   refDurationMs: number;
   selectedDurationMs: number;
   isSelectedReference: boolean;
   refPeakKmh: number;
   selectedPeakKmh: number;
+  bestLabel: string;
+  currentLabel: string;
+  currentIndex: number;
+  totalLength: number;
 }) {
   if (isSelectedReference) {
     return (
-      <View style={{ paddingHorizontal: spacing.l, paddingTop: spacing.l }}>
-        <Card variant="glow" padding="l">
-          <Text style={s.refNoteTitle}>★ Melhor volta da sessão</Text>
-          <Text style={s.refNoteText}>
-            Selecione outra volta pra ver onde ela perdeu tempo comparada a esta.
-          </Text>
-        </Card>
+      <View style={s.panel}>
+        <Text style={s.panelIntro}>
+          Esta é a sua melhor volta da sessão. Escolha outra ali em cima pra ver onde ela
+          perdeu tempo comparada a esta.
+        </Text>
       </View>
     );
   }
   if (sectors.length === 0) return null;
 
-  const third = Math.ceil(sectors.length / 3);
-  // Agrupa os mini-setores em S1/S2/S3 (terços da pista). Setores inválidos
-  // (sec.valid === false) têm currentMs=0 e delta=0 — ignorá-los na soma
-  // evita mostrar "00:00.000" enganoso pro piloto quando o map-matching da
-  // volta atual saiu degenerado naquela região. Se TODOS os setores do
-  // terço são inválidos, devolvemos null e a UI renderiza "—".
-  const groups = [0, 1, 2].map((g) => {
-    const slice = sectors.slice(g * third, (g + 1) * third);
-    if (slice.length === 0) {
-      return { best: null as number | null, current: null as number | null, delta: null as number | null };
-    }
-    const validSlice = slice.filter((sec) => sec.valid !== false);
-    const refSum = slice.reduce((a, sec) => a + (sec.referenceMs ?? 0), 0);
-    if (validSlice.length === 0) {
-      // Terço todo sem dados confiáveis — mostra "—" no atual e na diferença,
-      // mas ainda exibe o tempo da referência (esse é confiável).
-      return { best: refSum, current: null, delta: null };
-    }
-    const curSum = validSlice.reduce((a, sec) => a + (sec.currentMs ?? 0), 0);
-    return { best: refSum, current: curSum, delta: curSum - refSum };
-  });
+  const groups = groupThirds(sectors, corners, totalLength);
+  const maxAbs = Math.max(...groups.map((g) => Math.abs(g.deltaMs ?? 0)), 1);
+
+  // Onde está o tempo: o pior terço e, dentro dele, a pior curva. É o mesmo
+  // caminho que o piloto faria com o dedo — o resumo só escreve em português.
+  const worstIdx = groups.reduce(
+    (best, g, i) => ((g.deltaMs ?? -Infinity) > (groups[best].deltaMs ?? -Infinity) ? i : best),
+    0
+  );
+  const worst = groups[worstIdx];
+  // O número da curva é a posição dela na volta, então carrego o índice junto
+  // em vez de procurar o objeto de volta na lista depois.
+  const worstCorner = cornerMetrics
+    .map((m, i) => ({ m, number: i + 1 }))
+    .filter((e) => e.m.valid && e.m.deltaMs != null && worst.corners.includes(e.number))
+    .reduce<{ m: CornerMetric; number: number } | null>(
+      (a, b) => ((b.m.deltaMs ?? 0) > (a?.m.deltaMs ?? -Infinity) ? b : a),
+      null
+    );
+  const others = groups
+    .filter((_, i) => i !== worstIdx)
+    .reduce((a, g) => a + (g.deltaMs ?? 0), 0);
 
   return (
-    <View style={{ paddingHorizontal: spacing.l, paddingTop: spacing.l }}>
-      <Card variant="elevated" padding="m">
-        <StatRow
-          header
-          cells={[
-            { text: 'Setor', align: 'left' },
-            { text: 'Melhor', align: 'right' },
-            { text: 'Atual', align: 'right' },
-            { text: 'Dif', align: 'right' },
-          ]}
-          weights={[1, 1.4, 1.4, 1]}
-        />
-        {groups.map((g, i) => (
-          <StatRow
-            key={i}
-            weights={[1, 1.4, 1.4, 1]}
-            cells={[
-              { text: `S${i + 1}`, tone: 'muted', align: 'left' },
-              { text: g.best != null ? fmtLap(g.best) : '—', tone: 'success', align: 'right' },
-              { text: g.current != null ? fmtLap(g.current) : '—', tone: 'magenta', align: 'right' },
-              {
-                text: g.delta != null ? fmtDelta(g.delta) : '—',
-                tone: g.delta == null ? 'muted' : g.delta > 0 ? 'danger' : 'success',
-                align: 'right',
-              },
-            ]}
-          />
-        ))}
-        <StatRow
-          weights={[1, 1.4, 1.4, 1]}
-          cells={[
-            { text: 'TOTAL', tone: 'muted', align: 'left' },
-            { text: fmtLap(refDurationMs), tone: 'success', align: 'right' },
-            { text: fmtLap(selectedDurationMs), tone: 'magenta', align: 'right' },
-            {
-              text: fmtDelta(selectedDurationMs - refDurationMs),
-              tone: selectedDurationMs - refDurationMs > 0 ? 'danger' : 'success',
-              align: 'right',
-            },
-          ]}
-        />
-        {refPeakKmh > 0 && selectedPeakKmh > 0 && (
-          <StatRow
-            weights={[1, 1.4, 1.4, 1]}
-            cells={[
-              { text: 'PICO km/h', tone: 'muted', align: 'left' },
-              { text: refPeakKmh.toFixed(0), tone: 'cyan', align: 'right' },
-              { text: selectedPeakKmh.toFixed(0), tone: 'cyan', align: 'right' },
-              {
-                text:
-                  (selectedPeakKmh - refPeakKmh >= 0 ? '+' : '') +
-                  (selectedPeakKmh - refPeakKmh).toFixed(0),
-                tone: selectedPeakKmh - refPeakKmh >= 0 ? 'success' : 'danger',
-                align: 'right',
-              },
-            ]}
-          />
-        )}
-      </Card>
+    <View style={s.panel}>
+      <View style={s.twoUp}>
+        <View style={{ flex: 1 }}>
+          <Text style={[s.twoUpLabel, { color: colors.blueSoft }]}>{bestLabel} · MELHOR</Text>
+          <Text style={[s.twoUpValue, { color: colors.blueSoft }]}>
+            {formatLapPlain(refDurationMs)}
+          </Text>
+          {refPeakKmh > 0 && <Text style={s.twoUpHint}>{refPeakKmh.toFixed(0)} km/h máx</Text>}
+        </View>
+        <View style={s.twoUpRule} />
+        <View style={{ flex: 1 }}>
+          <Text style={s.twoUpLabel}>{currentLabel}</Text>
+          <Text style={s.twoUpValue}>{formatLapPlain(selectedDurationMs)}</Text>
+          {selectedPeakKmh > 0 && (
+            <Text style={s.twoUpHint}>{selectedPeakKmh.toFixed(0)} km/h máx</Text>
+          )}
+        </View>
+      </View>
+
+      <View style={s.panelRule} />
+
+      <Text style={s.panelLabel}>ONDE A DIFERENÇA ACONTECE</Text>
+      {groups.map((g, i) => (
+        <View key={i} style={s.barRow}>
+          <Text style={s.barRowLabel}>SETOR {i + 1}</Text>
+          <View style={{ flex: 1 }}>
+            <DeltaBar deltaMs={g.deltaMs ?? 0} maxAbsMs={maxAbs} />
+          </View>
+          <Text style={[s.barRowValue, { color: deltaTone(g.deltaMs ?? 0) }]}>
+            {g.deltaMs != null ? fmtDeltaS(g.deltaMs) : '—'}
+          </Text>
+        </View>
+      ))}
+
+      <View style={s.panelRule} />
+
+      <Text style={s.panelLabel}>RESUMO</Text>
+      <Text style={s.summary}>
+        A volta {currentIndex} perdeu{' '}
+        <Text style={s.summaryHot}>{((worst.deltaMs ?? 0) / 1000).toFixed(3).replace('.', ',')} s</Text>{' '}
+        no setor {worstIdx + 1}
+        {worstCorner && worstCorner.m.deltaMs != null ? (
+          <>
+            , e{' '}
+            <Text style={s.summaryHot}>
+              {(worstCorner.m.deltaMs / 1000).toFixed(3).replace('.', ',')} s
+            </Text>{' '}
+            disso na curva {worstCorner.number}
+            {worstCorner.m.minSpeedKmh != null
+              ? `, onde o ápice ficou em ${worstCorner.m.minSpeedKmh.toFixed(0)} km/h`
+              : ''}
+          </>
+        ) : null}
+        . Nos outros dois setores a diferença somada é de{' '}
+        <Text style={s.summaryHot}>{(others / 1000).toFixed(3).replace('.', ',')} s</Text>.
+      </Text>
     </View>
   );
 }
 
 function SectorsPanel({
   sectors,
-  maxAbsDelta,
   corners,
-  matchedCurrent,
+  totalLength,
+  currentIndex,
+  selectedDurationMs,
+  refDurationMs,
+  isSelectedReference,
   onSectorTap,
 }: {
   sectors: any[];
-  maxAbsDelta: number;
   corners: Corner[];
-  matchedCurrent: any;
+  totalLength: number;
+  currentIndex: number;
+  selectedDurationMs: number;
+  refDurationMs: number;
+  isSelectedReference: boolean;
   onSectorTap: (idx: number) => void;
 }) {
-  if (sectors.length === 0) {
-    return (
-      <View style={{ paddingHorizontal: spacing.l, paddingTop: spacing.l }}>
-        <Text style={s.emptyText}>Selecione uma volta diferente da melhor pra ver setores.</Text>
-      </View>
-    );
-  }
+  if (sectors.length === 0) return null;
 
-  // Só setores VÁLIDOS entram nos rankings — setores sem dados (curMs=0) ou
-  // com tempo anômalo (pit-in) iriam dominar com deltas falsos.
-  const validSectors = sectors.filter((sec) => sec.valid !== false);
-  const invalidCount = sectors.length - validSectors.length;
-
-  // Se TODOS os setores foram filtrados, é um problema. Em vez de listas vazias,
-  // mostra os setores brutos com aviso "dados sem confiança alta". Isso evita
-  // tela em branco e permite diagnosticar o que tá acontecendo.
-  const useSectorsForRanking = validSectors.length >= 3 ? validSectors : sectors;
-  const showLowConfidenceWarning = validSectors.length < 3;
-
-  const sorted = [...useSectorsForRanking].sort((a, b) => b.deltaMs - a.deltaMs);
-  const worst = sorted.slice(0, 5);
-  const best = [...useSectorsForRanking].sort((a, b) => a.deltaMs - b.deltaMs).slice(0, 3);
+  const groups = groupThirds(sectors, corners, totalLength);
+  const maxAbs = Math.max(...groups.map((g) => Math.abs(g.deltaMs ?? 0)), 1);
+  const worstIdx = groups.reduce(
+    (best, g, i) => ((g.deltaMs ?? -Infinity) > (groups[best].deltaMs ?? -Infinity) ? i : best),
+    0
+  );
+  const third = Math.ceil(sectors.length / 3);
+  const totalDelta = selectedDurationMs - refDurationMs;
 
   return (
-    <View style={{ paddingHorizontal: spacing.l, paddingTop: spacing.l }}>
-      {showLowConfidenceWarning && (
-        <View style={s.outLapWarn}>
-          <Text style={s.outLapTitle}>Confiança baixa</Text>
-          <Text style={s.outLapBody}>
-            Muitos setores ({invalidCount}/{sectors.length}) tiveram dados anômalos — pode ser
-            out-lap, trechos parados ou problema de GPS. Os números abaixo podem não refletir
-            sua pilotagem real.
-          </Text>
-        </View>
-      )}
-      {!showLowConfidenceWarning && invalidCount > 0 && (
-        <Text style={s.partialNote}>
-          {invalidCount} setor{invalidCount === 1 ? '' : 'es'} descartado{invalidCount === 1 ? '' : 's'} (sem dados confiáveis).
+    <View style={s.panel}>
+      <Text style={s.panelIntro}>
+        {isSelectedReference
+          ? 'Esta é a sua melhor volta — os setores abaixo são a referência.'
+          : `Volta ${currentIndex} contra a sua melhor. O setor ${worstIdx + 1} é onde está o tempo.`}
+      </Text>
+
+      {groups.map((g, i) => (
+        <Pressable
+          key={i}
+          onPress={() => onSectorTap(i * third)}
+          style={({ pressed }) => [s.sectorBlock, pressed && { opacity: 0.7 }]}
+        >
+          <View style={s.sectorTop}>
+            <Text style={s.sectorLabel}>SETOR {i + 1}</Text>
+            <Text style={s.sectorCorners}>{cornersLabel(g.corners)}</Text>
+            <View style={{ flex: 1 }} />
+            <Text style={s.sectorTime}>{g.curMs != null ? formatLapPlain(g.curMs) : '—'}</Text>
+            <Text style={[s.sectorDelta, { color: deltaTone(g.deltaMs ?? 0) }]}>
+              {g.deltaMs != null ? fmtDeltaS(g.deltaMs) : '—'}
+            </Text>
+          </View>
+          <DeltaBar deltaMs={g.deltaMs ?? 0} maxAbsMs={maxAbs} />
+        </Pressable>
+      ))}
+
+      <View style={s.totalRow}>
+        <Text style={s.totalLabel}>TOTAL</Text>
+        <Text style={s.sectorTime}>{formatLapPlain(selectedDurationMs)}</Text>
+        <Text style={[s.sectorDelta, { color: deltaTone(totalDelta) }]}>
+          {fmtDeltaS(totalDelta)}
         </Text>
-      )}
-      <Text style={s.sectionTitle}>Onde perdeu tempo</Text>
-      {worst.map((sec) => (
-        <SectorCard
-          key={sec.index}
-          sec={sec}
-          maxAbsDelta={maxAbsDelta}
-          corners={corners}
-          matchedCurrent={matchedCurrent}
-          onPress={() => onSectorTap(sec.index)}
-          negative
-        />
-      ))}
-
-      <Text style={[s.sectionTitle, { marginTop: spacing.xl }]}>Onde ganhou tempo</Text>
-      {best.map((sec) => (
-        <SectorCard
-          key={sec.index}
-          sec={sec}
-          maxAbsDelta={maxAbsDelta}
-          corners={corners}
-          matchedCurrent={matchedCurrent}
-          onPress={() => onSectorTap(sec.index)}
-        />
-      ))}
-
-      <Text style={s.hint}>Toque em um setor pra ver no mapa.</Text>
+      </View>
     </View>
   );
 }
@@ -1003,7 +1174,7 @@ function SectorCard({
       </View>
       <Text
         style={[
-          s.sectorDelta,
+          s.sectorCardDelta,
           typography.mono,
           { color: sec.deltaMs > 0 ? colors.danger : colors.success },
         ]}
@@ -1014,6 +1185,12 @@ function SectorCard({
   );
 }
 
+/**
+ * Mapa antigo: colore o traçado por velocidade ou por delta, com legenda e
+ * foco em setor. NÃO está mais ligado a nenhuma aba — o Mapa novo fala em
+ * curvas. Fica aqui porque a leitura por cor é informação que o mapa de
+ * curvas não dá; se ela não voltar como modo, isto some.
+ */
 function MapPanel({
   selected,
   sectors,
@@ -1359,6 +1536,148 @@ function MarkerLegendItem({ color, label }: { color: string; label: string }) {
 }
 
 const s = StyleSheet.create({
+  // ── painéis Curvas e Mapa ───────────────────────────────────────
+  panelLabelTight: {
+    fontFamily: fonts.semibold,
+    fontSize: 11,
+    letterSpacing: 1.1,
+    color: colors.muted,
+  },
+  readout: { flexDirection: 'row', alignItems: 'flex-start' },
+  readoutRule: {
+    width: 1,
+    alignSelf: 'stretch',
+    backgroundColor: colors.line,
+    marginHorizontal: spacing.xl,
+  },
+  readoutApex: {
+    fontFamily: fonts.monoMedium,
+    fontSize: 34,
+    letterSpacing: -0.9,
+    color: colors.text,
+    fontVariant: ['tabular-nums'],
+  },
+  readoutUnit: { fontFamily: fonts.regular, fontSize: 15, color: colors.muted },
+  readoutDelta: {
+    fontFamily: fonts.monoMedium,
+    fontSize: 34,
+    letterSpacing: -0.9,
+    fontVariant: ['tabular-nums'],
+  },
+
+  cornerTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.l },
+  cornerTopData: { flex: 1 },
+  cornerListHead: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: spacing.s,
+  },
+  cornerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.l,
+    paddingVertical: spacing.l,
+    paddingHorizontal: spacing.m,
+    marginHorizontal: -spacing.m,
+    borderRadius: radius.m,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line,
+  },
+  cornerRowActive: { backgroundColor: 'rgba(37, 99, 255, 0.10)', borderBottomColor: 'transparent' },
+  cornerNum: {
+    width: 18,
+    fontFamily: fonts.monoMedium,
+    fontSize: 17,
+    color: colors.muted,
+    fontVariant: ['tabular-nums'],
+  },
+  cornerName: { fontFamily: fonts.bold, fontSize: 17, letterSpacing: -0.2, color: colors.text },
+  cornerSpeed: { fontFamily: fonts.regular, fontSize: 14, color: colors.muted, marginTop: 2 },
+  cornerDelta: { fontFamily: fonts.monoMedium, fontSize: 17, fontVariant: ['tabular-nums'] },
+
+  // ── painéis de análise (Comparar / Setores) ─────────────────────
+  panel: { paddingHorizontal: spacing.gutter, paddingTop: spacing.xl },
+  panelIntro: {
+    fontFamily: fonts.regular,
+    fontSize: 15.5,
+    lineHeight: 23,
+    color: colors.muted,
+  },
+  panelRule: { height: 1, backgroundColor: colors.line, marginVertical: spacing.xl },
+  panelLabel: {
+    fontFamily: fonts.semibold,
+    fontSize: 11,
+    letterSpacing: 1.3,
+    color: colors.muted,
+    marginBottom: spacing.l,
+  },
+
+  twoUp: { flexDirection: 'row', alignItems: 'flex-start' },
+  twoUpLabel: { fontFamily: fonts.semibold, fontSize: 11, letterSpacing: 1.2, color: colors.muted },
+  twoUpValue: {
+    fontFamily: fonts.monoMedium,
+    fontSize: 36,
+    letterSpacing: -1,
+    color: colors.text,
+    fontVariant: ['tabular-nums'],
+    marginTop: 6,
+  },
+  twoUpHint: { fontFamily: fonts.regular, fontSize: 14, color: colors.dim, marginTop: 4 },
+  twoUpRule: {
+    width: 1,
+    alignSelf: 'stretch',
+    backgroundColor: colors.line,
+    marginHorizontal: spacing.xl,
+  },
+
+  barRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.l, marginBottom: spacing.l },
+  barRowLabel: {
+    width: 66,
+    fontFamily: fonts.semibold,
+    fontSize: 11,
+    letterSpacing: 1,
+    color: colors.muted,
+  },
+  barRowValue: {
+    width: 62,
+    textAlign: 'right',
+    fontFamily: fonts.monoMedium,
+    fontSize: 15,
+    fontVariant: ['tabular-nums'],
+  },
+
+  summary: { fontFamily: fonts.regular, fontSize: 16, lineHeight: 25, color: colors.text },
+  summaryHot: { fontFamily: fonts.semibold, color: colors.danger },
+
+  sectorBlock: { marginTop: spacing.xxl },
+  sectorTop: { flexDirection: 'row', alignItems: 'baseline', gap: spacing.m, marginBottom: spacing.m },
+  sectorLabel: { fontFamily: fonts.semibold, fontSize: 11, letterSpacing: 1, color: colors.text },
+  sectorCorners: { fontFamily: fonts.semibold, fontSize: 11, letterSpacing: 1, color: colors.muted },
+  sectorTime: {
+    fontFamily: fonts.monoMedium,
+    fontSize: 24,
+    letterSpacing: -0.6,
+    color: colors.text,
+    fontVariant: ['tabular-nums'],
+  },
+  sectorDelta: { fontFamily: fonts.monoMedium, fontSize: 15, fontVariant: ['tabular-nums'] },
+  totalRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: spacing.m,
+    marginTop: spacing.xxl,
+    paddingTop: spacing.xl,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
+  },
+  totalLabel: {
+    flex: 1,
+    fontFamily: fonts.semibold,
+    fontSize: 12,
+    letterSpacing: 1.2,
+    color: colors.text,
+  },
+
   root: { flex: 1, backgroundColor: colors.bg },
   center: { alignItems: 'center', justifyContent: 'center' },
 
@@ -1423,20 +1742,32 @@ const s = StyleSheet.create({
     fontWeight: '700',
   },
 
-  lapChip: {
-    paddingVertical: spacing.s,
-    paddingHorizontal: spacing.m,
-    borderRadius: radius.m,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    minWidth: 92,
-    alignItems: 'center',
+  lapChipTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  lapChipDot: { width: 7, height: 7, borderRadius: 99, backgroundColor: colors.blue },
+  lapChipBest: {
+    fontFamily: fonts.semibold,
+    fontSize: 11,
+    letterSpacing: 1.1,
+    color: colors.blueSoft,
+    marginTop: 8,
   },
-  lapChipActive: { borderColor: colors.primary, backgroundColor: colors.primaryGlow },
-  lapChipRef: { borderColor: colors.success },
-  lapChipIdx: { color: colors.textMuted, fontSize: 11, fontWeight: '800', letterSpacing: 1 },
-  lapChipIdxActive: { color: colors.primary },
+  lapChip: {
+    width: 150,
+    paddingVertical: spacing.l,
+    paddingHorizontal: spacing.l,
+    borderRadius: radius.l,
+    backgroundColor: colors.surface,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  lapChipActive: { borderColor: colors.blue, backgroundColor: 'rgba(37, 99, 255, 0.10)' },
+  lapChipIdx: {
+    fontFamily: fonts.semibold,
+    fontSize: 13,
+    letterSpacing: 0.6,
+    color: colors.muted,
+  },
+  lapChipIdxActive: { color: colors.blueSoft },
   lapChipTime: {
     color: colors.textPrimary,
     fontSize: 15,
@@ -1475,7 +1806,7 @@ const s = StyleSheet.create({
   sectorColorBar: { width: 4, alignSelf: 'stretch', borderRadius: 2, marginRight: 10 },
   sectorTitle: { color: colors.textPrimary, fontWeight: '700', fontSize: 14 },
   sectorDetail: { color: colors.textMuted, fontSize: 12, marginTop: 2 },
-  sectorDelta: { fontSize: 17, fontWeight: '900', marginLeft: spacing.m, letterSpacing: -0.5 },
+  sectorCardDelta: { fontSize: 17, fontWeight: '900', marginLeft: spacing.m, letterSpacing: -0.5 },
   hint: {
     color: colors.textMuted,
     fontSize: 11,
