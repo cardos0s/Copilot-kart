@@ -8,7 +8,9 @@ import { useLockLandscape } from '../src/hooks/useLockLandscape';
 import { listLayoutsForTrack, saveLayout } from '../src/storage/db';
 import { polylineLength, GpsSample } from '../src/lib/geometry';
 import { LapResultOverlay } from '../src/components/LapResultOverlay';
-import { colors, spacing, radius, typography } from '../src/theme';
+import { TrackSilhouette } from '../src/components/TrackSilhouette';
+import { formatLapPlain as fmtLapPlain } from '../src/lib/format';
+import { colors, fonts, spacing, radius, typography } from '../src/theme';
 
 /**
  * MODO BENCH — TESTE IR-E-VOLTAR NA RUA DE CASA.
@@ -118,6 +120,9 @@ function LiveRadar({ samples }: { samples: GpsSample[] }) {
     </View>
   );
 }
+
+/** Lado do quadro do traçado na coluna esquerda do cockpit. */
+const TRACE_SIZE = 230;
 
 export default function RecordingReference() {
   const params = useLocalSearchParams<{
@@ -284,131 +289,132 @@ export default function RecordingReference() {
   const acc = accuracyLabel(info.lastAccuracy);
   const progress = Math.min(1, info.lapsCompleted / targetLaps);
 
+  const lapMs = info.currentLapElapsedMs;
+
   return (
-    <View style={[s.container, { paddingTop: insets.top + spacing.m }]}>
-      <View style={s.header}>
-        <Pressable onPress={handleCancel} hitSlop={12}>
-          <Text style={s.close}>✕</Text>
-        </Pressable>
-        <Text style={s.step}>RECONHECIMENTO</Text>
-        <View style={{ width: 20 }} />
-      </View>
+    <View style={[s.container, { paddingLeft: insets.left + spacing.xxl, paddingRight: insets.right + spacing.xxl }]}>
+      {state === 'idle' ? (
+        <View style={s.idle}>
+          <Text style={s.idleTitle}>Gravar o traçado</Text>
+          <Text style={s.idleSub}>{params.trackName}</Text>
 
-      {BENCH_MODE && (
-        <View style={s.benchBanner}>
-          <Text style={s.benchBannerText}>⚠️ MODO BENCH — caminhada</Text>
-        </View>
-      )}
-
-      <ScrollView
-        contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 180 }]}
-        showsVerticalScrollIndicator={false}
-      >
-        <Text style={s.trackName}>{params.trackName}</Text>
-        <Text style={s.instruction}>
-          {state === 'idle'
-            ? 'Dê algumas voltas tranquilas pra eu aprender o traçado.'
-            : `Objetivo: ${targetLaps} volta(s). A pista vai aparecer no radar conforme você anda.`}
-        </Text>
-
-        {state === 'idle' && (
-          <View style={s.lapsPicker}>
-            <Text style={s.lapsLabel}>QUANTAS VOLTAS?</Text>
-            <View style={s.lapsRow}>
-              {[1, 2, 3, 5].map((n) => (
-                <Pressable
-                  key={n}
-                  onPress={() => setTargetLaps(n)}
-                  style={[s.lapsChip, targetLaps === n && s.lapsChipActive]}
-                >
-                  <Text style={[s.lapsText, targetLaps === n && s.lapsTextActive]}>{n}</Text>
-                </Pressable>
-              ))}
-            </View>
-            <Text style={s.lapsHint}>
-              Mais voltas = referência mais precisa. 3 é suficiente na maioria dos casos.
-            </Text>
+          <Text style={s.idleLapsLabel}>QUANTAS VOLTAS?</Text>
+          <View style={s.idleLapsRow}>
+            {[2, 3, 4, 5].map((n) => (
+              <Pressable
+                key={n}
+                onPress={() => setTargetLaps(n)}
+                style={({ pressed }) => [
+                  s.idleChip,
+                  targetLaps === n && s.idleChipActive,
+                  pressed && { opacity: 0.7 },
+                ]}
+              >
+                <Text style={[s.idleChipText, targetLaps === n && s.idleChipTextActive]}>{n}</Text>
+              </Pressable>
+            ))}
           </View>
-        )}
+          <Text style={s.idleHint}>
+            Ritmo constante na linha que você usaria. Não precisa ser rápido — precisa ser a
+            trajetória certa.
+          </Text>
 
-        {state === 'recording' && (
-          <>
-            <View style={s.radarBox}>
-              <LiveRadar samples={liveSamples} />
-              {liveSamples.length < 5 && (
-                <View style={s.radarEmpty}>
-                  <Text style={s.radarEmptyTitle}>
-                    {info.isMoving ? 'Gravando...' : 'Aguardando você acelerar'}
-                  </Text>
-                  <Text style={s.radarEmptyText}>
-                    {info.isMoving
-                      ? 'Continue rodando, o traçado vai aparecer aqui.'
-                      : 'O radar começa a desenhar quando você passar dos 18 km/h.'}
+          <View style={s.idleActions}>
+            <Pressable
+              onPress={handleStart}
+              disabled={starting}
+              style={({ pressed }) => [s.cockpitCta, (pressed || starting) && { opacity: 0.85 }]}
+            >
+              <Text style={s.cockpitCtaText}>{starting ? 'Abrindo GPS…' : 'Começar'}</Text>
+            </Pressable>
+            <Pressable onPress={handleCancel} hitSlop={10}>
+              <Text style={s.idleGhostText}>Cancelar</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : (
+        <View style={s.cockpit}>
+          <Text style={s.recLabel}>
+            <Text style={s.recDot}>● </Text>
+            GRAVANDO O TRAÇADO
+          </Text>
+
+          <View style={s.cockpitRow}>
+            {/* O traçado vai se desenhando conforme ele anda — é o retorno de
+                que o reconhecimento está pegando alguma coisa. */}
+            <View style={s.traceCol}>
+              {liveSamples.length > 4 ? (
+                <TrackSilhouette
+                  samples={liveSamples}
+                  width={TRACE_SIZE}
+                  height={TRACE_SIZE * 0.82}
+                  strokeColor={colors.blue}
+                  strokeWidth={3}
+                />
+              ) : (
+                <Text style={s.traceWaiting}>procurando o sinal…</Text>
+              )}
+            </View>
+
+            <View style={s.cockpitDivider} />
+
+            <View style={s.dataCol}>
+              <View style={s.dataTop}>
+                <View style={s.dataBlock}>
+                  <Text style={s.dataLabel}>TEMPO DA VOLTA</Text>
+                  <Text style={s.dataValue} numberOfLines={1} adjustsFontSizeToFit>
+                    {lapMs != null ? fmtLapPlain(lapMs) : '—'}
                   </Text>
                 </View>
+                <View style={s.dataRule} />
+                <View style={s.dataBlock}>
+                  <Text style={s.dataLabel}>VELOCIDADE</Text>
+                  <Text style={s.dataValue} numberOfLines={1} adjustsFontSizeToFit>
+                    {info.lastSpeedKmh.toFixed(1).replace('.', ',')}
+                    <Text style={s.dataUnit}> km/h</Text>
+                  </Text>
+                </View>
+              </View>
+
+              <View style={s.dataSplit} />
+
+              <Text style={s.dataLabel}>VOLTAS</Text>
+              <View style={s.lapsBottom}>
+                <Text style={s.lapCount}>
+                  {info.lapsCompleted}
+                  <Text style={s.lapCountOf}> de {targetLaps}</Text>
+                </Text>
+
+                <View style={s.segments}>
+                  {Array.from({ length: targetLaps }, (_, n) => (
+                    <View key={n} style={[s.segment, n < info.lapsCompleted && s.segmentDone]} />
+                  ))}
+                </View>
+
+                <Text style={s.lapHint} numberOfLines={2}>
+                  Ritmo constante na linha que você usaria
+                </Text>
+
+                <Pressable
+                  onPress={handleCancel}
+                  style={({ pressed }) => [s.cancelBtn, pressed && { opacity: 0.7 }]}
+                >
+                  <Text style={s.cancelText}>Cancelar</Text>
+                </Pressable>
+              </View>
+
+              {info.lapsCompleted > 0 && (
+                <Pressable
+                  onPress={handleFinishConfirm}
+                  style={({ pressed }) => [s.finishLink, pressed && { opacity: 0.6 }]}
+                >
+                  <Text style={s.finishLinkText}>Encerrar e salvar traçado</Text>
+                </Pressable>
               )}
             </View>
-
-            <View style={s.lapProgress}>
-              <View style={s.lapProgressLabels}>
-                <Text style={s.lapProgressCount}>
-                  {info.lapsCompleted} / {targetLaps}
-                </Text>
-                <Text style={s.lapProgressLabel}>VOLTAS COMPLETAS</Text>
-              </View>
-              <View style={s.lapProgressBar}>
-                <View style={[s.lapProgressFill, { width: `${progress * 100}%` }]} />
-              </View>
-              {info.bestLapMs !== null && (
-                <Text style={s.bestLapText}>
-                  Melhor volta: <Text style={s.bestLapValue}>{fmtLap(info.bestLapMs)}</Text>
-                </Text>
-              )}
-            </View>
-
-            <View style={s.statsGrid}>
-              <Stat label="TEMPO" value={fmtTime(info.elapsedMs)} mono />
-              <Stat label="VEL" value={`${info.lastSpeedKmh.toFixed(0)}`} unit="km/h" />
-              <Stat label="PTS" value={String(info.totalSamples)} />
-            </View>
-
-            <View style={[s.accBox, { borderColor: acc.color }]}>
-              <Text style={s.accLabel}>SINAL GPS</Text>
-              <Text style={[s.accValue, { color: acc.color }]}>{acc.text}</Text>
-            </View>
-
-            {info.isMoving && (
-              <View style={s.movingBadge}>
-                <View style={s.movingDot} />
-                <Text style={s.movingText}>Em ritmo de pista</Text>
-              </View>
-            )}
-          </>
-        )}
-      </ScrollView>
-
-      <View style={[s.footer, { paddingBottom: insets.bottom + spacing.l }]}>
-        {state === 'idle' && (
-          <Pressable
-            style={({ pressed }) => [s.primaryBtn, pressed && { opacity: 0.6 }, starting && { opacity: 0.5 }]}
-            onPress={handleStart}
-            disabled={starting}
-          >
-            <Text style={s.primaryText}>
-              {starting ? 'Abrindo GPS...' : 'Começar reconhecimento'}
-            </Text>
-            {/* arrow removida — preferência da pilota */}
-          </Pressable>
-        )}
-        {state === 'recording' && (
-          <Pressable
-            style={({ pressed }) => [s.finishBtn, pressed && { opacity: 0.8 }]}
-            onPress={handleFinishConfirm}
-          >
-            <Text style={s.finishText}>Encerrar e salvar referência</Text>
-          </Pressable>
-        )}
-      </View>
+          </View>
+        </View>
+      )}
 
       {/* Overlay de celebração por volta completada — verde 3s. Não tem
        * delta aqui (estamos GRAVANDO a referência, não comparando contra
@@ -471,6 +477,124 @@ function Stat({ label, value, unit, mono }: { label: string; value: string; unit
 }
 
 const s = StyleSheet.create({
+  // ── cockpit de gravação (paisagem) ──────────────────────────────
+  // Número grosso em tudo: o piloto lê isso de relance, com o celular no
+  // suporte e o kart andando.
+  cockpit: { flex: 1, paddingVertical: spacing.xl },
+  recLabel: { fontFamily: fonts.semibold, fontSize: 12, letterSpacing: 1.4, color: colors.muted },
+  recDot: { color: colors.danger },
+  cockpitRow: { flex: 1, flexDirection: 'row', alignItems: 'center' },
+  traceCol: { width: TRACE_SIZE, alignItems: 'center', justifyContent: 'center' },
+  traceWaiting: { fontFamily: fonts.regular, fontSize: 14, color: colors.dim, textAlign: 'center' },
+  cockpitDivider: {
+    width: 1,
+    alignSelf: 'stretch',
+    backgroundColor: colors.line,
+    marginHorizontal: spacing.xxl,
+    marginVertical: spacing.l,
+  },
+  dataCol: { flex: 1, justifyContent: 'center' },
+  dataTop: { flexDirection: 'row', alignItems: 'flex-start' },
+  dataBlock: { flex: 1 },
+  dataRule: {
+    width: 1,
+    alignSelf: 'stretch',
+    backgroundColor: colors.line,
+    marginHorizontal: spacing.xl,
+  },
+  dataLabel: { fontFamily: fonts.semibold, fontSize: 11, letterSpacing: 1.3, color: colors.muted },
+  dataValue: {
+    fontFamily: fonts.monoSemibold,
+    fontSize: 62,
+    lineHeight: 70,
+    letterSpacing: -1.5,
+    color: colors.text,
+    fontVariant: ['tabular-nums'],
+    marginTop: 4,
+  },
+  dataUnit: { fontFamily: fonts.semibold, fontSize: 18, color: colors.muted },
+  dataSplit: { height: 1, backgroundColor: colors.line, marginVertical: spacing.xl },
+  lapsBottom: { flexDirection: 'row', alignItems: 'center', gap: spacing.l, marginTop: 6 },
+  lapCount: {
+    fontFamily: fonts.monoSemibold,
+    fontSize: 40,
+    lineHeight: 46,
+    color: colors.text,
+    fontVariant: ['tabular-nums'],
+  },
+  lapCountOf: { fontFamily: fonts.semibold, fontSize: 17, color: colors.muted },
+  segments: { flexDirection: 'row', gap: 6 },
+  segment: { width: 34, height: 5, borderRadius: radius.pill, backgroundColor: colors.surfaceRail },
+  segmentDone: { backgroundColor: colors.blue },
+  lapHint: {
+    flex: 1,
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    lineHeight: 19,
+    color: colors.muted,
+    textAlign: 'right',
+  },
+  cancelBtn: {
+    height: 48,
+    paddingHorizontal: spacing.xxl,
+    borderRadius: radius.m,
+    borderWidth: 1,
+    borderColor: colors.line2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelText: { fontFamily: fonts.semibold, fontSize: 16, color: colors.text },
+  finishLink: { marginTop: spacing.l, alignSelf: 'flex-start' },
+  finishLinkText: { fontFamily: fonts.semibold, fontSize: 15, color: colors.blueSoft },
+
+  // ── antes de começar ────────────────────────────────────────────
+  idle: { flex: 1, justifyContent: 'center' },
+  idleTitle: { fontFamily: fonts.bold, fontSize: 30, letterSpacing: -0.8, color: colors.text },
+  idleSub: { fontFamily: fonts.regular, fontSize: 16, color: colors.muted, marginTop: 4 },
+  idleLapsLabel: {
+    fontFamily: fonts.semibold,
+    fontSize: 11,
+    letterSpacing: 1.3,
+    color: colors.muted,
+    marginTop: spacing.xxl,
+  },
+  idleLapsRow: { flexDirection: 'row', gap: spacing.m, marginTop: spacing.m },
+  idleChip: {
+    width: 60,
+    height: 52,
+    borderRadius: radius.m,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  idleChipActive: { backgroundColor: colors.blue },
+  idleChipText: { fontFamily: fonts.monoSemibold, fontSize: 20, color: colors.muted },
+  idleChipTextActive: { color: colors.textOnPrimary },
+  idleHint: {
+    fontFamily: fonts.regular,
+    fontSize: 14.5,
+    lineHeight: 20,
+    color: colors.dim,
+    marginTop: spacing.l,
+    maxWidth: 460,
+  },
+  idleActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xxl,
+    marginTop: spacing.xxl,
+  },
+  cockpitCta: {
+    height: 56,
+    paddingHorizontal: 46,
+    borderRadius: radius.m,
+    backgroundColor: colors.blue,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cockpitCtaText: { fontFamily: fonts.bold, fontSize: 18, color: colors.textOnPrimary },
+  idleGhostText: { fontFamily: fonts.regular, fontSize: 16, color: colors.muted },
+
   container: { flex: 1, backgroundColor: colors.bg },
   header: {
     flexDirection: 'row',

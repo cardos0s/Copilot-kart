@@ -386,6 +386,39 @@ export async function getAllTrackStats(): Promise<Map<string, TrackStats>> {
   return map;
 }
 
+export type LayoutStats = {
+  /** Sessões que o piloto rodou usando este traçado. */
+  sessionCount: number;
+  /** Melhor volta dele neste traçado. */
+  bestLapMs: number | null;
+};
+
+/**
+ * Resumo por traçado, em lote. A tela de escolha mostra isso em toda linha, e
+ * uma pista pode ter vários traçados — uma consulta por linha não se sustenta.
+ */
+export async function getLayoutStats(trackId: string): Promise<Map<string, LayoutStats>> {
+  const d = await db();
+  const rows = await d.getAllAsync<any>(
+    `SELECT s.layout_id                as layoutId,
+            COUNT(DISTINCT s.id)       as sessionCount,
+            MIN(l.duration_ms)         as bestLapMs
+       FROM sessions s
+       LEFT JOIN laps l ON l.session_id = s.id
+      WHERE s.track_id = ? AND s.layout_id IS NOT NULL
+      GROUP BY s.layout_id`,
+    trackId
+  );
+  const map = new Map<string, LayoutStats>();
+  for (const r of rows) {
+    map.set(r.layoutId, {
+      sessionCount: r.sessionCount ?? 0,
+      bestLapMs: r.bestLapMs ?? null,
+    });
+  }
+  return map;
+}
+
 export async function deleteSession(id: string): Promise<void> {
   const d = await db();
   // FK ON DELETE CASCADE existe no schema, mas PRAGMA foreign_keys não tá

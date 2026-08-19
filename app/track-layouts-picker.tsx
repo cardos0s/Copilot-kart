@@ -1,4 +1,14 @@
-import { useCallback, useState } from 'react';
+/**
+ * Escolha do traçado da sessão.
+ *
+ * Dois estados bem diferentes: a pista que o app ainda não conhece, onde a
+ * única saída é ensinar (ou correr sem referência), e a pista com um ou mais
+ * traçados, onde o trabalho é escolher qual vale pra esta sessão. Cada traçado
+ * guarda a própria melhor volta — é isso que mantém a comparação honesta
+ * quando o kartódromo muda a configuração.
+ */
+
+import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -8,79 +18,115 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Path } from 'react-native-svg';
 import {
   deleteLayout,
+  getLayoutStats,
+  LayoutStats,
   listLayoutsForTrack,
   setDefaultLayout,
   TrackLayout,
 } from '../src/storage/db';
 import { TrackSilhouette } from '../src/components/TrackSilhouette';
-import { ScreenHeader } from '../src/components/ui';
-import { colors, radius, spacing, typography } from '../src/theme';
+import { placeholderSilhouette, SILHOUETTE_VIEWBOX } from '../src/lib/trackSilhouette';
+import { countCorners } from '../src/lib/trackShapeStats';
+import { formatLapPlain } from '../src/lib/format';
+import { ChevronLeft, PlusIcon, SelectDot } from '../src/components/track/parts';
+import { colors, fonts, radius, spacing } from '../src/theme';
 
-function fmtLap(ms: number) {
-  const totalS = ms / 1000;
-  const m = Math.floor(totalS / 60);
-  const s = totalS - m * 60;
-  return `${m}:${s.toFixed(2).padStart(5, '0')}`;
-}
+/** Nome do primeiro traçado — quem só tem um não precisa batizar nada. */
+const FIRST_LAYOUT_NAME = 'Traçado completo';
 
-function fmtDate(ms: number) {
-  const d = new Date(ms);
-  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+type LayoutRow = TrackLayout & { corners: number | null; stats: LayoutStats | undefined };
+
+/** A silhueta tracejada do estado vazio: forma genérica, sem promessa de ser a pista. */
+function DashedShape({ trackId, size }: { trackId: string; size: number }) {
+  const shape = placeholderSilhouette(trackId);
+  return (
+    <Svg width={size} height={size} viewBox={SILHOUETTE_VIEWBOX} fill="none">
+      <Path
+        d={shape.d}
+        stroke={colors.muted}
+        strokeWidth={1.2}
+        strokeDasharray="3 2.4"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+        opacity={0.7}
+      />
+    </Svg>
+  );
 }
 
 export default function TrackLayoutsPicker() {
   const router = useRouter();
-  const { trackId, trackName } = useLocalSearchParams<{
-    trackId: string;
-    trackName: string;
-  }>();
+  const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const { trackId, trackName } = useLocalSearchParams<{ trackId: string; trackName: string }>();
+
   const [layouts, setLayouts] = useState<TrackLayout[] | null>(null);
-  const [newLayoutModal, setNewLayoutModal] = useState(false);
-  const [newLayoutName, setNewLayoutName] = useState('');
+  const [stats, setStats] = useState<Map<string, LayoutStats>>(new Map());
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [nameModal, setNameModal] = useState(false);
+  const [newName, setNewName] = useState('');
 
   const load = useCallback(async () => {
     if (!trackId) return;
-    const result = await listLayoutsForTrack(trackId);
+    const [result, layoutStats] = await Promise.all([
+      listLayoutsForTrack(trackId),
+      getLayoutStats(trackId).catch(() => new Map<string, LayoutStats>()),
+    ]);
     setLayouts(result);
+    setStats(layoutStats);
+    setSelectedId((prev) => {
+      if (prev && result.some((l) => l.id === prev)) return prev;
+      return (result.find((l) => l.isDefault) ?? result[0])?.id ?? null;
+    });
   }, [trackId]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const handleStartRace = (layout: TrackLayout) => {
-    // Em vez de ir direto pra gravação, passa pelo pre-flight (checklist +
-    // confirmação do setup ativo). Garante que o piloto sabe o que tá rolando
-    // antes de começar a contar volta.
+  // Contar curvas percorre a polyline inteira de cada traçado; sem memo isso
+  // rodaria a cada toque na lista.
+  const rows: LayoutRow[] = useMemo(
+    () =>
+      (layouts ?? []).map((l) => ({
+        ...l,
+        corners: countCorners(l.samples),
+        stats: stats.get(l.id),
+      })),
+    [layouts, stats]
+  );
+
+  const selected = rows.find((l) => l.id === selectedId) ?? null;
+
+  const goToPreflight = (layoutId?: string) => {
     router.push({
       pathname: '/preflight' as any,
-      params: {
-        trackId: trackId!,
-        trackName: trackName!,
-        layoutId: layout.id,
-      },
+      params: { trackId: trackId!, trackName: trackName!, ...(layoutId ? { layoutId } : {}) },
+    });
+  };
+
+  const recordLayout = (layoutName: string) => {
+    router.push({
+      pathname: '/recording-reference',
+      params: { trackId: trackId!, trackName: trackName!, layoutName },
     });
   };
 
   const handleNewLayoutConfirm = () => {
-    const name = newLayoutName.trim();
+    const name = newName.trim();
     if (!name) {
       Alert.alert('Nome obrigatório', 'Dá um nome pro traçado novo.');
       return;
     }
-    setNewLayoutModal(false);
-    setNewLayoutName('');
-    router.push({
-      pathname: '/recording-reference',
-      params: {
-        trackId: trackId!,
-        trackName: trackName!,
-        layoutName: name,
-      },
-    });
+    setNameModal(false);
+    setNewName('');
+    recordLayout(name);
   };
 
   const handleLongPress = (layout: TrackLayout) => {
@@ -128,123 +174,187 @@ export default function TrackLayoutsPicker() {
     );
   }
 
+  const header = (
+    <View style={[s.header, { paddingTop: insets.top + spacing.s }]}>
+      <View style={s.headerLine}>
+        <Pressable onPress={() => router.back()} hitSlop={14}>
+          <ChevronLeft size={20} />
+        </Pressable>
+        <Text style={s.title}>Traçado da sessão</Text>
+      </View>
+      <Text style={s.subtitle} numberOfLines={1}>
+        {trackName}
+      </Text>
+    </View>
+  );
+
   if (layouts === null) {
     return (
-      <View style={[s.root, s.center]}>
-        <ActivityIndicator color={colors.primary} />
+      <View style={s.root}>
+        {header}
+        <View style={s.center}>
+          <ActivityIndicator color={colors.blue} />
+        </View>
       </View>
     );
   }
 
+  // ── pista que o app ainda não conhece ───────────────────────────
+  if (layouts.length === 0) {
+    return (
+      <View style={s.root}>
+        {header}
+        <View style={s.emptyBody}>
+          <DashedShape trackId={trackId} size={Math.min(220, width * 0.55)} />
+          <Text style={s.emptyTitle}>Ainda não conheço esta pista</Text>
+          <Text style={s.emptyText}>
+            Dê algumas voltas tranquilas e eu desenho o traçado. Depois disso, cada sessão
+            aqui já nasce comparável.
+          </Text>
+        </View>
+        <View style={[s.footer, { paddingBottom: insets.bottom + spacing.xl }]}>
+          <Pressable
+            onPress={() => recordLayout(FIRST_LAYOUT_NAME)}
+            style={({ pressed }) => [s.cta, pressed && { opacity: 0.9 }]}
+          >
+            <Text style={s.ctaText}>Gravar traçado</Text>
+          </Pressable>
+          {/* Sem traçado o app ainda conta voltas — a linha de chegada sai do
+              próprio primeiro trecho em ritmo. O que se perde é setor e
+              comparação, não a sessão. */}
+          <Pressable onPress={() => goToPreflight()} hitSlop={10} style={s.linkWrap}>
+            {({ pressed }) => (
+              <Text style={[s.link, pressed && { opacity: 0.6 }]}>Correr sem traçado</Text>
+            )}
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
+  // ── pista com traçado ───────────────────────────────────────────
   return (
     <View style={s.root}>
-      <ScreenHeader
-        title="TRAÇADO DA SESSÃO"
-        subtitle={trackName}
-        onBack={() => router.back()}
-      />
-      <ScrollView contentContainerStyle={s.scroll}>
+      {header}
+      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
         <Text style={s.intro}>
-          Escolha qual traçado vai usar nessa sessão. Cada traçado tem sua própria
-          referência de melhor volta — comparações ficam consistentes.
+          Cada traçado guarda sua própria melhor volta, então as comparações ficam
+          consistentes.
         </Text>
 
-        {layouts.length === 0 ? (
-          <View style={s.emptyCard}>
-            <Text style={s.emptyTitle}>Nenhum traçado cadastrado</Text>
-            <Text style={s.emptyBody}>
-              Antes de correr aqui, preciso aprender o traçado da pista. Dê algumas
-              voltas tranquilas pra eu desenhar.
-            </Text>
+        {rows.map((l, i) => {
+          const on = l.id === selectedId;
+          const meta = [
+            `${l.lengthM.toFixed(0)} m`,
+            l.corners != null ? `${l.corners} curvas` : null,
+            l.stats ? `${l.stats.sessionCount} ${l.stats.sessionCount === 1 ? 'sessão' : 'sessões'}` : null,
+          ].filter(Boolean).join(' · ');
+
+          return (
             <Pressable
-              onPress={() => setNewLayoutModal(true)}
-              style={({ pressed }) => [s.primaryBtn, pressed && { opacity: 0.7 }]}
+              key={l.id}
+              onPress={() => setSelectedId(l.id)}
+              onLongPress={() => handleLongPress(l)}
+              delayLongPress={400}
+              style={({ pressed }) => [
+                s.row,
+                i < rows.length - 1 && s.rowDivider,
+                pressed && { opacity: 0.7 },
+              ]}
             >
-              <Text style={s.primaryBtnText}>Gravar primeiro traçado</Text>
-            </Pressable>
-          </View>
-        ) : (
-          <>
-            {layouts.map((l) => (
-              <Pressable
-                key={l.id}
-                onPress={() => handleStartRace(l)}
-                onLongPress={() => handleLongPress(l)}
-                delayLongPress={400}
-                style={({ pressed }) => [s.layoutCard, pressed && { opacity: 0.7 }]}
-              >
-                <View style={s.layoutIcon}>
-                  <TrackSilhouette
-                    samples={l.samples}
-                    width={56}
-                    height={42}
-                    strokeColor={colors.primary}
-                  />
-                </View>
-                <View style={s.layoutBody}>
-                  <View style={s.layoutTitleLine}>
-                    <Text style={s.layoutName} numberOfLines={1}>
-                      {l.name}
-                    </Text>
-                    {l.isDefault && <Text style={s.defaultBadge}>padrão</Text>}
-                  </View>
-                  <Text style={[s.layoutMeta, typography.mono]}>
-                    Melhor: {fmtLap(l.durationMs)} · {l.lengthM.toFixed(0)}m
+              <View style={s.rowShape}>
+                <TrackSilhouette
+                  samples={l.samples}
+                  width={104}
+                  height={78}
+                  strokeColor={on ? colors.blue : colors.muted}
+                  strokeWidth={2}
+                />
+              </View>
+              <View style={s.rowBody}>
+                <Text style={s.rowName} numberOfLines={1}>
+                  {l.name}
+                </Text>
+                <Text style={s.rowMeta} numberOfLines={1}>
+                  {meta}
+                </Text>
+                <View style={s.bestLine}>
+                  <Text style={s.bestLabel}>MELHOR</Text>
+                  <Text style={s.bestValue}>
+                    {formatLapPlain(l.stats?.bestLapMs ?? l.durationMs)}
                   </Text>
-                  <Text style={s.layoutDate}>Gravado em {fmtDate(l.recordedAt)}</Text>
                 </View>
-                <Text style={s.chevron}>›</Text>
-              </Pressable>
-            ))}
-
-            <Pressable
-              onPress={() => setNewLayoutModal(true)}
-              style={({ pressed }) => [s.newLayoutBtn, pressed && { opacity: 0.7 }]}
-            >
-              <Text style={s.newLayoutBtnText}>+ Gravar traçado novo</Text>
+              </View>
+              <SelectDot selected={on} />
             </Pressable>
+          );
+        })}
 
-            <Text style={s.hint}>
-              Toque longo num traçado pra renomear, apagar ou trocar o padrão.
-            </Text>
-          </>
-        )}
+        <Pressable
+          onPress={() => setNameModal(true)}
+          style={({ pressed }) => [s.addRow, pressed && { opacity: 0.7 }]}
+        >
+          <View style={s.addIcon}>
+            <PlusIcon size={17} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={s.addLabel}>Gravar outro traçado</Text>
+            <Text style={s.addSub}>Para configurações diferentes da pista</Text>
+          </View>
+        </Pressable>
+
+        <Text style={s.hint}>
+          Toque longo num traçado pra apagar ou trocar o padrão.
+        </Text>
       </ScrollView>
 
-      <Modal
-        visible={newLayoutModal}
-        animationType="fade"
-        transparent
-        onRequestClose={() => setNewLayoutModal(false)}
-      >
-        <View style={s.modalOverlay}>
+      <View style={[s.footer, { paddingBottom: insets.bottom + spacing.xl }]}>
+        <Pressable
+          onPress={() => selected && goToPreflight(selected.id)}
+          disabled={!selected}
+          style={({ pressed }) => [
+            s.cta,
+            !selected && { opacity: 0.35 },
+            pressed && selected && { opacity: 0.9 },
+          ]}
+        >
+          <Text style={s.ctaText} numberOfLines={1}>
+            {selected ? `Usar ${selected.name.toLowerCase()}` : 'Escolha um traçado'}
+          </Text>
+        </Pressable>
+      </View>
+
+      <Modal visible={nameModal} transparent animationType="fade" onRequestClose={() => setNameModal(false)}>
+        <View style={s.modalBg}>
           <View style={s.modalCard}>
             <Text style={s.modalTitle}>Nome do traçado novo</Text>
             <Text style={s.modalBody}>
-              Ex: "Layout curto", "Inverso", "Configuração corrida".
+              Kartódromos mudam a configuração da pista. Um nome que diga qual é ajuda a
+              achar depois — "traçado curto", "invertido".
             </Text>
             <TextInput
-              value={newLayoutName}
-              onChangeText={setNewLayoutName}
-              placeholder="Layout curto"
-              placeholderTextColor={colors.textMuted}
+              value={newName}
+              onChangeText={setNewName}
+              placeholder="Traçado curto"
+              placeholderTextColor={colors.dim}
               style={s.modalInput}
               autoFocus
-              autoCapitalize="words"
+              returnKeyType="done"
+              onSubmitEditing={handleNewLayoutConfirm}
             />
             <View style={s.modalActions}>
               <Pressable
                 onPress={() => {
-                  setNewLayoutModal(false);
-                  setNewLayoutName('');
+                  setNameModal(false);
+                  setNewName('');
                 }}
-                style={({ pressed }) => [s.modalCancel, pressed && { opacity: 0.6 }]}
+                style={({ pressed }) => [s.modalCancel, pressed && { opacity: 0.7 }]}
               >
                 <Text style={s.modalCancelText}>Cancelar</Text>
               </Pressable>
               <Pressable
                 onPress={handleNewLayoutConfirm}
-                style={({ pressed }) => [s.modalConfirm, pressed && { opacity: 0.7 }]}
+                style={({ pressed }) => [s.modalConfirm, pressed && { opacity: 0.9 }]}
               >
                 <Text style={s.modalConfirmText}>Começar gravação</Text>
               </Pressable>
@@ -258,195 +368,235 @@ export default function TrackLayoutsPicker() {
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
-  center: { alignItems: 'center', justifyContent: 'center' },
-  scroll: { padding: spacing.l, gap: spacing.s },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  errorText: { fontFamily: fonts.regular, fontSize: 14, color: colors.danger },
 
-  intro: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    lineHeight: 19,
-    marginBottom: spacing.m,
+  header: {
+    paddingHorizontal: spacing.gutter,
+    paddingBottom: spacing.l,
   },
-
-  layoutCard: {
+  headerLine: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.m,
-    padding: spacing.m,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.l,
+    gap: 12,
   },
-  layoutIcon: {
-    width: 60,
-    height: 48,
-    backgroundColor: colors.bg,
-    borderRadius: radius.s,
+  title: {
+    fontFamily: fonts.bold,
+    fontSize: 26,
+    letterSpacing: -0.7,
+    color: colors.text,
+  },
+  subtitle: {
+    fontFamily: fonts.regular,
+    fontSize: 15,
+    color: colors.muted,
+    marginTop: 2,
+    marginLeft: 32,
+  },
+
+  emptyBody: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: spacing.xxl,
   },
-  layoutBody: { flex: 1, minWidth: 0 },
-  layoutTitleLine: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
-  layoutName: {
-    color: colors.textPrimary,
-    fontSize: 15,
-    fontWeight: '700',
-    flexShrink: 1,
+  emptyTitle: {
+    fontFamily: fonts.bold,
+    fontSize: 22,
+    letterSpacing: -0.44,
+    color: colors.text,
+    textAlign: 'center',
+    marginTop: spacing.xxxl,
   },
-  defaultBadge: {
-    color: colors.primary,
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-    backgroundColor: colors.primaryGlow,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  layoutMeta: {
-    color: colors.primary,
-    fontSize: 12,
-    fontWeight: '700',
-    marginTop: 4,
-  },
-  layoutDate: {
-    color: colors.textMuted,
-    fontSize: 11,
-    marginTop: 2,
-  },
-  chevron: {
-    color: colors.textMuted,
-    fontSize: 24,
-    fontWeight: '300',
-  },
-
-  primaryBtn: {
-    marginTop: spacing.l,
-    paddingVertical: 14,
-    borderRadius: radius.m,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-  },
-  primaryBtnText: {
-    color: colors.textOnPrimary,
-    fontSize: 14,
-    fontWeight: '800',
-  },
-
-  newLayoutBtn: {
-    marginTop: spacing.m,
-    paddingVertical: 14,
-    borderRadius: radius.m,
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: colors.primary,
-    alignItems: 'center',
-  },
-  newLayoutBtnText: {
-    color: colors.primary,
-    fontSize: 13,
-    fontWeight: '800',
-  },
-
-  hint: {
-    color: colors.textMuted,
-    fontSize: 11,
+  emptyText: {
+    fontFamily: fonts.regular,
+    fontSize: 15.5,
+    lineHeight: 23,
+    color: colors.muted,
     textAlign: 'center',
     marginTop: spacing.m,
   },
 
-  emptyCard: {
-    padding: spacing.l,
-    borderRadius: radius.l,
+  scroll: {
+    paddingHorizontal: spacing.gutter,
+    paddingBottom: spacing.xl,
+  },
+  intro: {
+    fontFamily: fonts.regular,
+    fontSize: 15.5,
+    lineHeight: 23,
+    color: colors.muted,
+    marginBottom: spacing.xxl,
+  },
+
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.l,
+    paddingVertical: spacing.l,
+  },
+  rowDivider: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line,
+  },
+  rowShape: {
+    width: 104,
+    alignItems: 'center',
+  },
+  rowBody: { flex: 1, minWidth: 0 },
+  rowName: {
+    fontFamily: fonts.bold,
+    fontSize: 19,
+    letterSpacing: -0.38,
+    color: colors.text,
+  },
+  rowMeta: {
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    color: colors.muted,
+    marginTop: 3,
+  },
+  bestLine: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
+    marginTop: 8,
+  },
+  bestLabel: {
+    fontFamily: fonts.semibold,
+    fontSize: 10,
+    letterSpacing: 1,
+    color: colors.dim,
+  },
+  bestValue: {
+    fontFamily: fonts.monoMedium,
+    fontSize: 17,
+    color: colors.blueSoft,
+    fontVariant: ['tabular-nums'],
+  },
+
+  addRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.m,
+    paddingVertical: spacing.xl,
+  },
+  addIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.pill,
     backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  emptyTitle: {
-    color: colors.textPrimary,
-    fontSize: 16,
-    fontWeight: '800',
-    marginBottom: spacing.s,
+  addLabel: {
+    fontFamily: fonts.bold,
+    fontSize: 17,
+    letterSpacing: -0.2,
+    color: colors.blueSoft,
   },
-  emptyBody: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    lineHeight: 19,
+  addSub: {
+    fontFamily: fonts.regular,
+    fontSize: 13.5,
+    color: colors.dim,
+    marginTop: 2,
+  },
+  hint: {
+    fontFamily: fonts.regular,
+    fontSize: 12.5,
+    color: colors.dim,
   },
 
-  errorText: {
-    color: colors.danger,
-    fontSize: 13,
-    fontWeight: '600',
+  footer: {
+    paddingHorizontal: spacing.gutter,
+    paddingTop: spacing.m,
+  },
+  cta: {
+    height: 58,
+    borderRadius: radius.m,
+    backgroundColor: colors.blue,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ctaText: {
+    fontFamily: fonts.bold,
+    fontSize: 18,
+    letterSpacing: -0.2,
+    color: colors.textOnPrimary,
+  },
+  linkWrap: { alignSelf: 'center', marginTop: spacing.l },
+  link: {
+    fontFamily: fonts.regular,
+    fontSize: 15,
+    color: colors.muted,
   },
 
-  modalOverlay: {
+  modalBg: {
     flex: 1,
     backgroundColor: colors.overlay,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: spacing.l,
+    padding: spacing.xxl,
   },
   modalCard: {
     width: '100%',
-    backgroundColor: colors.surfaceHigh,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.l,
-    padding: spacing.l,
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    padding: spacing.xxl,
   },
   modalTitle: {
-    color: colors.textPrimary,
-    fontSize: 17,
-    fontWeight: '800',
-    marginBottom: spacing.s,
+    fontFamily: fonts.bold,
+    fontSize: 19,
+    letterSpacing: -0.3,
+    color: colors.text,
   },
   modalBody: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    lineHeight: 18,
-    marginBottom: spacing.m,
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.muted,
+    marginTop: spacing.s,
   },
   modalInput: {
-    backgroundColor: colors.bg,
-    borderWidth: 1,
-    borderColor: colors.border,
+    height: 48,
     borderRadius: radius.m,
-    paddingHorizontal: spacing.m,
-    paddingVertical: spacing.m,
-    color: colors.textPrimary,
-    fontSize: 14,
+    backgroundColor: colors.bg,
+    paddingHorizontal: 14,
+    marginTop: spacing.l,
+    fontFamily: fonts.medium,
+    fontSize: 16,
+    color: colors.text,
   },
   modalActions: {
     flexDirection: 'row',
-    gap: spacing.s,
-    marginTop: spacing.l,
+    gap: spacing.m,
+    marginTop: spacing.xl,
   },
   modalCancel: {
     flex: 1,
-    paddingVertical: spacing.m,
+    height: 48,
     borderRadius: radius.m,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.line2,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   modalCancelText: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: '700',
+    fontFamily: fonts.semibold,
+    fontSize: 15,
+    color: colors.muted,
   },
   modalConfirm: {
-    flex: 1,
-    paddingVertical: spacing.m,
+    flex: 1.4,
+    height: 48,
     borderRadius: radius.m,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.blue,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   modalConfirmText: {
+    fontFamily: fonts.semibold,
+    fontSize: 15,
     color: colors.textOnPrimary,
-    fontSize: 13,
-    fontWeight: '800',
   },
 });
