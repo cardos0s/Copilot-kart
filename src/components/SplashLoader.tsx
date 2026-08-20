@@ -33,9 +33,15 @@ const DESIGN_H = 844;
  */
 const COMPOSITION_SCALE = 1;
 
-const KART_W = Math.round(176 * COMPOSITION_SCALE);
+/**
+ * O kart tem escala própria. Encolher os dois juntos deixava o nome pequeno
+ * demais junto com ele — e o nome é o que fica na memória, não o desenho.
+ */
+const KART_SCALE = 0.78;
+
+const KART_W = Math.round(176 * KART_SCALE * COMPOSITION_SCALE);
 const KART_H = Math.round(KART_W * (456 / 659));
-const WORDMARK_SIZE = Math.round(46 * COMPOSITION_SCALE);
+const WORDMARK_SIZE = Math.round(50 * COMPOSITION_SCALE);
 const KART_TOP = 306;
 const GROUND_TOP = 424;
 /**
@@ -65,20 +71,30 @@ const EASE_KART = Easing.bezier(0.2, 0.75, 0.28, 1);
 const EASE_IN = Easing.bezier(0.16, 1, 0.3, 1);
 
 /**
- * Seis baforadas em ciclo contínuo, emitidas atrás da roda traseira.
- * Os valores são deliberadamente irregulares: se as seis compartilharem
+ * Nove baforadas em ciclo contínuo, emitidas atrás da roda traseira. Três
+ * delas são azuis e bem transparentes — é o que espalha a cor pela tela sem
+ * transformar o fundo branco em outra coisa.
+ *
+ * Os valores são deliberadamente irregulares: se todas compartilharem
  * duração, o conjunto pulsa em bloco e denuncia que é animação.
  */
+const SMOKE_GREY = '#78808C';
+/** Baforada azulada: é daqui que vem boa parte do azul da tela. */
+const SMOKE_BLUE = '#2563FF';
+
 const PUFFS = [
-  { size: 54, dx: -74, dy: -30, duration: 1300, delay: 0 },
-  { size: 40, dx: -58, dy: -17, duration: 1100, delay: 160 },
-  { size: 64, dx: -92, dy: -40, duration: 1550, delay: 320 },
-  { size: 44, dx: -66, dy: -9, duration: 1200, delay: 480 },
-  { size: 58, dx: -84, dy: -28, duration: 1400, delay: 640 },
-  { size: 36, dx: -52, dy: -20, duration: 1000, delay: 800 },
+  { size: 54, dx: -74, dy: -30, duration: 1300, delay: 0, tint: SMOKE_GREY, alpha: 0.72 },
+  { size: 40, dx: -58, dy: -17, duration: 1100, delay: 160, tint: SMOKE_BLUE, alpha: 0.34 },
+  { size: 64, dx: -92, dy: -40, duration: 1550, delay: 320, tint: SMOKE_GREY, alpha: 0.72 },
+  { size: 44, dx: -66, dy: -9, duration: 1200, delay: 480, tint: SMOKE_GREY, alpha: 0.62 },
+  { size: 58, dx: -84, dy: -28, duration: 1400, delay: 640, tint: SMOKE_BLUE, alpha: 0.30 },
+  { size: 36, dx: -52, dy: -20, duration: 1000, delay: 800, tint: SMOKE_GREY, alpha: 0.7 },
+  { size: 72, dx: -108, dy: -52, duration: 1700, delay: 240, tint: SMOKE_GREY, alpha: 0.5 },
+  { size: 48, dx: -96, dy: 6, duration: 1450, delay: 560, tint: SMOKE_BLUE, alpha: 0.26 },
+  { size: 32, dx: -46, dy: -38, duration: 950, delay: 900, tint: SMOKE_GREY, alpha: 0.66 },
 ];
 
-function Puff({ size, dx, dy, duration, delay }: (typeof PUFFS)[number]) {
+function Puff({ size, dx, dy, duration, delay, tint, alpha }: (typeof PUFFS)[number]) {
   const t = useSharedValue(0);
 
   useEffect(() => {
@@ -98,7 +114,7 @@ function Puff({ size, dx, dy, duration, delay }: (typeof PUFFS)[number]) {
     ],
   }));
 
-  const gradientId = `puff${size}`;
+  const gradientId = `puff${size}${tint.replace('#', '')}`;
 
   return (
     <Animated.View
@@ -110,9 +126,9 @@ function Puff({ size, dx, dy, duration, delay }: (typeof PUFFS)[number]) {
           {/* radial-gradient(circle at 42% 40%, …) — o raio 0.834 é a distância
               até o canto mais distante, que é o padrão do CSS. */}
           <RadialGradient id={gradientId} cx="0.42" cy="0.40" r="0.834">
-            <Stop offset="0" stopColor="#78808C" stopOpacity="0.72" />
-            <Stop offset="0.46" stopColor="#78808C" stopOpacity="0.34" />
-            <Stop offset="0.72" stopColor="#78808C" stopOpacity="0" />
+            <Stop offset="0" stopColor={tint} stopOpacity={alpha} />
+            <Stop offset="0.46" stopColor={tint} stopOpacity={alpha * 0.47} />
+            <Stop offset="0.72" stopColor={tint} stopOpacity={0} />
           </RadialGradient>
         </Defs>
         <Circle cx={size / 2} cy={size / 2} r={size / 2} fill={`url(#${gradientId})`} />
@@ -340,8 +356,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    height: 1,
-    backgroundColor: 'rgba(0,0,0,0.10)',
+    height: 2,
+    backgroundColor: 'rgba(37, 99, 255, 0.28)',
     // Cresce da esquerda, no rastro do kart.
     transformOrigin: 'left center',
   },
@@ -387,14 +403,14 @@ const styles = StyleSheet.create({
     marginTop: 5,
   },
   rule: {
-    width: 32,
-    height: 1.5,
+    width: 46,
+    height: 2,
     // Sobre branco vale o azul cheio: o azul claro dá 2,48:1 e sai lavado.
     backgroundColor: colors.blue,
   },
   number: {
-    fontFamily: fonts.monoMedium,
-    fontSize: 17,
+    fontFamily: fonts.monoSemibold,
+    fontSize: 19,
     letterSpacing: 5.1, // 0.3em
     paddingLeft: 5.1, // compensa o tracking do último caractere
     color: colors.blue,
