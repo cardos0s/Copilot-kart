@@ -14,13 +14,17 @@ import {
 } from '../../src/storage/db';
 import { findTrackById } from '../../src/data/tracks';
 import { TrackSilhouette } from '../../src/components/TrackSilhouette';
-import { Icon, PillTabs } from '../../src/components/ui';
-import { colors, radius, spacing } from '../../src/theme';
+import { Icon, PillTabs, tabBarSpace } from '../../src/components/ui';
+import { colors, fonts, radius, spacing } from '../../src/theme';
 
 const BLUE = colors.racingBlue;
 const MONTHS = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
 
 type Filter = 'all' | 'month' | 'year';
+
+type Row =
+  | { kind: 'session'; session: SessionWithStats }
+  | { kind: 'empty'; title: string; count: number };
 
 type SessionWithStats = Session & {
   bestLapMs: number | null;
@@ -42,6 +46,14 @@ function fmtRecord(ms: number) {
 function fmtDelta(ms: number) {
   return `+${(ms / 1000).toFixed(3)}`;
 }
+/** Cabeçalho de grupo: "27 JUL". */
+function fmtDay(ts: number) {
+  return new Date(ts)
+    .toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
+    .toUpperCase()
+    .replace('.', '');
+}
+
 function fmtTime(ts: number) {
   return new Date(ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 }
@@ -114,6 +126,17 @@ export default function Sessions() {
     return items.filter((s) => isInMonth(s.startedAt, now)).length;
   }, [items]);
 
+  /** Datas com o grupo de sessões sem volta aberto. */
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const toggleExpanded = (title: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(title)) next.delete(title);
+      else next.add(title);
+      return next;
+    });
+
   const sections = useMemo(() => {
     const now = new Date();
     const filtered = items.filter((s) => {
@@ -121,16 +144,30 @@ export default function Sessions() {
       if (filter === 'year') return isInYear(s.startedAt, now);
       return true;
     });
-    const groups = new Map<number, SessionWithStats[]>();
+    const byDay = new Map<string, SessionWithStats[]>();
     for (const it of filtered) {
-      const k = startOfDay(it.startedAt);
-      if (!groups.has(k)) groups.set(k, []);
-      groups.get(k)!.push(it);
+      const key = fmtDay(it.startedAt);
+      const arr = byDay.get(key) ?? [];
+      arr.push(it);
+      byDay.set(key, arr);
     }
-    return Array.from(groups.entries())
-      .sort((a, b) => b[0] - a[0])
-      .map(([k, data]) => ({ title: dayLabel(k), data }));
-  }, [items, filter]);
+
+    // Sessão sem volta registrada é ruído no histórico — o piloto abriu e não
+    // rodou. Elas somem numa linha só por dia, que abre se ele quiser ver.
+    return Array.from(byDay.entries()).map(([title, list]) => {
+      const withLaps = list.filter((x) => x.lapCount > 0);
+      const empty = list.filter((x) => x.lapCount === 0);
+      const isOpen = expanded.has(title);
+      const data: Row[] = withLaps.map((session) => ({ kind: 'session' as const, session }));
+      if (empty.length > 0) {
+        data.push({ kind: 'empty' as const, title, count: empty.length });
+        if (isOpen) {
+          for (const session of empty) data.push({ kind: 'session' as const, session });
+        }
+      }
+      return { title, data };
+    });
+  }, [items, filter, expanded]);
 
   const handleDelete = useCallback(
     (sess: SessionWithStats) => {
@@ -149,7 +186,26 @@ export default function Sessions() {
   return (
     <View style={s.root}>
       <View style={[s.header, { paddingTop: insets.top + spacing.s }]}>
-        <Text style={s.title}>HISTÓRICO DE SESSÕES</Text>
+        <Text style={s.title}>Sessões</Text>
+      </View>
+
+      <View style={s.stats}>
+        <View style={s.statCol}>
+          <Text style={s.statLabel}>RECORDE</Text>
+          <Text style={[s.statValue, { color: colors.blueSoft }]}>
+            {recordMs != null ? fmtShort(recordMs) : '—'}
+          </Text>
+        </View>
+        <View style={s.statRule} />
+        <View style={s.statCol}>
+          <Text style={s.statLabel}>SESSÕES</Text>
+          <Text style={s.statValue}>{items.length}</Text>
+        </View>
+        <View style={s.statRule} />
+        <View style={s.statCol}>
+          <Text style={s.statLabel}>ESTE MÊS</Text>
+          <Text style={s.statValue}>{monthCount}</Text>
+        </View>
       </View>
 
       <View style={s.filterRow}>
@@ -166,43 +222,47 @@ export default function Sessions() {
 
       <SectionList
         sections={sections}
-        keyExtractor={(it) => it.id}
+        keyExtractor={(row) => (row.kind === 'session' ? row.session.id : `empty-${row.title}`)}
         stickySectionHeadersEnabled={false}
-        contentContainerStyle={{ paddingHorizontal: spacing.l, paddingBottom: 150 }}
-        ListHeaderComponent={
-          <View style={s.summaryRow}>
-            <View style={s.recordCard}>
-              <View style={s.recordTop}>
-                <Text style={s.trophy}>🏆</Text>
-                <Text style={s.recordLabel}>RECORDE</Text>
-              </View>
-              <Text style={s.recordTime}>{recordMs != null ? fmtRecord(recordMs) : '—'}</Text>
-              <Text style={s.recordTrack} numberOfLines={1}>{recordTrack || '—'}</Text>
-            </View>
-            <View style={s.summaryCol}>
-              <View style={s.miniCard}>
-                <Text style={s.miniLabel}>SESSÕES</Text>
-                <Text style={s.miniValue}>{items.length}</Text>
-              </View>
-              <View style={s.miniCard}>
-                <Text style={s.miniLabel}>ESTE MÊS</Text>
-                <Text style={s.miniValue}>{monthCount}</Text>
-              </View>
-            </View>
-          </View>
-        }
+        contentContainerStyle={{
+          paddingHorizontal: spacing.gutter,
+          paddingBottom: tabBarSpace(insets.bottom, 24),
+        }}
         renderSectionHeader={({ section }) => (
           <Text style={s.sectionLabel}>{section.title}</Text>
         )}
-        renderItem={({ item }) => (
-          <SessionRow
-            item={item}
-            isRecord={item.id === recordId}
-            deltaMs={item.bestLapMs != null && recordMs != null ? item.bestLapMs - recordMs : null}
-            onPress={() => router.push(`/session/${item.id}`)}
-            onDelete={() => handleDelete(item)}
-          />
-        )}
+        renderItem={({ item: row }) =>
+          row.kind === 'empty' ? (
+            <Pressable
+              onPress={() => toggleExpanded(row.title)}
+              style={({ pressed }) => [s.emptyRow, pressed && { opacity: 0.7 }]}
+            >
+              <View style={s.emptyDot} />
+              <Text style={s.emptyRowText}>
+                {row.count} {row.count === 1 ? 'sessão' : 'sessões'} sem voltas registradas
+              </Text>
+              <Text style={s.chevron}>{expanded.has(row.title) ? '⌄' : '›'}</Text>
+            </Pressable>
+          ) : (
+            <SessionRow
+              item={row.session}
+              isRecord={row.session.id === recordId}
+              matchesRecord={
+                row.session.id !== recordId &&
+                row.session.bestLapMs != null &&
+                recordMs != null &&
+                row.session.bestLapMs === recordMs
+              }
+              deltaMs={
+                row.session.bestLapMs != null && recordMs != null
+                  ? row.session.bestLapMs - recordMs
+                  : null
+              }
+              onPress={() => router.push(`/session/${row.session.id}`)}
+              onDelete={() => handleDelete(row.session)}
+            />
+          )
+        }
         ListEmptyComponent={
           <View style={s.empty}>
             <Text style={s.emptyTitle}>
@@ -223,12 +283,15 @@ export default function Sessions() {
 function SessionRow({
   item,
   isRecord,
+  matchesRecord,
   deltaMs,
   onPress,
   onDelete,
 }: {
   item: SessionWithStats;
   isRecord: boolean;
+  /** Bateu o mesmo tempo do recorde, mas não é a sessão que o marcou. */
+  matchesRecord: boolean;
   deltaMs: number | null;
   onPress: () => void;
   onDelete: () => void;
@@ -248,12 +311,15 @@ function SessionRow({
       rightThreshold={48}
       renderRightActions={(progress) => <RightDeleteAction progress={progress} onPress={handleDelete} />}
       overshootRight={false}
-      containerStyle={{ marginBottom: spacing.m }}
+      containerStyle={{}}
     >
-      <Pressable style={({ pressed }) => [s.card, isRecord && s.cardRecord, pressed && { opacity: 0.85 }]} onPress={onPress}>
-        <View style={s.iconBox}>
+      <Pressable
+        style={({ pressed }) => [s.row, pressed && { opacity: 0.7 }]}
+        onPress={onPress}
+      >
+        <View style={s.rowShape}>
           {item.bestSamples && item.bestSamples.length > 1 ? (
-            <TrackSilhouette samples={item.bestSamples} width={48} height={40} strokeWidth={2} />
+            <TrackSilhouette samples={item.bestSamples} width={62} height={52} strokeWidth={2} />
           ) : (
             <Icon name="map" color={colors.textDim} size={22} />
           )}
@@ -261,7 +327,9 @@ function SessionRow({
 
         <View style={{ flex: 1, minWidth: 0 }}>
           <View style={s.nameRow}>
-            <Text style={s.rowTrack} numberOfLines={1}>{track?.shortName ?? item.trackName}</Text>
+            <Text style={s.rowTrack} numberOfLines={1}>
+              {track?.shortName ?? item.trackName}
+            </Text>
             {isRecord && (
               <View style={s.badge}>
                 <Text style={s.badgeText}>RECORDE</Text>
@@ -274,11 +342,19 @@ function SessionRow({
         </View>
 
         <View style={s.rightCol}>
-          <Text style={s.bigLap}>{item.bestLapMs != null ? fmtShort(item.bestLapMs) : '—'}</Text>
-          <Text style={[s.delta, isRecord && s.deltaRecord]}>
-            {isRecord ? 'sua melhor' : deltaMs != null ? fmtDelta(deltaMs) : ''}
+          <Text style={[s.bigLap, isRecord && { color: colors.blueSoft }]}>
+            {item.bestLapMs != null ? fmtShort(item.bestLapMs) : '—'}
           </Text>
+          {isRecord ? (
+            <Text style={s.tagBest}>SUA MELHOR</Text>
+          ) : matchesRecord ? (
+            <Text style={s.tagTie}>IGUALA O RECORDE</Text>
+          ) : deltaMs != null ? (
+            <Text style={s.delta}>{fmtDelta(deltaMs)}</Text>
+          ) : null}
         </View>
+
+        <Text style={s.chevron}>›</Text>
       </Pressable>
     </ReanimatedSwipeable>
   );
@@ -300,37 +376,100 @@ function RightDeleteAction({ progress, onPress }: { progress: { value: number };
 }
 
 const s = StyleSheet.create({
+  stats: {
+    flexDirection: 'row',
+    paddingHorizontal: spacing.gutter,
+    paddingBottom: spacing.xxl,
+  },
+  statCol: { flex: 1 },
+  statRule: { width: 1, backgroundColor: colors.line, marginHorizontal: spacing.l },
+  statLabel: { fontFamily: fonts.semibold, fontSize: 11, letterSpacing: 1.2, color: colors.muted },
+  statValue: {
+    fontFamily: fonts.monoMedium,
+    fontSize: 28,
+    letterSpacing: -0.8,
+    color: colors.text,
+    fontVariant: ['tabular-nums'],
+    marginTop: 6,
+  },
+
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.l,
+    paddingVertical: spacing.l,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line,
+  },
+  rowShape: { width: 62, alignItems: 'center' },
+  rightCol: { alignItems: 'flex-end' },
+  tagBest: {
+    fontFamily: fonts.semibold,
+    fontSize: 11,
+    letterSpacing: 0.9,
+    color: colors.blueSoft,
+    marginTop: 4,
+  },
+  tagTie: {
+    fontFamily: fonts.semibold,
+    fontSize: 11,
+    letterSpacing: 0.9,
+    color: colors.muted,
+    marginTop: 4,
+  },
+  chevron: { fontFamily: fonts.regular, fontSize: 22, color: colors.dim },
+
+  emptyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.l,
+    paddingVertical: spacing.l,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line,
+  },
+  emptyDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 99,
+    backgroundColor: colors.surfaceRail,
+    marginLeft: 28,
+  },
+  emptyRowText: { flex: 1, fontFamily: fonts.regular, fontSize: 15.5, color: colors.muted },
+
   root: { flex: 1, backgroundColor: colors.bg },
-  header: { paddingHorizontal: spacing.l, paddingBottom: spacing.m, alignItems: 'center' },
-  title: { color: colors.textPrimary, fontSize: 22, fontWeight: '900', fontStyle: 'italic', letterSpacing: 0.5 },
-  filterRow: { paddingHorizontal: spacing.l, paddingBottom: spacing.m, flexDirection: 'row' },
+  header: { paddingHorizontal: spacing.gutter, paddingBottom: spacing.xl },
+  title: { fontFamily: fonts.bold, fontSize: 34, letterSpacing: -1, color: colors.text },
+  filterRow: { paddingHorizontal: spacing.gutter, paddingBottom: spacing.xl, flexDirection: 'row' },
 
-  summaryRow: { flexDirection: 'row', gap: spacing.s, marginBottom: spacing.l },
-  recordCard: { flex: 1.5, padding: spacing.l, borderRadius: radius.l, backgroundColor: 'rgba(37, 99, 255,0.07)', borderWidth: 1.5, borderColor: BLUE },
-  recordTop: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  trophy: { fontSize: 14 },
-  recordLabel: { color: BLUE, fontSize: 11, fontWeight: '800', letterSpacing: 1.5 },
-  recordTime: { color: colors.textPrimary, fontSize: 28, fontWeight: '900', letterSpacing: -0.5, marginTop: spacing.s, fontVariant: ['tabular-nums'] },
-  recordTrack: { color: colors.textSecondary, fontSize: 13, fontWeight: '600', marginTop: 4 },
-  summaryCol: { flex: 1, gap: spacing.s },
-  miniCard: { flex: 1, padding: spacing.m, borderRadius: radius.m, backgroundColor: colors.surface, justifyContent: 'center' },
-  miniLabel: { color: colors.textMuted, fontSize: 9, fontWeight: '800', letterSpacing: 1 },
-  miniValue: { color: colors.textPrimary, fontSize: 22, fontWeight: '900', marginTop: 2 },
 
-  sectionLabel: { color: colors.textMuted, fontSize: 12, fontWeight: '800', letterSpacing: 1.5, marginTop: spacing.m, marginBottom: spacing.s },
+  sectionLabel: {
+    fontFamily: fonts.semibold,
+    fontSize: 12,
+    letterSpacing: 1.2,
+    color: colors.muted,
+    marginTop: spacing.xxl,
+    marginBottom: spacing.s,
+  },
 
-  card: { flexDirection: 'row', alignItems: 'center', gap: spacing.m, padding: spacing.m, borderRadius: radius.l, backgroundColor: colors.surface, borderWidth: 1, borderColor: 'transparent' },
-  cardRecord: { borderColor: BLUE, backgroundColor: 'rgba(37, 99, 255,0.05)' },
-  iconBox: { width: 60, height: 56, borderRadius: 14, backgroundColor: colors.bgElevated, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.s },
   rowTrack: { color: colors.textPrimary, fontSize: 17, fontWeight: '800', flexShrink: 1 },
-  badge: { backgroundColor: BLUE, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 2 },
-  badgeText: { color: '#fff', fontSize: 9, fontWeight: '900', fontStyle: 'italic', letterSpacing: 0.5 },
-  rowMeta: { color: colors.textMuted, fontSize: 13, fontWeight: '500', marginTop: 3 },
-  rightCol: { alignItems: 'flex-end' },
-  bigLap: { color: BLUE, fontSize: 24, fontWeight: '900', letterSpacing: -0.5, fontVariant: ['tabular-nums'] },
-  delta: { color: colors.textMuted, fontSize: 12, fontWeight: '700', marginTop: 2, fontVariant: ['tabular-nums'] },
-  deltaRecord: { color: colors.textSecondary, fontStyle: 'italic' },
+  badge: { backgroundColor: colors.blue, borderRadius: radius.xs, paddingHorizontal: 8, paddingVertical: 2 },
+  badgeText: { fontFamily: fonts.semibold, fontSize: 10, letterSpacing: 0.9, color: '#fff' },
+  rowMeta: { fontFamily: fonts.regular, fontSize: 14, color: colors.muted, marginTop: 3 },
+  bigLap: {
+    fontFamily: fonts.monoMedium,
+    fontSize: 26,
+    letterSpacing: -0.8,
+    color: colors.text,
+    fontVariant: ['tabular-nums'],
+  },
+  delta: {
+    fontFamily: fonts.monoMedium,
+    fontSize: 15,
+    color: colors.danger,
+    marginTop: 4,
+    fontVariant: ['tabular-nums'],
+  },
 
   empty: { paddingTop: 80, alignItems: 'center', paddingHorizontal: spacing.xl },
   emptyTitle: { color: colors.textPrimary, fontSize: 17, fontWeight: '800' },
