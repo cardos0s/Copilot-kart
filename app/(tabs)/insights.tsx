@@ -20,7 +20,13 @@ import {
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getLapsForSession, listSessions } from '../../src/storage/db';
+import {
+  AiChatThreadSummary,
+  getLapsForSession,
+  listAiChatThreads,
+  listSessions,
+} from '../../src/storage/db';
+import { refreshAiEnabled } from '../../src/lib/aiAnalysis';
 import { findTrackById } from '../../src/data/tracks';
 import { buildLapInsight, LapInsight, speedPaint } from '../../src/lib/lapInsight';
 import { formatLapPlain } from '../../src/lib/format';
@@ -43,6 +49,8 @@ export default function Insights() {
   const [loading, setLoading] = useState(true);
   const [insight, setInsight] = useState<LapInsight | null>(null);
   const [trackName, setTrackName] = useState('');
+  const [threads, setThreads] = useState<AiChatThreadSummary[]>([]);
+  const [aiReady, setAiReady] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -64,6 +72,9 @@ export default function Insights() {
 
       const laps = (await Promise.all(sameTrack.map((x) => getLapsForSession(x.id)))).flat();
       setInsight(buildLapInsight(laps));
+
+      setThreads(await listAiChatThreads(6).catch(() => []));
+      setAiReady(await refreshAiEnabled().catch(() => false));
     } finally {
       setLoading(false);
     }
@@ -178,20 +189,71 @@ export default function Insights() {
               </>
             )}
 
+            <Text style={s.reading}>{plainReading(insight)}</Text>
+
+            {/* ── Coach IA ──────────────────────────────────────────
+                Separado de propósito. O texto acima sai de aritmética; daqui
+                pra baixo é modelo de linguagem, e misturar os dois faz o
+                piloto confiar no número errado. */}
+            <View style={s.aiHead}>
+              <Text style={s.aiMark}>✦</Text>
+              <Text style={s.aiTitle}>COACH IA</Text>
+              <View style={s.aiRule} />
+            </View>
+
             <Pressable
-              onPress={() => router.push('/coach' as any)}
-              style={({ pressed }) => [s.coach, pressed && { opacity: 0.85 }]}
+              onPress={() =>
+                aiReady
+                  ? router.push({
+                      pathname: '/coach' as any,
+                      // A tela exige os dois: sem eles ela abre em erro.
+                      params: { sessionId: insight.best.sessionId, lapId: insight.best.id },
+                    })
+                  : router.push('/ai-key' as any)
+              }
+              style={({ pressed }) => [s.aiCta, pressed && { opacity: 0.85 }]}
             >
-              <View style={s.coachHead}>
-                <Text style={s.coachMark}>✦</Text>
-                <Text style={s.coachTitle}>COACH</Text>
-                <View style={s.coachRule} />
-                <Text style={s.coachMeta}>
-                  {insight.lapsUsed} {insight.lapsUsed === 1 ? 'VOLTA' : 'VOLTAS'}
-                </Text>
-              </View>
-              <Text style={s.coachBody}>{coachLine(insight)}</Text>
+              <Text style={s.aiCtaText}>
+                {aiReady ? 'Analisar sua melhor volta com IA' : 'Configurar a chave de IA'}
+              </Text>
             </Pressable>
+
+            {!aiReady && (
+              <Text style={s.aiHint}>
+                A análise por IA usa sua própria chave — Claude, Gemini ou OpenAI. Sem ela o
+                resto da tela continua funcionando: nada aqui em cima depende de IA.
+              </Text>
+            )}
+
+            {threads.length > 0 && (
+              <>
+                <Text style={s.aiSection}>CONVERSAS RECENTES</Text>
+                {threads.map((t) => (
+                  <Pressable
+                    key={t.cacheKey}
+                    onPress={() =>
+                      router.push({
+                        pathname: '/coach' as any,
+                        params: { sessionId: t.sessionId, lapId: t.lapId },
+                      })
+                    }
+                    style={({ pressed }) => [s.thread, pressed && { opacity: 0.7 }]}
+                  >
+                    <View style={s.threadTop}>
+                      <Text style={s.threadTrack} numberOfLines={1}>
+                        {t.trackName ?? 'Sessão'}
+                      </Text>
+                      <Text style={s.threadCount}>
+                        {t.messageCount} {t.messageCount === 1 ? 'msg' : 'msgs'}
+                      </Text>
+                    </View>
+                    <Text style={s.threadPreview} numberOfLines={2}>
+                      {t.preview}
+                    </Text>
+                  </Pressable>
+                ))}
+              </>
+            )}
           </>
         )}
       </ScrollView>
@@ -200,11 +262,10 @@ export default function Insights() {
 }
 
 /**
- * A frase do coach sai dos mesmos números da lista — nada aqui é gerado por
- * IA. Quando não há curva dominante, ela diz isso em vez de forçar um
- * diagnóstico.
+ * Leitura em português dos mesmos números da lista. Aritmética, não IA —
+ * por isso ela não fica embaixo do rótulo de coach.
  */
-function coachLine(insight: LapInsight): string {
+function plainReading(insight: LapInsight): string {
   const w = insight.worst;
   if (!w || insight.lapsUsed === 0) {
     return 'Ainda não há voltas suficientes pra separar hábito de acaso. Mais uma sessão e eu consigo apontar onde o tempo se repete.';
@@ -214,6 +275,62 @@ function coachLine(insight: LapInsight): string {
 }
 
 const s = StyleSheet.create({
+  reading: {
+    fontFamily: fonts.regular,
+    fontSize: 16,
+    lineHeight: 24,
+    color: colors.text,
+    marginTop: spacing.xxl,
+  },
+
+  aiHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.m,
+    marginTop: spacing.xxxl,
+    marginBottom: spacing.l,
+  },
+  aiMark: { fontSize: 14, color: colors.blueSoft },
+  aiTitle: { fontFamily: fonts.semibold, fontSize: 12, letterSpacing: 1.3, color: colors.blueSoft },
+  aiRule: { flex: 1, height: 1, backgroundColor: colors.line },
+  aiCta: {
+    height: 54,
+    borderRadius: radius.m,
+    backgroundColor: colors.blue,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aiCtaText: { fontFamily: fonts.semibold, fontSize: 16, color: colors.textOnPrimary },
+  aiHint: {
+    fontFamily: fonts.regular,
+    fontSize: 13.5,
+    lineHeight: 20,
+    color: colors.dim,
+    marginTop: spacing.m,
+  },
+  aiSection: {
+    fontFamily: fonts.semibold,
+    fontSize: 11,
+    letterSpacing: 1.2,
+    color: colors.muted,
+    marginTop: spacing.xxl,
+    marginBottom: spacing.s,
+  },
+  thread: {
+    paddingVertical: spacing.l,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line,
+  },
+  threadTop: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
+  threadTrack: { flex: 1, fontFamily: fonts.semibold, fontSize: 16, color: colors.text },
+  threadCount: { fontFamily: fonts.regular, fontSize: 13, color: colors.dim },
+  threadPreview: {
+    fontFamily: fonts.regular,
+    fontSize: 14.5,
+    lineHeight: 21,
+    color: colors.muted,
+    marginTop: 4,
+  },
   root: { flex: 1, backgroundColor: colors.bg },
   center: { paddingVertical: spacing.huge, alignItems: 'center' },
 
@@ -282,22 +399,4 @@ const s = StyleSheet.create({
   },
   lossTrack: { height: 4, borderRadius: radius.pill, backgroundColor: 'transparent', marginBottom: spacing.l },
 
-  coach: {
-    marginTop: spacing.xxxl,
-    padding: spacing.xl,
-    borderRadius: radius.xl,
-    backgroundColor: colors.surface,
-  },
-  coachHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.m },
-  coachMark: { fontSize: 14, color: colors.blueSoft },
-  coachTitle: { fontFamily: fonts.semibold, fontSize: 12, letterSpacing: 1.3, color: colors.blueSoft },
-  coachRule: { flex: 1, height: 1, backgroundColor: colors.line },
-  coachMeta: { fontFamily: fonts.semibold, fontSize: 12, letterSpacing: 1.1, color: colors.muted },
-  coachBody: {
-    fontFamily: fonts.regular,
-    fontSize: 16,
-    lineHeight: 24,
-    color: colors.text,
-    marginTop: spacing.l,
-  },
 });
