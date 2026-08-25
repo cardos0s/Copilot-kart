@@ -172,6 +172,8 @@ import Svg, { Circle, Path, Text as SvgText } from 'react-native-svg';
 import { Pressable } from 'react-native';
 import type { ReferenceLap } from '../../lib/geometry';
 import type { Corner } from '../../lib/corners';
+import { makeLocalProjector } from '../../lib/geometry';
+import { speedPaint } from '../../lib/lapInsight';
 
 const VB = 100;
 
@@ -278,6 +280,80 @@ export function CornerArrow({ direction, color }: { direction: 'left' | 'right';
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+    </Svg>
+  );
+}
+
+/**
+ * A volta pintada pela velocidade. Cada trecho ganha a cor do próprio ritmo,
+ * então o mapa mostra onde o kart anda e onde ele para sem precisar de número.
+ * O ponto vermelho marca o lugar mais lento da volta.
+ */
+export function PaintedLap({
+  samples,
+  minKmh,
+  maxKmh,
+  size,
+  markSlowest = true,
+}: {
+  samples: { lat: number; lng: number; speed: number }[];
+  minKmh: number;
+  maxKmh: number;
+  size: number;
+  markSlowest?: boolean;
+}) {
+  if (!samples || samples.length < 8) return null;
+
+  const projector = makeLocalProjector({ lat: samples[0].lat, lng: samples[0].lng });
+  const xy = samples.map((p) => projector.toXY({ lat: p.lat, lng: p.lng }));
+
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const p of xy) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  const spanX = maxX - minX || 1;
+  const spanY = maxY - minY || 1;
+  const pad = 8;
+  const sc = Math.min((100 - pad * 2) / spanX, (100 - pad * 2) / spanY);
+  const offX = (100 - spanX * sc) / 2;
+  const offY = (100 - spanY * sc) / 2;
+  const box = (p: { x: number; y: number }) => ({
+    x: offX + (p.x - minX) * sc,
+    y: 100 - (offY + (p.y - minY) * sc),
+  });
+
+  // ~120 trechos: um Path por amostra faria centenas de nós pra ganho nenhum.
+  const step = Math.max(1, Math.floor(samples.length / 120));
+  const pts: { x: number; y: number; kmh: number }[] = [];
+  for (let i = 0; i < samples.length; i += step) {
+    pts.push({ ...box(xy[i]), kmh: samples[i].speed * 3.6 });
+  }
+  pts.push({ ...box(xy[0]), kmh: samples[0].speed * 3.6 });
+
+  let slowest = 0;
+  for (let i = 1; i < pts.length; i++) if (pts[i].kmh < pts[slowest].kmh) slowest = i;
+
+  return (
+    <Svg width={size} height={size} viewBox="0 0 100 100" fill="none">
+      {pts.slice(0, -1).map((p, i) => (
+        <Path
+          key={i}
+          d={`M${p.x.toFixed(2)} ${p.y.toFixed(2)} L${pts[i + 1].x.toFixed(2)} ${pts[i + 1].y.toFixed(2)}`}
+          stroke={speedPaint(p.kmh, minKmh, maxKmh)}
+          strokeWidth={3.2}
+          strokeLinecap="round"
+        />
+      ))}
+      <Circle cx={pts[0].x} cy={pts[0].y} r={2.6} fill="#fff" />
+      {markSlowest && (
+        <>
+          <Circle cx={pts[slowest].x} cy={pts[slowest].y} r={6} fill="none" stroke={colors.danger} strokeWidth={1} opacity={0.5} />
+          <Circle cx={pts[slowest].x} cy={pts[slowest].y} r={2.4} fill={colors.danger} />
+        </>
+      )}
     </Svg>
   );
 }

@@ -1,3 +1,13 @@
+/**
+ * "Sua volta" — a melhor volta do piloto na pista mais recente, pintada pela
+ * velocidade, e onde o tempo vai embora ao longo de todas as voltas dele ali.
+ *
+ * A tela de sessão responde "esta volta contra a sua melhor". Esta responde o
+ * que se repete: uma curva que custou 0,11 s numa volta pode ter sido
+ * distração; a mesma curva custando isso em média ao longo de dezenas de
+ * voltas é hábito, e é o que vale treinar.
+ */
+
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
@@ -5,573 +15,289 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { computeSmartInsights, InsightsBundle, SmartInsight } from '../../src/lib/insights';
-import { AiChatThreadSummary, listAiChatThreads } from '../../src/storage/db';
-import { getClient } from '../../src/lib/llm';
-import { Card, DecorativeSplash, Gauge, Icon, PillTabs } from '../../src/components/ui';
-import { colors, radius, spacing, typography } from '../../src/theme';
+import { getLapsForSession, listSessions } from '../../src/storage/db';
+import { findTrackById } from '../../src/data/tracks';
+import { buildLapInsight, LapInsight, speedPaint } from '../../src/lib/lapInsight';
+import { formatLapPlain } from '../../src/lib/format';
+import { PaintedLap } from '../../src/components/analysis/parts';
+import { tabBarSpace } from '../../src/components/ui';
+import { colors, fonts, radius, spacing } from '../../src/theme';
 
-type Tab = 'trends' | 'coach';
+/** Voltas de quantas sessões entram na conta. */
+const SESSION_WINDOW = 12;
 
-function fmtLap(ms: number) {
-  const totalS = ms / 1000;
-  const m = Math.floor(totalS / 60);
-  const s = totalS - m * 60;
-  return `${String(m).padStart(2, '0')}:${s.toFixed(3).padStart(6, '0')}`;
-}
-
-function relativeTime(ms: number): string {
-  const diff = Date.now() - ms;
-  const min = Math.floor(diff / (1000 * 60));
-  if (min < 1) return 'agora';
-  if (min < 60) return `${min}min atrás`;
-  const h = Math.floor(min / 60);
-  if (h < 24) return `${h}h atrás`;
-  const d = Math.floor(h / 24);
-  if (d < 30) return `${d}d atrás`;
-  const date = new Date(ms);
-  return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}`;
+function fmtLoss(ms: number) {
+  return `+${(ms / 1000).toFixed(3)}`;
 }
 
 export default function Insights() {
   const insets = useSafeAreaInsets();
-  const [tab, setTab] = useState<Tab>('trends');
-
-  return (
-    <View style={s.root}>
-      <DecorativeSplash position="top-right" intensity="normal" />
-      <View style={{ paddingTop: insets.top + spacing.s, paddingHorizontal: spacing.l }}>
-        <Text style={s.title}>INSIGHTS</Text>
-        <View style={{ marginTop: spacing.m }}>
-          <PillTabs<Tab>
-            value={tab}
-            onChange={setTab}
-            options={[
-              { value: 'trends', label: 'Tendências' },
-              { value: 'coach', label: 'Coach IA' },
-            ]}
-          />
-        </View>
-      </View>
-      {tab === 'trends' ? <TrendsTab /> : <CoachTab />}
-    </View>
-  );
-}
-
-// ===== Quick actions (atalhos gamification) =====
-
-function QuickActions() {
   const router = useRouter();
-  return (
-    <View style={s.quickActions}>
-      <QuickCard
-        label="Carreira"
-        emoji="◆"
-        onPress={() => router.push('/career' as any)}
-      />
-      <QuickCard
-        label="Desafios"
-        emoji="🔥"
-        onPress={() => router.push('/challenges' as any)}
-      />
-      <QuickCard
-        label="Recap"
-        emoji="✦"
-        onPress={() => router.push('/recap' as any)}
-      />
-    </View>
-  );
-}
+  const { width } = useWindowDimensions();
 
-function QuickCard({
-  label,
-  emoji,
-  onPress,
-}: {
-  label: string;
-  emoji: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [s.quickCard, pressed && { opacity: 0.7 }]}
-    >
-      <Text style={s.quickEmoji}>{emoji}</Text>
-      <Text style={s.quickLabel}>{label}</Text>
-    </Pressable>
-  );
-}
-
-// ===== Aba Tendências =====
-
-function TrendsTab() {
-  const insets = useSafeAreaInsets();
-  const [bundle, setBundle] = useState<InsightsBundle | null>(null);
   const [loading, setLoading] = useState(true);
+  const [insight, setInsight] = useState<LapInsight | null>(null);
+  const [trackName, setTrackName] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
-    const result = await computeSmartInsights({ window: 3 });
-    setBundle(result);
-    setLoading(false);
+    try {
+      const sessions = await listSessions();
+      const anchor = sessions.find((x) => x.trackId) ?? sessions[0];
+      if (!anchor) {
+        setInsight(null);
+        return;
+      }
+      const track = anchor.trackId ? findTrackById(anchor.trackId) : null;
+      setTrackName(track?.shortName ?? anchor.trackName);
+
+      // Só voltas da MESMA pista: misturar kartódromos faria a média de curva
+      // comparar coisas que não se comparam.
+      const sameTrack = sessions
+        .filter((x) => (anchor.trackId ? x.trackId === anchor.trackId : x.trackName === anchor.trackName))
+        .slice(0, SESSION_WINDOW);
+
+      const laps = (await Promise.all(sameTrack.map((x) => getLapsForSession(x.id)))).flat();
+      setInsight(buildLapInsight(laps));
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const mapSize = Math.min(width - spacing.gutter * 2, 400);
+  const maxLoss = insight ? Math.max(...insight.corners.map((c) => c.lossMs), 1) : 1;
 
   return (
-    <ScrollView
-      contentContainerStyle={{
-        paddingTop: spacing.m,
-        paddingBottom: insets.bottom + 120,
-        paddingHorizontal: spacing.l,
-      }}
-      showsVerticalScrollIndicator={false}
-    >
-      <QuickActions />
-
-      <Text style={s.subtitle}>SEU DESEMPENHO · ÚLTIMAS 3 SESSÕES</Text>
-
-      {loading ? (
-        <View style={s.loading}>
-          <ActivityIndicator color={colors.primary} size="large" />
-          <Text style={s.loadingText}>Analisando suas voltas…</Text>
-        </View>
-      ) : !bundle ? null : bundle.stats.lapCount === 0 ? (
-        <EmptyView insights={bundle.insights} />
-      ) : (
-        <>
-          <View style={s.gaugeWrap}>
-            <Gauge value={bundle.score} size={200} thickness={14} />
-          </View>
-
-          <View style={s.breakdownRow}>
-            <BreakdownPill label="CONSISTÊNCIA" value={bundle.scoreBreakdown.consistency} />
-            <BreakdownPill label="PACE" value={bundle.scoreBreakdown.pace} />
-            <BreakdownPill label="VOLTA LIMPA" value={bundle.scoreBreakdown.cleanLap} />
-          </View>
-
-          <View style={s.statsRow}>
-            <Stat
-              label="MELHOR"
-              value={bundle.stats.bestLapMs != null ? fmtLap(bundle.stats.bestLapMs) : '—'}
-              tone="primary"
-            />
-            <Stat
-              label="MÉDIA"
-              value={bundle.stats.avgLapMs != null ? fmtLap(bundle.stats.avgLapMs) : '—'}
-            />
-            <Stat label="VOLTAS" value={String(bundle.stats.lapCount)} />
-            {bundle.stats.peakKmh > 0 && (
-              <Stat label="PICO" value={`${bundle.stats.peakKmh.toFixed(0)} km/h`} tone="cyan" />
-            )}
-          </View>
-
-          <View style={{ marginTop: spacing.xl, gap: spacing.m }}>
-            {bundle.insights.map((ins, i) => (
-              <InsightCard key={i} ins={ins} />
-            ))}
-          </View>
-        </>
-      )}
-    </ScrollView>
-  );
-}
-
-// ===== Aba Coach IA =====
-
-function CoachTab() {
-  const router = useRouter();
-  const insets = useSafeAreaInsets();
-  const [threads, setThreads] = useState<AiChatThreadSummary[] | null>(null);
-
-  const load = useCallback(async () => {
-    const t = await listAiChatThreads(50);
-    setThreads(t);
-  }, []);
-
-  useFocusEffect(useCallback(() => { load(); }, [load]));
-
-  if (threads === null) {
-    return (
-      <View style={[s.loading, { flex: 1 }]}>
-        <ActivityIndicator color={colors.primary} size="large" />
-      </View>
-    );
-  }
-
-  if (threads.length === 0) {
-    return (
+    <View style={s.root}>
       <ScrollView
         contentContainerStyle={{
-          paddingHorizontal: spacing.l,
-          paddingBottom: insets.bottom + 120,
+          paddingTop: insets.top + spacing.s,
+          paddingBottom: tabBarSpace(insets.bottom, 24),
+          paddingHorizontal: spacing.gutter,
         }}
+        showsVerticalScrollIndicator={false}
       >
-        <View style={s.empty}>
-          <Icon name="bolt" size={48} color={colors.textDim} />
-          <Text style={s.emptyTitle}>Sem conversas ainda</Text>
-          <Text style={s.emptySub}>
-            Abra qualquer sessão, escolha uma volta e toque em "Perguntar pra IA" pra
-            começar. As conversas ficam aqui pra você reabrir depois.
-          </Text>
-        </View>
-      </ScrollView>
-    );
-  }
+        <Text style={s.title}>Sua volta</Text>
 
-  return (
-    <ScrollView
-      contentContainerStyle={{
-        paddingTop: spacing.m,
-        paddingBottom: insets.bottom + 120,
-        paddingHorizontal: spacing.l,
-        gap: spacing.s,
-      }}
-      showsVerticalScrollIndicator={false}
-    >
-      <Text style={s.subtitle}>CONVERSAS RECENTES</Text>
-      <View style={{ marginTop: spacing.m, gap: spacing.s }}>
-        {threads.map((t) => (
-          <ThreadCard
-            key={t.cacheKey}
-            thread={t}
-            onPress={() =>
-              router.push({
-                pathname: '/coach' as any,
-                params: { sessionId: t.sessionId, lapId: t.lapId },
-              })
-            }
-          />
-        ))}
-      </View>
-    </ScrollView>
-  );
-}
+        {loading ? (
+          <View style={s.center}>
+            <ActivityIndicator color={colors.blue} />
+          </View>
+        ) : !insight ? (
+          <>
+            <Text style={s.subtitle}>Ainda sem voltas gravadas</Text>
+            <Text style={s.empty}>
+              Grave uma sessão e esta tela passa a mostrar sua melhor volta pintada pela
+              velocidade, e em quais curvas o tempo vai embora.
+            </Text>
+          </>
+        ) : (
+          <>
+            <Text style={s.subtitle}>
+              {trackName} · {formatLapPlain(insight.best.durationMs)} · pintada pela velocidade
+            </Text>
 
-function ThreadCard({
-  thread,
-  onPress,
-}: {
-  thread: AiChatThreadSummary;
-  onPress: () => void;
-}) {
-  const providerName = (() => {
-    try {
-      return getClient(thread.provider as any).meta.displayName;
-    } catch {
-      return thread.provider;
-    }
-  })();
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [s.threadCard, pressed && { opacity: 0.7 }]}
-    >
-      <View style={s.threadHeader}>
-        <Text style={s.threadTrack} numberOfLines={1}>
-          {thread.trackName ?? 'Sessão removida'}
-        </Text>
-        <Text style={s.threadTime}>{relativeTime(thread.updatedAt)}</Text>
-      </View>
-      <View style={s.threadMetaRow}>
-        {thread.lapDurationMs != null && (
-          <Text style={[s.threadLap, typography.mono]}>{fmtLap(thread.lapDurationMs)}</Text>
+            <View style={s.mapWrap}>
+              <PaintedLap
+                samples={insight.best.samples}
+                minKmh={insight.minKmh}
+                maxKmh={insight.maxKmh}
+                size={mapSize}
+              />
+            </View>
+
+            {/* Escala: sem ela a cor é bonita e não informa. */}
+            <View style={s.scaleBar}>
+              {Array.from({ length: 40 }, (_, i) => (
+                <View
+                  key={i}
+                  style={{
+                    flex: 1,
+                    height: 4,
+                    backgroundColor: speedPaint(
+                      insight.minKmh + ((insight.maxKmh - insight.minKmh) * i) / 39,
+                      insight.minKmh,
+                      insight.maxKmh
+                    ),
+                  }}
+                />
+              ))}
+            </View>
+            <View style={s.scaleLabels}>
+              <Text style={s.scaleValue}>
+                {insight.minKmh.toFixed(0)}<Text style={s.scaleUnit}> km/h</Text>
+              </Text>
+              <Text style={s.scaleTitle}>VELOCIDADE</Text>
+              <Text style={s.scaleValue}>
+                {insight.maxKmh.toFixed(0)}<Text style={s.scaleUnit}> km/h</Text>
+              </Text>
+            </View>
+
+            {insight.corners.length > 0 && (
+              <>
+                <View style={s.lossHead}>
+                  <Text style={s.lossLabel}>ONDE O TEMPO VAI</Text>
+                  <Text style={s.lossTotal}>
+                    {(insight.totalLossMs / 1000).toFixed(3)}
+                    <Text style={s.lossTotalUnit}> s por volta</Text>
+                  </Text>
+                </View>
+
+                {insight.corners.map((c) => {
+                  const isWorst = insight.worst?.number === c.number;
+                  return (
+                    <View key={c.number} style={s.lossRow}>
+                      <View style={s.lossRowTop}>
+                        <Text style={[s.cornerName, isWorst && s.cornerNameWorst]}>
+                          Curva {c.number}
+                        </Text>
+                        <Text style={[s.cornerLoss, isWorst && { color: colors.danger }]}>
+                          {fmtLoss(c.lossMs)}
+                        </Text>
+                      </View>
+                      <View style={s.lossTrack}>
+                        <View
+                          style={{
+                            width: `${Math.min(100, (c.lossMs / maxLoss) * 100)}%`,
+                            height: 4,
+                            borderRadius: radius.pill,
+                            backgroundColor: isWorst ? colors.danger : colors.surfaceRail,
+                          }}
+                        />
+                      </View>
+                    </View>
+                  );
+                })}
+              </>
+            )}
+
+            <Pressable
+              onPress={() => router.push('/coach' as any)}
+              style={({ pressed }) => [s.coach, pressed && { opacity: 0.85 }]}
+            >
+              <View style={s.coachHead}>
+                <Text style={s.coachMark}>✦</Text>
+                <Text style={s.coachTitle}>COACH</Text>
+                <View style={s.coachRule} />
+                <Text style={s.coachMeta}>
+                  {insight.lapsUsed} {insight.lapsUsed === 1 ? 'VOLTA' : 'VOLTAS'}
+                </Text>
+              </View>
+              <Text style={s.coachBody}>{coachLine(insight)}</Text>
+            </Pressable>
+          </>
         )}
-        <View style={s.threadProvider}>
-          <Text style={s.threadProviderText}>{providerName}</Text>
-        </View>
-        <Text style={s.threadMsgCount}>
-          {Math.max(0, Math.floor((thread.messageCount - 1) / 2))} pergunta{thread.messageCount > 3 ? 's' : ''}
-        </Text>
-      </View>
-      <Text style={s.threadPreview} numberOfLines={2}>
-        {thread.preview}
-      </Text>
-    </Pressable>
-  );
-}
-
-// ===== Componentes reutilizados (TrendsTab) =====
-
-function Stat({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone?: 'primary' | 'cyan';
-}) {
-  const color =
-    tone === 'primary' ? colors.primary : tone === 'cyan' ? colors.accentCyan : colors.textPrimary;
-  return (
-    <View style={{ alignItems: 'center', flex: 1, minWidth: 70 }}>
-      <Text style={s.statLabel}>{label}</Text>
-      <Text style={[s.statValue, typography.mono, { color }]} numberOfLines={1} adjustsFontSizeToFit>
-        {value}
-      </Text>
+      </ScrollView>
     </View>
   );
 }
 
-function BreakdownPill({ label, value }: { label: string; value: number }) {
-  const color =
-    value >= 80 ? colors.success : value >= 60 ? colors.warning : colors.danger;
-  return (
-    <View style={s.breakdownPill}>
-      <Text style={s.breakdownLabel}>{label}</Text>
-      <Text style={[s.breakdownValue, typography.mono, { color }]}>{value}</Text>
-    </View>
-  );
+/**
+ * A frase do coach sai dos mesmos números da lista — nada aqui é gerado por
+ * IA. Quando não há curva dominante, ela diz isso em vez de forçar um
+ * diagnóstico.
+ */
+function coachLine(insight: LapInsight): string {
+  const w = insight.worst;
+  if (!w || insight.lapsUsed === 0) {
+    return 'Ainda não há voltas suficientes pra separar hábito de acaso. Mais uma sessão e eu consigo apontar onde o tempo se repete.';
+  }
+  const apex = w.apexKmh != null ? ` e cai a ${w.apexKmh.toFixed(0)} km/h` : '';
+  return `Em ${w.lapsLosing} das ${insight.lapsUsed} voltas você perde tempo na curva ${w.number}${apex} — são ${(w.lossMs / 1000).toFixed(3)} s por volta, o maior pedaço da sua diferença.`;
 }
-
-function InsightCard({ ins }: { ins: SmartInsight }) {
-  const cfg = insightCfg[ins.type];
-  return (
-    <Card variant="elevated" padding="m">
-      <View style={{ flexDirection: 'row', gap: spacing.m }}>
-        <View style={[s.insightDot, { backgroundColor: cfg.color }]}>
-          <Icon name={cfg.icon} size={16} color={colors.textOnPrimary} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={[s.insightTag, { color: cfg.color }]}>{cfg.tag}</Text>
-          <Text style={s.insightTitle}>{ins.title}</Text>
-          <Text style={s.insightBody}>{ins.body}</Text>
-        </View>
-      </View>
-    </Card>
-  );
-}
-
-function EmptyView({ insights }: { insights: SmartInsight[] }) {
-  return (
-    <View style={s.empty}>
-      <Icon name="bolt" size={48} color={colors.textDim} />
-      <Text style={s.emptyTitle}>Sem dados ainda</Text>
-      {insights.map((ins, i) => (
-        <Text key={i} style={s.emptySub}>{ins.body}</Text>
-      ))}
-    </View>
-  );
-}
-
-const insightCfg: Record<SmartInsight['type'], { color: string; icon: any; tag: string }> = {
-  strong: { color: colors.success, icon: 'check', tag: 'PONTO FORTE' },
-  attention: { color: colors.warning, icon: 'bolt', tag: 'FOQUE AQUI' },
-  opportunity: { color: colors.accentCyan, icon: 'arrow-right', tag: 'OPORTUNIDADE' },
-  trend: { color: colors.accentPurple, icon: 'chart', tag: 'TENDÊNCIA' },
-};
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
-  title: {
-    color: colors.textPrimary,
-    fontSize: 13,
-    fontWeight: '800',
-    letterSpacing: 1.5,
-    textAlign: 'center',
-  },
+  center: { paddingVertical: spacing.huge, alignItems: 'center' },
+
+  title: { fontFamily: fonts.bold, fontSize: 34, letterSpacing: -1, color: colors.text },
   subtitle: {
-    color: colors.textMuted,
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 2,
-    textAlign: 'center',
-    marginTop: 8,
+    fontFamily: fonts.regular,
+    fontSize: 16,
+    color: colors.muted,
+    marginTop: 6,
   },
-
-  loading: {
-    alignItems: 'center',
-    marginTop: 100,
-    gap: spacing.m,
-  },
-  loadingText: {
-    color: colors.textMuted,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-
-  gaugeWrap: {
-    alignItems: 'center',
-    marginTop: spacing.xl,
-  },
-
-  breakdownRow: {
-    flexDirection: 'row',
-    marginTop: spacing.l,
-    gap: spacing.s,
-  },
-  breakdownPill: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingVertical: spacing.s,
-    alignItems: 'center',
-  },
-  breakdownLabel: {
-    color: colors.textMuted,
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 1,
-  },
-  breakdownValue: {
-    fontSize: 22,
-    fontWeight: '900',
-    marginTop: 2,
-  },
-
-  statsRow: {
-    flexDirection: 'row',
-    marginTop: spacing.l,
-    gap: spacing.s,
-    flexWrap: 'wrap',
-  },
-  statLabel: {
-    color: colors.textMuted,
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1.2,
-    marginBottom: 4,
-  },
-  statValue: {
-    color: colors.textPrimary,
-    fontSize: 15,
-    fontWeight: '900',
-    letterSpacing: -0.3,
-  },
-
-  insightDot: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  insightTag: {
-    color: colors.textMuted,
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1.2,
-    marginBottom: 4,
-  },
-  insightTitle: {
-    color: colors.textPrimary,
-    fontSize: 15,
-    fontWeight: '800',
-    marginBottom: 4,
-  },
-  insightBody: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    lineHeight: 19,
-    fontWeight: '500',
-  },
-
   empty: {
-    alignItems: 'center',
-    marginTop: 80,
-    paddingHorizontal: spacing.xl,
-  },
-  emptyTitle: {
-    color: colors.textPrimary,
-    fontSize: 17,
-    fontWeight: '800',
-    marginTop: spacing.m,
-  },
-  emptySub: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    textAlign: 'center',
-    marginTop: 8,
-    lineHeight: 19,
+    fontFamily: fonts.regular,
+    fontSize: 15.5,
+    lineHeight: 23,
+    color: colors.dim,
+    marginTop: spacing.l,
   },
 
-  threadCard: {
-    padding: spacing.m,
-    borderRadius: radius.l,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    gap: 6,
-  },
-  threadHeader: {
+  mapWrap: { alignItems: 'center', marginTop: spacing.xxl, marginBottom: spacing.xxl },
+  scaleBar: { flexDirection: 'row', borderRadius: radius.pill, overflow: 'hidden' },
+  scaleLabels: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: spacing.s,
+    marginTop: spacing.m,
   },
-  threadTrack: {
-    flex: 1,
-    color: colors.textPrimary,
-    fontSize: 14,
-    fontWeight: '800',
+  scaleValue: {
+    fontFamily: fonts.monoMedium,
+    fontSize: 15,
+    color: colors.muted,
+    fontVariant: ['tabular-nums'],
   },
-  threadTime: {
-    color: colors.textMuted,
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  threadMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.s,
-  },
-  threadLap: {
-    color: colors.primary,
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  threadProvider: {
-    backgroundColor: colors.accentPurple + '22',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  threadProviderText: {
-    color: colors.accentPurple,
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.3,
-  },
-  threadMsgCount: {
-    color: colors.textMuted,
-    fontSize: 11,
-    fontWeight: '600',
-    marginLeft: 'auto',
-  },
-  threadPreview: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    lineHeight: 17,
-    marginTop: 4,
-  },
+  scaleUnit: { fontFamily: fonts.regular, fontSize: 13, color: colors.dim },
+  scaleTitle: { fontFamily: fonts.semibold, fontSize: 12, letterSpacing: 1.3, color: colors.muted },
 
-  quickActions: {
+  lossHead: {
     flexDirection: 'row',
-    gap: spacing.s,
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    marginTop: spacing.xxxl,
     marginBottom: spacing.l,
   },
-  quickCard: {
-    flex: 1,
-    padding: spacing.m,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.l,
-    alignItems: 'center',
+  lossLabel: { fontFamily: fonts.semibold, fontSize: 12, letterSpacing: 1.3, color: colors.muted },
+  lossTotal: {
+    fontFamily: fonts.monoMedium,
+    fontSize: 19,
+    color: colors.danger,
+    fontVariant: ['tabular-nums'],
   },
-  quickEmoji: { fontSize: 22, marginBottom: 4 },
-  quickLabel: {
-    color: colors.textPrimary,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.5,
+  lossTotalUnit: { fontFamily: fonts.regular, fontSize: 14, color: colors.muted },
+
+  lossRow: { paddingTop: spacing.l, borderTopWidth: 1, borderTopColor: colors.line },
+  lossRowTop: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    marginBottom: spacing.m,
+  },
+  cornerName: { fontFamily: fonts.regular, fontSize: 19, color: colors.muted },
+  cornerNameWorst: { fontFamily: fonts.bold, color: colors.text },
+  cornerLoss: {
+    fontFamily: fonts.monoMedium,
+    fontSize: 19,
+    color: colors.muted,
+    fontVariant: ['tabular-nums'],
+  },
+  lossTrack: { height: 4, borderRadius: radius.pill, backgroundColor: 'transparent', marginBottom: spacing.l },
+
+  coach: {
+    marginTop: spacing.xxxl,
+    padding: spacing.xl,
+    borderRadius: radius.xl,
+    backgroundColor: colors.surface,
+  },
+  coachHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.m },
+  coachMark: { fontSize: 14, color: colors.blueSoft },
+  coachTitle: { fontFamily: fonts.semibold, fontSize: 12, letterSpacing: 1.3, color: colors.blueSoft },
+  coachRule: { flex: 1, height: 1, backgroundColor: colors.line },
+  coachMeta: { fontFamily: fonts.semibold, fontSize: 12, letterSpacing: 1.1, color: colors.muted },
+  coachBody: {
+    fontFamily: fonts.regular,
+    fontSize: 16,
+    lineHeight: 24,
+    color: colors.text,
+    marginTop: spacing.l,
   },
 });
