@@ -783,12 +783,14 @@ No mesmo arquivo fica o `defineTask`, que só chama esse handler.
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste estático: o arquivo não contém `Alert.alert` nem importa `Alert`.
-- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+- [x] Teste estático: o arquivo não contém `Alert.alert` nem importa `Alert`.
+- [x] Gate: `npm test && npm run typecheck`, só com a baseline; 60 testes passam.
 
 **Tests**: unit
 **Gate**: build
 **Commit**: `fix(lendas): erro do GPS em diálogo in-app, sem alerta nativo`
+**Status**: ✅
+**Nota**: igual à T24: `CockpitDialog` como último filho da raiz da tela de largada e corrida, mesma mensagem, só "OK", título "ERRO". O teste fica em `test/legendRaceScreen.test.ts`.
 
 ---
 

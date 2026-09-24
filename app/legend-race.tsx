@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, InteractionManager, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { InteractionManager, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ScreenOrientation from 'expo-screen-orientation';
@@ -9,6 +9,7 @@ import { legendById, LEGENDS } from '../src/data/legends';
 import { useLapRecorder } from '../src/hooks/useLapRecorder';
 import { useLockLandscape } from '../src/hooks/useLockLandscape';
 import { markDefeated } from '../src/storage/legendsDefeated';
+import { CockpitDialog } from '../src/components/CockpitDialog';
 import { colors, radius, spacing } from '../src/theme';
 
 const BLUE = colors.racingBlue;
@@ -49,6 +50,9 @@ export default function LegendRace() {
   const [nowMs, setNowMs] = useState(0);
   const [bestMs, setBestMs] = useState<number | null>(null);
   const [mapSize, setMapSize] = useState({ w: 0, h: 0 });
+  // Erro ao ligar o GPS: diálogo desenhado pela tela, não Alert nativo, que
+  // gira a orientação e trava o iOS com a tela presa em paisagem (REC-08).
+  const [startError, setStartError] = useState<string | null>(null);
 
   const startRef = useRef(0);
   const lastSeenLapRef = useRef(0);
@@ -87,7 +91,7 @@ export default function LegendRace() {
     try {
       await start({ simulate: isDemo });
     } catch (e: any) {
-      Alert.alert('Erro', e?.message ?? 'Falha ao iniciar GPS');
+      setStartError(e?.message ?? 'Falha ao iniciar GPS');
       return;
     }
     startRef.current = Date.now();
@@ -250,6 +254,13 @@ export default function LegendRace() {
           )}
         </View>
       </View>
+
+      <CockpitDialog
+        visible={startError !== null}
+        title="ERRO"
+        message={startError ?? undefined}
+        actions={[{ label: 'OK', variant: 'primary', onPress: () => setStartError(null) }]}
+      />
     </View>
   );
 }
