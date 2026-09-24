@@ -1,71 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Location from 'expo-location';
-import * as TaskManager from 'expo-task-manager';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { DEMO_LAP } from '../data/demoLap';
 import { Accelerometer, Gyroscope } from 'expo-sensors';
 import { GpsSample, ImuSample, LatLng } from '../lib/geometry';
 import { detectLaps, DetectedLap } from '../lib/lapDetector';
 import { DeltaTracker } from '../lib/realtimeDelta';
-
-const BG_TASK = 'KARTLAP_BG_LOCATION';
+import { sliceLaps, type RecordedLap } from '../recording/finishSession';
+import type { RecordingMetaInput } from '../recording/journal';
+import { BG_TASK, buf, setLocationTaskJournal } from '../recording/locationTask';
+import { journal } from '../recording/runtime';
 
 // IMU update rate em ms. 20ms = 50Hz — suficiente pra capturar rotação de
 // spin (durações típicas 200-800ms) sem virar mar de dados (50 amostras/s
 // vs 10 do GPS = 5x mais por volta de 50s ≈ 2500 samples IMU/volta).
 const IMU_UPDATE_MS = 20;
 
-type Buffer = { samples: GpsSample[]; imu: ImuSample[] };
-const buf: Buffer = (globalThis as any).__kartlapBuf ?? { samples: [], imu: [] };
-// Garante que a versão velha do buffer (sem imu) seja migrada — apps em
-// dev podem ter o objeto cacheado de um reload anterior.
-if (!buf.imu) buf.imu = [];
-(globalThis as any).__kartlapBuf = buf;
+/** Mensagem da spec (REC-10, AC 2) quando o GPS não liga. */
+export const GPS_START_ERROR =
+  'Não consegui ligar o GPS. Confira a permissão de localização e tente de novo.';
 
-TaskManager.defineTask(BG_TASK, async ({ data, error }) => {
-  if (error) {
-    console.warn('[Copilot BG] erro:', error);
-    return;
-  }
-  const { locations } = (data as any) ?? {};
-  if (!locations) return;
-
-  // Timestamp dos samples — fonte de verdade pro tempo de volta.
-  //
-  // Problema observado em campo: alguns Android entregam loc.timestamp
-  // QUANTIZADO a segundos cheios (sempre múltiplo de 1000ms). Isso fazia
-  // durationMs = sample[fim].t − sample[início].t sair sempre redondo
-  // (42.000, 43.999...) — sem precisão de centésimo/milésimo.
-  //
-  // Date.now() no momento do processamento do BG task tem precisão de ms
-  // e fica a poucos ms do tempo real do fix (o task roda quase em
-  // tempo real quando a app está em foreground gravando). Então:
-  //   - loc.timestamp COM precisão sub-segundo (% 1000 != 0) → confia nele
-  //   - senão (quantizado, 0, ou ausente) → Date.now() com spread
-  //     intra-batch pra samples não colidirem no mesmo ms.
-  const arrivalNow = Date.now();
-  const locs = locations as Location.LocationObject[];
-  const n = locs.length;
-  for (let i = 0; i < n; i++) {
-    const loc = locs[i];
-    if ((loc.coords.accuracy ?? 999) > 30) continue;
-    const rawTs = loc.timestamp;
-    const hasSubSecond = rawTs && rawTs > 0 && rawTs % 1000 !== 0;
-    // Quando cai no Date.now(), espalha ~100ms por sample retroativamente
-    // (assume GPS ~10Hz) pra batch com várias locations não virar um único t.
-    const t = hasSubSecond ? rawTs : arrivalNow - (n - 1 - i) * 100;
-    buf.samples.push({
-      t,
-      lat: loc.coords.latitude,
-      lng: loc.coords.longitude,
-      speed: loc.coords.speed ?? 0,
-      accuracy: loc.coords.accuracy ?? 999,
-      heading: loc.coords.heading ?? undefined,
-      altitude: loc.coords.altitude ?? undefined,
-      altitudeAccuracy: loc.coords.altitudeAccuracy ?? undefined,
-    });
-  }
-});
+// O buffer global (`buf`), o `BG_TASK` e o `defineTask` vivem em
+// `src/recording/locationTask.ts`, importado no topo de `app/_layout.tsx`.
 
 /**
  * Estado e subscriptions ativas dos sensores IMU. Buffer paralelo ao GPS
@@ -230,18 +186,13 @@ export type LiveInfo = {
    *  vir de voltas diferentes). Pra destacar "PB do setor" mesmo quando a
    *  volta inteira não é PB. */
   bestSectors: SectorTimes;
+
+  /** A última escrita do diário falhou: o HUD mostra "Salvamento automático falhou". */
+  autosaveFailed: boolean;
 };
 
 /** Volta pronta pra consumo — samples já recortados, duração calculada. */
-export type RecordedLap = {
-  samples: GpsSample[];
-  /** Samples da IMU recortados pra mesma janela de tempo da volta.
-   *  Tipicamente 50Hz, ~2500 samples por volta de 50s. Usado pra
-   *  detecção de spin e replay 3D pós-sessão. Vazio se IMU falhou. */
-  imuSamples: ImuSample[];
-  durationMs: number;
-  startedAt: number;
-};
+export type { RecordedLap };
 
 /** Resultado final de uma gravação. Fonte única de verdade pro que foi gravado. */
 export type RecordingResult = {
@@ -271,10 +222,11 @@ export type LapRecorderOptions = {
  *   2. Drenar o buffer global para um array estável.
  *   3. Chamar detectLaps() a cada poll pra atualizar estado reativo.
  *   4. No stop(), entregar voltas já recortadas (não samples crus).
+ *   5. Alimentar o diário da gravação (`journal`) durante a sessão.
  *
  * NÃO-responsabilidades:
  *   - Implementar a lógica de detecção de voltas (vive em src/lib/lapDetector.ts).
- *   - Persistir em SQLite (responsabilidade de quem chama stop()).
+ *   - Salvar a sessão e apagar o diário (quem chama stop(), via finishSession).
  */
 export function useLapRecorder(options?: LapRecorderOptions) {
   const [state, setState] = useState<RecorderState>('idle');
@@ -297,6 +249,7 @@ export function useLapRecorder(options?: LapRecorderOptions) {
     currentSectors: { s1Ms: null, s2Ms: null, s3Ms: null },
     lastClosedLapSectors: null,
     bestSectors: { s1Ms: null, s2Ms: null, s3Ms: null },
+    autosaveFailed: false,
   });
   /** Samples expostos pra UI (radar ao vivo). Decimados pra não re-render demais. */
   const [liveSamples, setLiveSamples] = useState<GpsSample[]>([]);
@@ -355,7 +308,11 @@ export function useLapRecorder(options?: LapRecorderOptions) {
   // tem ciclo próprio (não some após 1s — fica visível até a próxima volta).
   const lastClosedLapSectorsRef = useRef<SectorTimes | null>(null);
 
-  const start = useCallback(async (startOpts?: { simulate?: boolean }) => {
+  const start = useCallback(async (startOpts?: {
+    simulate?: boolean;
+    /** Meta da gravação para o diário. Sem ela, nada vai para o diário. */
+    meta?: RecordingMetaInput;
+  }) => {
     setState('requesting');
     buf.samples = [];
     buf.imu = [];
@@ -377,6 +334,19 @@ export function useLapRecorder(options?: LapRecorderOptions) {
     bestSectorsRef.current = { s1: null, s2: null, s3: null };
     lastClosedLapSectorsRef.current = null;
 
+    // Diário primeiro: com uma gravação interrompida ainda não resolvida, o
+    // `begin` rejeita com UnresolvedRecordingError e nada liga (REC-13).
+    let recordingId: string | null = null;
+    if (startOpts?.meta) {
+      try {
+        recordingId = await journal.begin(startOpts.meta);
+      } catch (e) {
+        setState('idle');
+        throw e;
+      }
+      setLocationTaskJournal(journal);
+    }
+
     const simulate = startOpts?.simulate === true;
     if (simulate) {
       // Modo demo: replaya o GPX de bench no MESMO buffer (buf.samples) que o
@@ -390,11 +360,15 @@ export function useLapRecorder(options?: LapRecorderOptions) {
       let simT0 = Date.now();
       simRef.current = setInterval(() => {
         const elapsed = Date.now() - simT0;
+        const simulated: GpsSample[] = [];
         while (simIdx < DEMO_LAP.length && DEMO_LAP[simIdx].t * simScale <= elapsed) {
           const dp = DEMO_LAP[simIdx];
-          buf.samples.push({ t: simT0 + dp.t * simScale, lat: dp.lat, lng: dp.lng, speed: dp.speed, accuracy: 3 });
+          simulated.push({ t: simT0 + dp.t * simScale, lat: dp.lat, lng: dp.lng, speed: dp.speed, accuracy: 3 });
           simIdx++;
         }
+        // No GPS real, é a tarefa de localização que entrega ao diário.
+        buf.samples.push(...simulated);
+        journal.appendGps(simulated);
         // Loop contínuo até o usuário tocar em "Encerrar".
         if (simIdx >= DEMO_LAP.length) {
           simIdx = 0;
@@ -402,36 +376,44 @@ export function useLapRecorder(options?: LapRecorderOptions) {
         }
       }, 80);
     } else {
-    const fg = await Location.requestForegroundPermissionsAsync();
-    if (fg.status !== 'granted') {
-      setState('idle');
-      throw new Error('Permissão de localização negada');
-    }
-    const bg = await Location.requestBackgroundPermissionsAsync();
-    if (bg.status !== 'granted') {
-      console.warn('Permissão de background negada — gravação para se a tela apagar');
-    }
+      try {
+        const fg = await Location.requestForegroundPermissionsAsync();
+        if (fg.status !== 'granted') throw new Error('Permissão de localização negada');
+        const bg = await Location.requestBackgroundPermissionsAsync();
+        if (bg.status !== 'granted') {
+          console.warn('Permissão de background negada — gravação para se a tela apagar');
+        }
 
-    await activateKeepAwakeAsync('copilot-recording');
+        await activateKeepAwakeAsync('copilot-recording');
 
-    await Location.startLocationUpdatesAsync(BG_TASK, {
-      accuracy: Location.Accuracy.BestForNavigation,
-      timeInterval: 100,
-      distanceInterval: 0,
-      showsBackgroundLocationIndicator: true,
-      foregroundService: {
-        notificationTitle: 'Copilot gravando',
-        notificationBody: 'Gravando trajetória da pista',
-        notificationColor: '#00ff88',
-      },
-      pausesUpdatesAutomatically: false,
-      activityType: Location.ActivityType.AutomotiveNavigation,
-    });
+        await Location.startLocationUpdatesAsync(BG_TASK, {
+          accuracy: Location.Accuracy.BestForNavigation,
+          timeInterval: 100,
+          distanceInterval: 0,
+          showsBackgroundLocationIndicator: true,
+          foregroundService: {
+            notificationTitle: 'Copilot gravando',
+            notificationBody: 'Gravando trajetória da pista',
+            notificationColor: '#00ff88',
+          },
+          pausesUpdatesAutomatically: false,
+          activityType: Location.ActivityType.AutomotiveNavigation,
+        });
+      } catch (e) {
+        // GPS não ligou: solta o keep-awake, descarta o diário vazio e volta
+        // ao ocioso, sem estado preso em 'requesting' (REC-10, AC 2).
+        console.warn('start:', e);
+        deactivateKeepAwake('copilot-recording');
+        setLocationTaskJournal(null);
+        if (recordingId) await journal.end(recordingId).catch(() => {});
+        setState('idle');
+        throw new Error(GPS_START_ERROR);
+      }
 
-    // IMU em paralelo ao GPS. Roda só em foreground; em background o
-    // expo-sensors não recebe callbacks (limitação Android/iOS). Pra
-    // tela de cockpit isso é OK — ela mantém-se acordada via KeepAwake.
-    startImuCapture();
+      // IMU em paralelo ao GPS. Roda só em foreground; em background o
+      // expo-sensors não recebe callbacks (limitação Android/iOS). Pra
+      // tela de cockpit isso é OK — ela mantém-se acordada via KeepAwake.
+      startImuCapture();
     }
 
     startTRef.current = Date.now();
@@ -447,8 +429,11 @@ export function useLapRecorder(options?: LapRecorderOptions) {
       // Drena buffer IMU (50Hz × 500ms = ~25 samples por poll)
       if (buf.imu.length > 0) {
         allImuRef.current.push(...buf.imu);
+        journal.appendImu(buf.imu);
         buf.imu = [];
       }
+      // Escrita durável a cada 5 s; uma falha só liga o aviso do HUD.
+      void journal.flushIfDue(Date.now());
       const all = allSamplesRef.current;
       const last = all[all.length - 1];
 
@@ -701,6 +686,7 @@ export function useLapRecorder(options?: LapRecorderOptions) {
           s2Ms: bestSectorsRef.current.s2,
           s3Ms: bestSectorsRef.current.s3,
         },
+        autosaveFailed: journal.failed,
       });
 
       // Live samples pro radar: só expõe a partir de quando entrou em ritmo
@@ -729,6 +715,7 @@ export function useLapRecorder(options?: LapRecorderOptions) {
     } catch (e) {
       console.warn('stop:', e);
     }
+    setLocationTaskJournal(null);
     stopImuCapture();
     deactivateKeepAwake('copilot-recording');
 
@@ -740,8 +727,12 @@ export function useLapRecorder(options?: LapRecorderOptions) {
     }
     if (buf.imu.length > 0) {
       allImuRef.current.push(...buf.imu);
+      journal.appendImu(buf.imu);
       buf.imu = [];
     }
+    // Flush final antes de quem chamou abrir a transação do salvamento. O
+    // diário continua ativo até o `journal.end` depois do commit.
+    await journal.flush();
 
     const allSamples = allSamplesRef.current;
     const allImuSamples = allImuRef.current;
@@ -751,21 +742,9 @@ export function useLapRecorder(options?: LapRecorderOptions) {
     // última janela. Essa é a fonte de verdade que os consumidores usam.
     const detection = detectLaps(allSamples);
 
-    // Materializa as voltas: aqui sim copiamos slices, porque é uma vez só
-    // no fim da gravação. O consumidor recebe voltas prontas pra persistir.
-    // IMU é recortada por TIMESTAMP (não por índice — escalas diferentes,
-    // 50Hz vs 10Hz). startedAt vem do GPS sample inicial da volta, lapEnd
-    // = startedAt + durationMs. Pega tudo da IMU nessa janela.
-    const laps: RecordedLap[] = detection.laps.map((lap) => {
-      const lapEndT = lap.startedAt + lap.durationMs;
-      const imuSlice = allImuSamples.filter((s) => s.t >= lap.startedAt && s.t <= lapEndT);
-      return {
-        samples: allSamples.slice(lap.startIdx, lap.endIdx + 1),
-        imuSamples: imuSlice,
-        durationMs: lap.durationMs,
-        startedAt: lap.startedAt,
-      };
-    });
+    // Materializa as voltas (uma vez só, no fim): IMU recortada por
+    // timestamp, pela mesma função que a recuperação usa.
+    const laps: RecordedLap[] = sliceLaps(allSamples, allImuSamples);
 
     return {
       allSamples,
@@ -780,6 +759,7 @@ export function useLapRecorder(options?: LapRecorderOptions) {
     return () => {
       if (simRef.current) clearInterval(simRef.current);
       if (pollRef.current) clearInterval(pollRef.current);
+      setLocationTaskJournal(null);
       Location.hasStartedLocationUpdatesAsync(BG_TASK).then((started) => {
         if (started) Location.stopLocationUpdatesAsync(BG_TASK).catch(() => {});
       });

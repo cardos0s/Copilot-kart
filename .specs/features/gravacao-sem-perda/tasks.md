@@ -501,13 +501,15 @@ No mesmo arquivo fica o `defineTask`, que só chama esse handler.
 - Skill: NONE
 
 **Done when**:
-- [ ] Um erro em `startLocationUpdatesAsync` deixa `state = 'idle'` e o keep-awake desativado. Verificado pelo roteiro de UAT, item 6.
-- [ ] O `stop()` chama `journal.flush()` antes de montar o resultado.
-- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+- [x] Um erro em `startLocationUpdatesAsync` deixa `state = 'idle'` e o keep-awake desativado. Verificado pelo roteiro de UAT, item 6 (implementado; a UAT no aparelho ainda não rodou).
+- [x] O `stop()` chama `journal.flush()` antes de montar o resultado.
+- [x] Gate: `npm test && npm run typecheck`, só com a baseline.
 
 **Tests**: none
 **Gate**: build
 **Commit**: `feat(gravação): hook grava no diário durante a sessão`
+**Status**: ✅
+**Nota**: o diário do processo fica em `src/recording/runtime.ts` (composição com o `sqliteJournalStore`). A `meta` do `start` é opcional no tipo para não quebrar as telas antes da T16/T17; sem ela, nada vai para o diário. A permissão negada também cai na mensagem da spec. No modo simulado, o GPS vai ao diário pelo próprio simulador; no real, pela tarefa de localização.
 
 ---
 
