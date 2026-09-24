@@ -179,7 +179,7 @@ piloto não perdoa.
 | REC-03 | P1: Sobrevive a crash (AC 3, 4, 8, recuperar sem duplicar) | Design | Pending |
 | REC-04 | P1: Sobrevive a crash (AC 5, 9, limpeza) | Design | Pending |
 | REC-05 | P1: Encerrar atômico (AC 1, 2) | Design | Pending |
-| REC-06 | P1: Encerrar atômico (AC 3, init do banco sem corrida) | Design | Pending |
+| REC-06 | P1: Encerrar atômico (AC 3, init do banco sem corrida) | Design | Implementing |
 | REC-07 | P1: Sair só com confirmação | Design | Pending |
 | REC-08 | P1: Sem alerta nativo em paisagem | Design | Pending |
 | REC-09 | P1: GPS nunca sozinho (AC 1, tarefa órfã) | Design | Pending |

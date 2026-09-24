@@ -137,14 +137,15 @@ T18 -> T19
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: duas chamadas simultâneas executam o `init` uma única vez e as duas recebem o mesmo resultado.
-- [ ] Teste: se o `init` rejeita, a chamada seguinte tenta de novo, sem ficar presa numa promise rejeitada.
-- [ ] `db.ts` passa a usar `once`, sem atribuir `dbInstance` antes das migrações terminarem.
-- [ ] Gate: `npm test`; 7 testes passam.
+- [x] Teste: duas chamadas simultâneas executam o `init` uma única vez e as duas recebem o mesmo resultado.
+- [x] Teste: se o `init` rejeita, a chamada seguinte tenta de novo, sem ficar presa numa promise rejeitada.
+- [x] `db.ts` passa a usar `once`, sem atribuir `dbInstance` antes das migrações terminarem.
+- [x] Gate: `npm test`; 7 testes passam.
 
 **Tests**: unit
 **Gate**: quick
 **Commit**: `fix(db): inicialização memoizada — ninguém lê o banco antes das migrações`
+**Status**: ✅
 
 ---
 
