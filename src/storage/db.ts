@@ -2,6 +2,7 @@ import * as SQLite from 'expo-sqlite';
 import { GpsSample } from '../lib/geometry';
 import { LapRecord } from '../lib/analysis';
 import { once } from '../lib/once';
+import { migrateV4 } from './migrations';
 
 // A promise da inicialização é memoizada: chamadas simultâneas na abertura
 // esperam o schema e as migrações, e ninguém recebe o banco pela metade.
@@ -199,6 +200,18 @@ const db = once(async () => {
     }
     await dbInstance.execAsync('PRAGMA user_version = 3');
   }
+
+  // Migration v3 → v4: diário de gravação, sessions.recovered e '' → NULL.
+  // Diferente das anteriores, roda inteira numa transação exclusiva.
+  await migrateV4({
+    getUserVersion: async () =>
+      (await dbInstance.getFirstAsync<{ user_version: number }>('PRAGMA user_version'))
+        ?.user_version ?? 0,
+    transaction: (fn) =>
+      dbInstance.withExclusiveTransactionAsync((txn) =>
+        fn({ exec: (sql) => txn.execAsync(sql) })
+      ),
+  });
   return dbInstance;
 });
 

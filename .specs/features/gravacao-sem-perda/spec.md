@@ -174,7 +174,7 @@ piloto não perdoa.
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| REC-01 | P1: Sobrevive a crash (AC 1, persistência de no máximo 10 s) | Design | Pending |
+| REC-01 | P1: Sobrevive a crash (AC 1, persistência de no máximo 10 s) | Design | Implementing |
 | REC-02 | P1: Sobrevive a crash (AC 2, 6, 7, oferta de recuperação) | Design | Pending |
 | REC-03 | P1: Sobrevive a crash (AC 3, 4, 8, recuperar sem duplicar) | Design | Pending |
 | REC-04 | P1: Sobrevive a crash (AC 5, 9, limpeza) | Design | Pending |
@@ -185,7 +185,7 @@ piloto não perdoa.
 | REC-09 | P1: GPS nunca sozinho (AC 1, tarefa órfã) | Design | Pending |
 | REC-10 | P1: GPS nunca sozinho (AC 2, 3, falhas de início e de escrita) | Design | Pending |
 | REC-11 | P2: Traçado e setup certos (AC 1) | Design | Pending |
-| REC-12 | P2: Traçado e setup certos (AC 2, 3, null e migração) | Design | Pending |
+| REC-12 | P2: Traçado e setup certos (AC 2, 3, null e migração) | Design | Implementing |
 | REC-13 | P2: Traçado e setup certos (AC 4, bloqueio de nova gravação) | Design | Pending |
 
 **Coverage:** 13 total, 0 mapped to tasks, 13 unmapped ⚠️ (Tasks ainda não existe)

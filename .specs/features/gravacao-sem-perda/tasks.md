@@ -162,15 +162,16 @@ T18 -> T19
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste (com executor falso que registra os SQL): com `user_version = 3`, todas as instruções rodam dentro do callback da transação, e a última é `PRAGMA user_version = 4`.
-- [ ] Teste: com `user_version = 4`, nenhuma instrução roda.
-- [ ] Teste: os três `UPDATE ... = NULL WHERE ... = ''` estão presentes.
-- [ ] Teste: se uma instrução falha, a transação propaga o erro e `user_version = 4` não é executado.
-- [ ] Gate: `npm test`; 11 testes passam.
+- [x] Teste (com executor falso que registra os SQL): com `user_version = 3`, todas as instruções rodam dentro do callback da transação, e a última é `PRAGMA user_version = 4`.
+- [x] Teste: com `user_version = 4`, nenhuma instrução roda.
+- [x] Teste: os três `UPDATE ... = NULL WHERE ... = ''` estão presentes.
+- [x] Teste: se uma instrução falha, a transação propaga o erro e `user_version = 4` não é executado.
+- [x] Gate: `npm test`; 11 testes passam.
 
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(db): migração v4 — diário de gravação, sessão recuperada e vazio vira null`
+**Status**: ✅
 
 ---
 
