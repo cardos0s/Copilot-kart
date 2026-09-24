@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, InteractionManager, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { InteractionManager, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
@@ -12,6 +12,7 @@ import { joinMatch, MatchPeerState } from '../src/lib/match';
 import { ensurePilot } from '../src/lib/liveSession';
 import { getProfile } from '../src/storage/profile';
 import { Icon } from '../src/components/ui';
+import { CockpitDialog } from '../src/components/CockpitDialog';
 import { colors, radius, spacing } from '../src/theme';
 
 const TOTAL_LAPS = 16;
@@ -80,6 +81,9 @@ export default function CompetitionRace() {
   // Classificação final congelada quando encerra (mostra o ranking da partida).
   const [finished, setFinished] = useState<Kart[] | null>(null);
   const [confirmingEnd, setConfirmingEnd] = useState(false);
+  // Erro ao ligar o GPS: diálogo desenhado pela tela, não Alert nativo, que
+  // gira a orientação e trava o iOS com a tela presa em paisagem (REC-08).
+  const [startError, setStartError] = useState<string | null>(null);
   // Tamanho medido do mapa — SVG precisa de width/height NUMÉRICOS (percentual
   // em SVG quebra em release/Fabric).
   const [mapSize, setMapSize] = useState({ w: 0, h: 0 });
@@ -124,7 +128,7 @@ export default function CompetitionRace() {
         try {
           await start({ simulate: isDemo });
         } catch (e: any) {
-          Alert.alert('Erro', e?.message ?? 'Falha ao iniciar GPS');
+          setStartError(e?.message ?? 'Falha ao iniciar GPS');
         }
 
         if (!isDemo && matchCode) {
@@ -475,6 +479,12 @@ export default function CompetitionRace() {
         </View>
       )}
 
+      <CockpitDialog
+        visible={startError !== null}
+        title="ERRO"
+        message={startError ?? undefined}
+        actions={[{ label: 'OK', variant: 'primary', onPress: () => setStartError(null) }]}
+      />
     </View>
   );
 }

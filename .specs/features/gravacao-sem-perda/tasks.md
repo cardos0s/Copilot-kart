@@ -759,12 +759,14 @@ No mesmo arquivo fica o `defineTask`, que só chama esse handler.
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste estático: o arquivo não contém `Alert.alert` nem importa `Alert`.
-- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+- [x] Teste estático: o arquivo não contém `Alert.alert` nem importa `Alert`.
+- [x] Gate: `npm test && npm run typecheck`, só com a baseline; 59 testes passam.
 
 **Tests**: unit
 **Gate**: build
 **Commit**: `fix(competição): erro do GPS em diálogo in-app, sem alerta nativo`
+**Status**: ✅
+**Nota**: o `CockpitDialog` é o último filho da raiz da tela ao vivo, com a mesma mensagem de antes e só "OK". O título passou de "Erro" para "ERRO", no padrão dos diálogos do cockpit. O teste fica em `test/competitionRaceScreen.test.ts` e confere também que o diálogo e o texto de fallback estão no fonte.
 
 ---
 
