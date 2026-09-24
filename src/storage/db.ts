@@ -6,7 +6,8 @@ import { migrateV4 } from './migrations';
 
 // A promise da inicialização é memoizada: chamadas simultâneas na abertura
 // esperam o schema e as migrações, e ninguém recebe o banco pela metade.
-const db = once(async () => {
+// Exportado para os repositórios de `sessionRepo.ts` e `journalStore.ts`.
+export const db = once(async () => {
   const dbInstance = await SQLite.openDatabaseAsync('kartlap.db');
   await dbInstance.execAsync(`
     PRAGMA journal_mode = WAL;
@@ -234,10 +235,12 @@ export type Session = {
   layoutId: string | null;
   /** Setup do kart usado. Null em sessões antigas (pré-migração v2). */
   kartSetupId: string | null;
+  /** Sessão criada pela recuperação de uma gravação interrompida (v4). */
+  recovered: boolean;
 };
 
 export async function createSession(
-  data: Omit<Session, 'id' | 'startedAt'>
+  data: Omit<Session, 'id' | 'startedAt' | 'recovered'>
 ): Promise<Session> {
   const d = await db();
   const id = `session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -256,7 +259,7 @@ export async function createSession(
     data.layoutId,
     data.kartSetupId
   );
-  return { id, startedAt, ...data };
+  return { id, startedAt, ...data, recovered: false };
 }
 
 export async function listSessions(): Promise<Session[]> {
@@ -271,11 +274,12 @@ export async function listSessions(): Promise<Session[]> {
             track_id as trackId,
             mode,
             layout_id as layoutId,
-            kart_setup_id as kartSetupId
+            kart_setup_id as kartSetupId,
+            recovered
      FROM sessions
      ORDER BY started_at DESC`
   );
-  return rows;
+  return rows.map((r) => ({ ...r, recovered: Boolean(r.recovered) }));
 }
 
 export async function getSession(id: string): Promise<Session | null> {
@@ -290,12 +294,13 @@ export async function getSession(id: string): Promise<Session | null> {
             track_id as trackId,
             mode,
             layout_id as layoutId,
-            kart_setup_id as kartSetupId
+            kart_setup_id as kartSetupId,
+            recovered
      FROM sessions
      WHERE id = ?`,
     id
   );
-  return row ?? null;
+  return row ? { ...row, recovered: Boolean(row.recovered) } : null;
 }
 
 /**

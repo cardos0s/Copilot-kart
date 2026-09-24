@@ -396,13 +396,15 @@ No mesmo arquivo fica o `defineTask`, que só chama esse handler.
 - Skill: NONE
 
 **Done when**:
-- [ ] Implementa a interface da T4, sem erro de tipo.
-- [ ] `Session.recovered: boolean` lido em `listSessions` e em `getSession`.
-- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+- [x] Implementa a interface da T4, sem erro de tipo.
+- [x] `Session.recovered: boolean` lido em `listSessions` e em `getSession`.
+- [x] Gate: `npm test && npm run typecheck`, só com a baseline.
 
 **Tests**: none
 **Gate**: build
 **Commit**: `feat(db): repositório de sessão transacional`
+**Status**: ✅
+**Nota**: o mesmo arquivo exporta `sqliteLayoutRepo` (o `LayoutRepo` do `saveReferenceLayout`, sobre `listLayoutsForTrack`/`saveLayout`). O `db()` de `db.ts` passou a ser exportado para os repositórios.
 
 ---
 
