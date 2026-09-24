@@ -251,18 +251,19 @@ T18 -> T19
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: um diário com pontos sintéticos de 3 voltas resulta em `summarize` com a pista, o `startedAt` e `laps = 3`.
-- [ ] Teste: `recover` numa corrida cria a sessão com a pista, o traçado, o setup e o modo da meta, `recovered: true` e 3 voltas, e depois apaga o diário.
-- [ ] Teste: se `recover` morre depois do commit e antes de apagar, rodar `recover` de novo não duplica.
-- [ ] Teste: `recover` num reconhecimento cria o layout com o nome da meta a partir da melhor volta.
-- [ ] Teste: sem volta completa, `summarize` dá `laps = 0`.
-- [ ] Teste: com `version: 2` ou JSON quebrado, dá `unreadable`.
-- [ ] Teste: `discard` apaga o diário.
-- [ ] Gate: `npm test`; 28 testes passam.
+- [x] Teste: um diário com pontos sintéticos de 3 voltas resulta em `summarize` com a pista, o `startedAt` e `laps = 3`.
+- [x] Teste: `recover` numa corrida cria a sessão com a pista, o traçado, o setup e o modo da meta, `recovered: true` e 3 voltas, e depois apaga o diário.
+- [x] Teste: se `recover` morre depois do commit e antes de apagar, rodar `recover` de novo não duplica.
+- [x] Teste: `recover` num reconhecimento cria o layout com o nome da meta a partir da melhor volta.
+- [x] Teste: sem volta completa, `summarize` dá `laps = 0`.
+- [x] Teste: com `version: 2` ou JSON quebrado, dá `unreadable`.
+- [x] Teste: `discard` apaga o diário.
+- [x] Gate: `npm test`; 28 testes passam.
 
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(gravação): recuperar ou descartar gravação interrompida`
+**Status**: ✅
 
 ---
 

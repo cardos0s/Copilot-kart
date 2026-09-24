@@ -175,9 +175,9 @@ piloto não perdoa.
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
 | REC-01 | P1: Sobrevive a crash (AC 1, persistência de no máximo 10 s) | Design | Implementing |
-| REC-02 | P1: Sobrevive a crash (AC 2, 6, 7, oferta de recuperação) | Design | Pending |
+| REC-02 | P1: Sobrevive a crash (AC 2, 6, 7, oferta de recuperação) | Design | Implementing |
 | REC-03 | P1: Sobrevive a crash (AC 3, 4, 8, recuperar sem duplicar) | Design | Implementing |
-| REC-04 | P1: Sobrevive a crash (AC 5, 9, limpeza) | Design | Pending |
+| REC-04 | P1: Sobrevive a crash (AC 5, 9, limpeza) | Design | Implementing |
 | REC-05 | P1: Encerrar atômico (AC 1, 2) | Design | Implementing |
 | REC-06 | P1: Encerrar atômico (AC 3, init do banco sem corrida) | Design | Implementing |
 | REC-07 | P1: Sair só com confirmação | Design | Pending |

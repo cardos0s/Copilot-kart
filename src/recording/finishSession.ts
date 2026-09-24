@@ -6,9 +6,9 @@
  * sobre o SQLite em outro arquivo. Nada aqui importa módulo nativo.
  */
 import type { LapRecord } from '../lib/analysis';
-import type { GpsSample, ImuSample } from '../lib/geometry';
+import { polylineLength, type GpsSample, type ImuSample } from '../lib/geometry';
 import { detectLaps } from '../lib/lapDetector';
-import type { Session, SessionMode } from '../storage/db';
+import type { Session, SessionMode, TrackLayout } from '../storage/db';
 
 export type RecordedLap = {
   samples: GpsSample[];
@@ -113,4 +113,51 @@ export async function saveRecordedSession(
     for (const lap of laps) await tx.insertLap(lap);
   });
   return { session, laps };
+}
+
+export type LayoutRepo = {
+  listLayoutsForTrack(trackId: string): Promise<TrackLayout[]>;
+  saveLayout(layout: TrackLayout): Promise<void>;
+};
+
+export type ReferenceLayoutInput = {
+  recordingId: string;
+  trackId: string;
+  /** Nome escolhido pelo piloto. Vazio usa "Layout principal" ou "Layout N". */
+  layoutName: string | null | undefined;
+  laps: RecordedLap[];
+  recordedAt: number;
+};
+
+/**
+ * Cria o layout de referência a partir da melhor volta. O id é
+ * `layout_<recordingId>`; se ele já existe, devolve o existente sem regravar,
+ * para uma segunda tentativa não trocar o nome nem o default.
+ */
+export async function saveReferenceLayout(
+  input: ReferenceLayoutInput,
+  repo: LayoutRepo
+): Promise<TrackLayout> {
+  if (input.laps.length === 0) throw new Error('Nenhuma volta completa para o traçado.');
+  const id = `layout_${input.recordingId}`;
+  const existing = await repo.listLayoutsForTrack(input.trackId);
+  const already = existing.find((l) => l.id === id);
+  if (already) return already;
+
+  // Melhor volta = a mais rápida: traçado limpo serve melhor de referência.
+  const best = input.laps.reduce((b, l) => (l.durationMs < b.durationMs ? l : b), input.laps[0]);
+  const isFirst = existing.length === 0;
+  const layout: TrackLayout = {
+    id,
+    trackId: input.trackId,
+    name:
+      input.layoutName?.trim() || (isFirst ? 'Layout principal' : `Layout ${existing.length + 1}`),
+    samples: best.samples,
+    durationMs: best.durationMs,
+    lengthM: polylineLength(best.samples),
+    recordedAt: input.recordedAt,
+    isDefault: isFirst,
+  };
+  await repo.saveLayout(layout);
+  return layout;
 }
