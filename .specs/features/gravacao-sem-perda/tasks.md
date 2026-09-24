@@ -282,15 +282,16 @@ T18 -> T19
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: com a tarefa registrada e sem diário, chama `stopLocationUpdates` e devolve `none`.
-- [ ] Teste: com a tarefa registrada e um diário ativo, para a tarefa e devolve `interrupted`.
-- [ ] Teste: com a sessão já existente, devolve `already-saved` e apaga o diário.
-- [ ] Teste: com diário ilegível, devolve `unreadable` e apaga.
-- [ ] Gate: `npm test`; 32 testes passam.
+- [x] Teste: com a tarefa registrada e sem diário, chama `stopLocationUpdates` e devolve `none`.
+- [x] Teste: com a tarefa registrada e um diário ativo, para a tarefa e devolve `interrupted`.
+- [x] Teste: com a sessão já existente, devolve `already-saved` e apaga o diário.
+- [x] Teste: com diário ilegível, devolve `unreadable` e apaga.
+- [x] Gate: `npm test`; 32 testes passam.
 
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(gravação): checagem na abertura — GPS órfão e gravação interrompida`
+**Status**: ✅
 
 ---
 
