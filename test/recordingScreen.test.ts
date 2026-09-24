@@ -20,3 +20,9 @@ test('recording.tsx: não chama Alert.alert nem importa Alert', () => {
 test("recording.tsx: registra BackHandler.addEventListener('hardwareBackPress'", () => {
   assert.ok(SRC.includes("BackHandler.addEventListener('hardwareBackPress'"));
 });
+
+test('recording.tsx: o "Encerrar" passa por finishRecording, sem salvar direto', () => {
+  assert.ok(SRC.includes("import { finishRecording } from '../src/recording/finishRecording'"));
+  assert.ok(SRC.includes('await finishRecording('));
+  assert.equal(SRC.includes('saveRecordedSession'), false);
+});

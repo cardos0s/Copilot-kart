@@ -684,15 +684,17 @@ No mesmo arquivo fica o `defineTask`, que só chama esse handler.
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: com o repo falhando na 3ª volta, o resultado é `save-failed`, `journal.end` não é chamado e o diário continua com os pedaços (o Independent Test da story).
-- [ ] Teste: com menos de 30 pontos, o resultado é `too-few` e o diário é apagado.
-- [ ] Teste: com sucesso, o resultado é `saved`, a sessão tem as voltas, e `journal.end` roda depois do commit.
-- [ ] `app/recording.tsx` usa `finishRecording`, e os testes estáticos da tela continuam passando.
-- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+- [x] Teste: com o repo falhando na 3ª volta, o resultado é `save-failed`, `journal.end` não é chamado e o diário continua com os pedaços (o Independent Test da story).
+- [x] Teste: com menos de 30 pontos, o resultado é `too-few` e o diário é apagado.
+- [x] Teste: com sucesso, o resultado é `saved`, a sessão tem as voltas, e `journal.end` roda depois do commit.
+- [x] `app/recording.tsx` usa `finishRecording`, e os testes estáticos da tela continuam passando.
+- [x] Gate: `npm test && npm run typecheck`, só com a baseline; 56 testes passam.
 
 **Tests**: unit
 **Gate**: build
 **Commit**: `refactor(gravação): encerrar vira função testável`
+**Status**: ✅
+**Nota**: os efeitos pós-salvamento entram como `postSave` injetado; a tela liga ao `runPostSaveEffects` com `fromRecovery: false`, e eles só rodam com voltas, como antes. O `save-failed` carrega o `error`, que a tela só registra no console. Somou-se uma invariante estática em `test/recordingScreen.test.ts`: a tela chama `finishRecording` e não chama mais `saveRecordedSession`.
 
 ---
 

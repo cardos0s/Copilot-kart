@@ -22,7 +22,8 @@ import {
   TrackLayout,
 } from '../src/storage/db';
 import { sqliteSessionRepo } from '../src/storage/sessionRepo';
-import { normalizeId, saveRecordedSession, type SavedSession } from '../src/recording/finishSession';
+import { normalizeId } from '../src/recording/finishSession';
+import { finishRecording } from '../src/recording/finishRecording';
 import { runPostSaveEffects } from '../src/recording/postSave';
 import { UnresolvedRecordingError } from '../src/recording/journal';
 import { EXIT_OPTIONS, exitGuard, type ExitAction, type ExitState } from '../src/recording/exitGuard';
@@ -416,8 +417,28 @@ export default function Recording() {
     const recordingId = journal.recordingId ?? `rec_${Date.now()}`;
     const result = await stop();
 
-    if (result.allSamples.length < 30) {
-      await journal.end(recordingId).catch(() => {});
+    const outcome = await finishRecording(
+      result,
+      {
+        recordingId,
+        trackName: params.trackName ?? 'Pista',
+        trackId: params.trackId,
+        layoutId: params.layoutId,
+        kartSetupId: params.kartSetupId,
+        mode: 'race',
+        startedAt: Date.now(),
+      },
+      {
+        journal,
+        repo: sqliteSessionRepo,
+        // XP, PB, conquistas e desafios; IA e leaderboard seguem soltos, sem
+        // segurar a navegação.
+        postSave: (session, laps) =>
+          runPostSaveEffects(session, laps, { fromRecovery: false }, postSaveDeps),
+      }
+    );
+
+    if (outcome.kind === 'too-few') {
       setDialog({
         title: 'POUCOS DADOS',
         message: 'Não deu tempo de captar dados suficientes.',
@@ -435,25 +456,9 @@ export default function Recording() {
       return;
     }
 
-    // Sessão e voltas numa transação só. Se falhar, o diário fica e a
-    // recuperação aparece na próxima abertura (REC-05).
-    let saved: SavedSession;
-    try {
-      saved = await saveRecordedSession(
-        {
-          recordingId,
-          trackName: params.trackName ?? 'Pista',
-          trackId: params.trackId,
-          layoutId: params.layoutId,
-          kartSetupId: params.kartSetupId,
-          mode: 'race',
-          startedAt: Date.now(),
-          laps: result.laps,
-        },
-        sqliteSessionRepo
-      );
-    } catch (e) {
-      console.warn('[recording] falha ao salvar a sessão:', e);
+    // O diário fica e a recuperação aparece na próxima abertura (REC-05).
+    if (outcome.kind === 'save-failed') {
+      console.warn('[recording] falha ao salvar a sessão:', outcome.error);
       setDialog({
         title: 'ERRO AO SALVAR',
         message: SAVE_ERROR,
@@ -470,11 +475,8 @@ export default function Recording() {
       });
       return;
     }
-    // Só depois do commit. Se falhar aqui, a abertura seguinte vê a sessão
-    // já salva e limpa o diário em silêncio.
-    await journal.end(recordingId).catch((e) => console.warn('[recording] journal.end:', e));
 
-    const { session, laps: lapsToSave } = saved;
+    const { session, laps: lapsToSave } = outcome.saved;
     if (lapsToSave.length === 0) {
       setDialog({
         title: 'NENHUMA VOLTA COMPLETA',
@@ -492,10 +494,6 @@ export default function Recording() {
       });
       return;
     }
-
-    // XP, PB, conquistas e desafios; IA e leaderboard seguem soltos, sem
-    // segurar a navegação.
-    await runPostSaveEffects(session, lapsToSave, { fromRecovery: false }, postSaveDeps);
 
     const best = lapsToSave.reduce(
       (b, l) => (l.durationMs < b.durationMs ? l : b),
