@@ -369,14 +369,15 @@ No mesmo arquivo fica o `defineTask`, que só chama esse handler.
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: com `fromRecovery: false`, chama gamificação, PB, conquistas, desafios, IA e leaderboard (este último só com PB nova e `trackId`).
-- [ ] Teste: com `fromRecovery: true`, chama gamificação, PB, conquistas e desafios, e **não** chama IA nem leaderboard.
-- [ ] Teste: um erro na gamificação não impede o retorno da função; o comportamento de engolir o erro é o atual.
-- [ ] Gate: `npm test`; 43 testes passam.
+- [x] Teste: com `fromRecovery: false`, chama gamificação, PB, conquistas, desafios, IA e leaderboard (este último só com PB nova e `trackId`).
+- [x] Teste: com `fromRecovery: true`, chama gamificação, PB, conquistas e desafios, e **não** chama IA nem leaderboard.
+- [x] Teste: um erro na gamificação não impede o retorno da função; o comportamento de engolir o erro é o atual.
+- [x] Gate: `npm test`; 44 testes passam (um a mais que o previsto: o caso "leaderboard só com PB nova e `trackId`" ganhou teste próprio).
 
 **Tests**: unit
 **Gate**: quick
 **Commit**: `refactor(gravação): efeitos pós-salvamento fora da tela de gravação`
+**Status**: ✅
 
 ---
 
