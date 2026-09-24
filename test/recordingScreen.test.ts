@@ -26,3 +26,9 @@ test('recording.tsx: o "Encerrar" passa por finishRecording, sem salvar direto',
   assert.ok(SRC.includes('await finishRecording('));
   assert.equal(SRC.includes('saveRecordedSession'), false);
 });
+
+test('recording.tsx: HUD mostra "Salvamento automático falhou" sob info.autosaveFailed', () => {
+  const cond = /\{info\.autosaveFailed && \(([\s\S]*?)\)\}/.exec(SRC);
+  assert.ok(cond, 'há um bloco renderizado sob {info.autosaveFailed && (...)}');
+  assert.ok(cond[1].includes('>Salvamento automático falhou<'));
+});

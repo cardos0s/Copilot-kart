@@ -687,6 +687,14 @@ export default function Recording() {
         </View>
       </View>
 
+      {/* A escrita durável falhou: a gravação segue em memória (REC-10, AC 3).
+          Faixa sem toque, logo abaixo da barra de cima. */}
+      {info.autosaveFailed && (
+        <View pointerEvents="none" style={[s.autosaveBanner, { top: insets.top + 48 }]}>
+          <Text style={s.autosaveBannerText}>Salvamento automático falhou</Text>
+        </View>
+      )}
+
       {/* HUD calmo — velocímetro + cronômetro, 50/50.
        *
        * Princípio: piloto olha de relance, dois números grossos pretos
@@ -1753,6 +1761,23 @@ const s = StyleSheet.create({
   },
   recGpsDot: { width: 8, height: 8, borderRadius: 4 },
   recGpsText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
+  autosaveBanner: {
+    position: 'absolute',
+    alignSelf: 'center',
+    zIndex: 5,
+    paddingHorizontal: spacing.m,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+    backgroundColor: colors.danger + '1A',
+    borderWidth: 1,
+    borderColor: colors.danger + '55',
+  },
+  autosaveBannerText: {
+    color: colors.danger,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
 
   // ===== HUD calmo =====
   // 50/50 com KM/H à esquerda e VOLTA à direita. Os blocos crescem pra

@@ -711,12 +711,14 @@ No mesmo arquivo fica o `defineTask`, que só chama esse handler.
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste estático: o arquivo contém o texto exato "Salvamento automático falhou" renderizado sob a condição `info.autosaveFailed`.
-- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+- [x] Teste estático: o arquivo contém o texto exato "Salvamento automático falhou" renderizado sob a condição `info.autosaveFailed`.
+- [x] Gate: `npm test && npm run typecheck`, só com a baseline; 57 testes passam.
 
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(gravação): aviso no HUD quando o salvamento automático falha`
+**Status**: ✅
+**Nota**: a faixa é absoluta, sem toque (`pointerEvents="none"`), centrada logo abaixo da barra de cima, no tom do selo REC. Não empurra o velocímetro nem o cronômetro.
 
 ---
 
