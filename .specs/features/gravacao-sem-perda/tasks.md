@@ -313,15 +313,17 @@ No mesmo arquivo fica o `defineTask`, que só chama esse handler.
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: um fix com `accuracy` de 31 m é descartado, e um de 30 m entra.
-- [ ] Teste: com diário ativo, os pontos vão ao `buf` e ao diário.
-- [ ] Teste: sem diário ativo, `stopLocationUpdates` é chamado e nada vai ao diário.
-- [ ] Teste: o timestamp segue a regra atual (sub-segundo → `loc.timestamp`; senão, espalhado a 100 ms).
-- [ ] Gate: `npm test`; 36 testes passam.
+- [x] Teste: um fix com `accuracy` de 31 m é descartado, e um de 30 m entra.
+- [x] Teste: com diário ativo, os pontos vão ao `buf` e ao diário.
+- [x] Teste: sem diário ativo, `stopLocationUpdates` é chamado e nada vai ao diário.
+- [x] Teste: o timestamp segue a regra atual (sub-segundo → `loc.timestamp`; senão, espalhado a 100 ms).
+- [x] Gate: `npm test`; 36 testes passam.
 
 **Tests**: unit
 **Gate**: quick
 **Commit**: `refactor(gravação): tarefa de localização fora do hook e ligada ao diário`
+**Status**: ✅
+**Nota**: a lógica pura ficou em `src/recording/locationHandler.ts` (testada em Node). O `locationTask.ts` só tem o `defineTask`, o `buf` global e `setLocationTaskJournal(j)`, que o hook chama ao começar e ao terminar (T15).
 
 ---
 

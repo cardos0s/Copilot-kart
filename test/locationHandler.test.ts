@@ -1,0 +1,108 @@
+/**
+ * Handler da tarefa de localização: REC-01 (o GPS vai ao diário direto do
+ * callback) e REC-09 (sem gravação ativa, a tarefa se para).
+ */
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+
+import type { GpsSample } from '../src/lib/geometry';
+import { RecordingJournal } from '../src/recording/journal';
+import {
+  handleLocations,
+  type LocationLike,
+  type LocationTaskDeps,
+} from '../src/recording/locationHandler';
+import { fakeJournalStore, persistedGps } from './helpers/fakeJournalStore';
+
+const NOW = 1_700_000_050_000;
+
+function loc(timestamp: number, accuracy: number | null, lat = -14.86): LocationLike {
+  return {
+    timestamp,
+    coords: {
+      latitude: lat,
+      longitude: -40.84,
+      speed: 12,
+      accuracy,
+      heading: 90,
+      altitude: 900,
+      altitudeAccuracy: 3,
+    },
+  };
+}
+
+async function setup(active: boolean) {
+  const store = fakeJournalStore();
+  const journal = new RecordingJournal(store, () => NOW);
+  const id = active
+    ? await journal.begin({
+        mode: 'race',
+        trackId: 't',
+        trackName: 'Pista',
+        layoutId: null,
+        layoutName: null,
+        kartSetupId: null,
+      })
+    : null;
+  const buf = { samples: [] as GpsSample[] };
+  const calls = { stop: 0 };
+  const deps: LocationTaskDeps = {
+    buf,
+    journal,
+    stopLocationUpdates: async () => {
+      calls.stop++;
+    },
+    now: () => NOW,
+  };
+  return { store, journal, id, buf, calls, deps };
+}
+
+test('handleLocations: fix com accuracy 31 m é descartado e com 30 m entra', async () => {
+  const { buf, journal, store, id, deps } = await setup(true);
+  await handleLocations([loc(NOW - 123, 31, -14.1), loc(NOW - 23, 30, -14.2)], deps);
+
+  assert.deepEqual(buf.samples.map((s) => s.lat), [-14.2]);
+  await journal.flush();
+  assert.deepEqual(persistedGps(store, id!).map((s) => s.lat), [-14.2]);
+});
+
+test('handleLocations: com diário ativo, os pontos vão ao buf e ao diário', async () => {
+  const { buf, journal, store, id, deps, calls } = await setup(true);
+  await handleLocations([loc(NOW - 223, 4), loc(NOW - 123, 5)], deps);
+
+  const expected: GpsSample[] = [
+    { t: NOW - 223, lat: -14.86, lng: -40.84, speed: 12, accuracy: 4, heading: 90, altitude: 900, altitudeAccuracy: 3 },
+    { t: NOW - 123, lat: -14.86, lng: -40.84, speed: 12, accuracy: 5, heading: 90, altitude: 900, altitudeAccuracy: 3 },
+  ];
+  assert.deepEqual(buf.samples, expected);
+  await journal.flush();
+  assert.deepEqual(persistedGps(store, id!), expected);
+  assert.equal(calls.stop, 0);
+});
+
+test('handleLocations: sem diário ativo, para a tarefa e nada vai ao diário', async () => {
+  const { store, journal, deps, calls } = await setup(false);
+  await handleLocations([loc(NOW - 123, 4)], deps);
+
+  assert.equal(calls.stop, 1);
+  assert.equal(journal.recordingId, null);
+  assert.equal(store.chunks.size, 0);
+
+  // Sem diário nenhum configurado, o mesmo.
+  await handleLocations([loc(NOW - 123, 4)], { ...deps, journal: null });
+  assert.equal(calls.stop, 2);
+  assert.equal(store.chunks.size, 0);
+});
+
+test('handleLocations: timestamp sub-segundo é usado; quantizado ou zero vira now espalhado a 100 ms', async () => {
+  const sub = await setup(true);
+  await handleLocations([loc(1_700_000_049_123, 4)], sub.deps);
+  assert.deepEqual(sub.buf.samples.map((s) => s.t), [1_700_000_049_123]);
+
+  const quant = await setup(true);
+  await handleLocations(
+    [loc(1_700_000_047_000, 4), loc(1_700_000_048_000, 4), loc(0, 4)],
+    quant.deps,
+  );
+  assert.deepEqual(quant.buf.samples.map((s) => s.t), [NOW - 200, NOW - 100, NOW]);
+});
