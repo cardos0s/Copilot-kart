@@ -183,10 +183,10 @@ piloto não perdoa.
 | REC-07 | P1: Sair só com confirmação | Design | Pending |
 | REC-08 | P1: Sem alerta nativo em paisagem | Design | Pending |
 | REC-09 | P1: GPS nunca sozinho (AC 1, tarefa órfã) | Design | Pending |
-| REC-10 | P1: GPS nunca sozinho (AC 2, 3, falhas de início e de escrita) | Design | Pending |
+| REC-10 | P1: GPS nunca sozinho (AC 2, 3, falhas de início e de escrita) | Design | Implementing |
 | REC-11 | P2: Traçado e setup certos (AC 1) | Design | Pending |
 | REC-12 | P2: Traçado e setup certos (AC 2, 3, null e migração) | Design | Implementing |
-| REC-13 | P2: Traçado e setup certos (AC 4, bloqueio de nova gravação) | Design | Pending |
+| REC-13 | P2: Traçado e setup certos (AC 4, bloqueio de nova gravação) | Design | Implementing |
 
 **Coverage:** 13 total, 0 mapped to tasks, 13 unmapped ⚠️ (Tasks ainda não existe)
 

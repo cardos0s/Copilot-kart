@@ -220,16 +220,17 @@ T18 -> T19
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: com um relógio falso, os pontos acrescentados em t=0..4,9 s não são gravados, e em t=5 s são gravados num pedaço com `seq = 0`.
-- [ ] Teste: numa gravação contínua de 60 s com flush a cada poll de 500 ms, o intervalo entre o último ponto gravado e qualquer instante nunca passa de 10 s.
-- [ ] Teste: uma falha do store mantém o pendente, liga `failed`, e o flush seguinte grava tudo com o `seq` certo e desliga `failed`.
-- [ ] Teste: `begin` com um registro ativo no store rejeita com `UnresolvedRecordingError`.
-- [ ] Teste: `end` apaga o registro e os pedaços.
-- [ ] Gate: `npm test`; 21 testes passam.
+- [x] Teste: com um relógio falso, os pontos acrescentados em t=0..4,9 s não são gravados, e em t=5 s são gravados num pedaço com `seq = 0`.
+- [x] Teste: numa gravação contínua de 60 s com flush a cada poll de 500 ms, o intervalo entre o último ponto gravado e qualquer instante nunca passa de 10 s.
+- [x] Teste: uma falha do store mantém o pendente, liga `failed`, e o flush seguinte grava tudo com o `seq` certo e desliga `failed`.
+- [x] Teste: `begin` com um registro ativo no store rejeita com `UnresolvedRecordingError`.
+- [x] Teste: `end` apaga o registro e os pedaços.
+- [x] Gate: `npm test`; 21 testes passam.
 
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(gravação): diário que grava os pontos a cada 5 s`
+**Status**: ✅
 
 ---
 
