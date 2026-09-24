@@ -193,16 +193,17 @@ T18 -> T19
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: um repositório falso que falha ao inserir a 3ª volta deixa 0 sessões e 0 voltas (rollback), e o erro é propagado.
-- [ ] Teste: salvar duas vezes com o mesmo `recordingId` deixa 1 sessão e N voltas.
-- [ ] Teste: `sliceLaps` recorta a IMU pela janela de tempo de cada volta.
-- [ ] Teste: `layoutId: ''` e `kartSetupId: ''` são gravados como `null`.
-- [ ] Teste: `recovered: true` é repassado ao repositório.
-- [ ] Gate: `npm test`; 16 testes passam.
+- [x] Teste: um repositório falso que falha ao inserir a 3ª volta deixa 0 sessões e 0 voltas (rollback), e o erro é propagado.
+- [x] Teste: salvar duas vezes com o mesmo `recordingId` deixa 1 sessão e N voltas.
+- [x] Teste: `sliceLaps` recorta a IMU pela janela de tempo de cada volta.
+- [x] Teste: `layoutId: ''` e `kartSetupId: ''` são gravados como `null`.
+- [x] Teste: `recovered: true` é repassado ao repositório.
+- [x] Gate: `npm test`; 16 testes passam.
 
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(gravação): salvar sessão numa transação só, sem duplicar`
+**Status**: ✅
 
 ---
 
