@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
-  Alert,
+  BackHandler,
   Modal,
   Pressable,
   ScrollView,
@@ -13,36 +13,21 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import QRCode from 'react-native-qrcode-svg';
-import { useLapRecorder, RecordedLap } from '../src/hooks/useLapRecorder';
+import { useLapRecorder, GPS_START_ERROR } from '../src/hooks/useLapRecorder';
 import { useLockLandscape } from '../src/hooks/useLockLandscape';
 import {
-  saveLap,
   saveLayout,
-  createSession,
   getDefaultLayoutForTrack,
   getLayout,
-  getCurrentPb,
-  savePbRecord,
-  getGamificationState,
-  saveGamificationState,
   TrackLayout,
 } from '../src/storage/db';
-import {
-  Achievement,
-  computePreviousStreak,
-  getStatsForAchievements,
-  levelForXp,
-  processAchievementsAfterSession,
-  processSessionMilestones,
-} from '../src/lib/gamification';
-import { setPendingCelebration } from '../src/lib/celebrationQueue';
-import { refreshTodayChallenges } from '../src/lib/challenges';
-import { pushCoachInsight } from '../src/lib/coachInsights';
-import { requestQuickInsight } from '../src/lib/aiAnalysis';
-import { peakSpeedMs, msToKmh } from '../src/lib/speed';
-import { getProfile } from '../src/storage/profile';
-import { publishLeaderboardEntry } from '../src/lib/leaderboard';
-import { ensurePilot } from '../src/lib/liveSession';
+import { sqliteSessionRepo } from '../src/storage/sessionRepo';
+import { normalizeId, saveRecordedSession, type SavedSession } from '../src/recording/finishSession';
+import { runPostSaveEffects } from '../src/recording/postSave';
+import { UnresolvedRecordingError } from '../src/recording/journal';
+import { EXIT_OPTIONS, exitGuard, type ExitAction, type ExitState } from '../src/recording/exitGuard';
+import { journal, postSaveDeps } from '../src/recording/runtime';
+import { CockpitDialog, type CockpitDialogAction } from '../src/components/CockpitDialog';
 import {
   createLiveSession,
   endLiveSession,
@@ -91,18 +76,15 @@ function accuracyLabel(acc: number) {
   return { text: `±${acc.toFixed(0)}m`, color: colors.danger };
 }
 
-function toLapRecord(lap: RecordedLap, sessionId: string, index: number): LapRecord {
-  return {
-    id: `${sessionId}_lap_${index + 1}`,
-    sessionId,
-    samples: lap.samples,
-    startedAt: lap.startedAt,
-    durationMs: lap.durationMs,
-    // IMU pode vir vazio (sensor falhou, app em background sem foreground
-    // ativo, etc) — só passa se tem dado real.
-    imuSamples: lap.imuSamples.length > 0 ? lap.imuSamples : undefined,
-  };
-}
+/** Mensagem da spec (REC-05, AC 2) quando o salvamento falha. */
+const SAVE_ERROR =
+  'Não consegui salvar a sessão. Ela fica guardada e o app oferece recuperar na próxima abertura.';
+
+type DialogState = {
+  title: string;
+  message?: string;
+  actions: [CockpitDialogAction] | [CockpitDialogAction, CockpitDialogAction];
+};
 
 export default function Recording() {
   const params = useLocalSearchParams<{
@@ -126,6 +108,10 @@ export default function Recording() {
   const [reference, setReference] = useState<TrackLayout | null>(null);
   const [idlePrompt, setIdlePrompt] = useState(false);
   const [confirmingFinish, setConfirmingFinish] = useState(false);
+  // Diálogo in-app para erros e confirmações: a tela fica presa em paisagem,
+  // e o alerta nativo trava o iOS (REC-08).
+  const [dialog, setDialog] = useState<DialogState | null>(null);
+  const [exitState, setExitState] = useState<ExitState>('recording');
   const [pendingRef, setPendingRef] = useState<{ sessionId: string; best: LapRecord; reference: TrackLayout } | null>(null);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const idleDismissedRef = useRef(false);
@@ -230,9 +216,29 @@ export default function Recording() {
   const handleStart = async () => {
     setStarting(true);
     try {
-      await start({ simulate: params.simulate === '1' });
+      await start({
+        simulate: params.simulate === '1',
+        meta: {
+          mode: 'race',
+          trackId: normalizeId(params.trackId),
+          trackName: params.trackName ?? 'Pista',
+          layoutId: normalizeId(params.layoutId),
+          layoutName: null,
+          kartSetupId: normalizeId(params.kartSetupId),
+        },
+      });
     } catch (e: any) {
-      Alert.alert('Erro', e.message ?? 'Falha ao iniciar GPS');
+      if (e instanceof UnresolvedRecordingError) {
+        // Gravação interrompida pendente: recuperar ou descartar antes (REC-13).
+        setStarting(false);
+        router.replace('/recovery' as any);
+        return;
+      }
+      setDialog({
+        title: 'ERRO',
+        message: e?.message ?? GPS_START_ERROR,
+        actions: [{ label: 'OK', variant: 'primary', onPress: () => setDialog(null) }],
+      });
     }
     setStarting(false);
   };
@@ -261,10 +267,11 @@ export default function Recording() {
       lastSampleIdxRef.current = 0;
       lastLapCountRef.current = 0;
     } catch (err: any) {
-      Alert.alert(
-        'Não foi possível ativar live',
-        err?.message ?? 'Confere se o Supabase tá configurado (env vars + schema).'
-      );
+      setDialog({
+        title: 'NÃO FOI POSSÍVEL ATIVAR LIVE',
+        message: err?.message ?? 'Confere se o Supabase tá configurado (env vars + schema).',
+        actions: [{ label: 'OK', variant: 'primary', onPress: () => setDialog(null) }],
+      });
     } finally {
       setLiveStarting(false);
     }
@@ -400,223 +407,126 @@ export default function Recording() {
   const handleFinish = () => setConfirmingFinish(true);
 
   const doFinish = async () => {
-            setConfirmingFinish(false);
-            // Encerra live primeiro pra spectators verem "AO VIVO" sumir.
-            if (live) {
-              await endLiveSession(live.code).catch(() => {});
-              setLive(null);
-            }
-            const result = await stop();
+    setConfirmingFinish(false);
+    // Encerra live primeiro pra spectators verem "AO VIVO" sumir.
+    if (live) {
+      await endLiveSession(live.code).catch(() => {});
+      setLive(null);
+    }
+    const recordingId = journal.recordingId ?? `rec_${Date.now()}`;
+    const result = await stop();
 
-            if (result.allSamples.length < 30) {
-              Alert.alert('Poucos dados', 'Não deu tempo de captar dados suficientes.');
+    if (result.allSamples.length < 30) {
+      await journal.end(recordingId).catch(() => {});
+      setDialog({
+        title: 'POUCOS DADOS',
+        message: 'Não deu tempo de captar dados suficientes.',
+        actions: [
+          {
+            label: 'OK',
+            variant: 'primary',
+            onPress: () => {
+              setDialog(null);
               router.replace('/');
-              return;
-            }
+            },
+          },
+        ],
+      });
+      return;
+    }
 
-            const session = await createSession({
-              trackName: params.trackName ?? 'Pista',
-              kart: null,
-              notes: null,
-              weather: 'dry',
-              trackId: params.trackId ?? null,
-              mode: 'race',
-              layoutId: params.layoutId ?? null,
-              kartSetupId: params.kartSetupId ?? null,
-            });
+    // Sessão e voltas numa transação só. Se falhar, o diário fica e a
+    // recuperação aparece na próxima abertura (REC-05).
+    let saved: SavedSession;
+    try {
+      saved = await saveRecordedSession(
+        {
+          recordingId,
+          trackName: params.trackName ?? 'Pista',
+          trackId: params.trackId,
+          layoutId: params.layoutId,
+          kartSetupId: params.kartSetupId,
+          mode: 'race',
+          startedAt: Date.now(),
+          laps: result.laps,
+        },
+        sqliteSessionRepo
+      );
+    } catch (e) {
+      console.warn('[recording] falha ao salvar a sessão:', e);
+      setDialog({
+        title: 'ERRO AO SALVAR',
+        message: SAVE_ERROR,
+        actions: [
+          {
+            label: 'OK',
+            variant: 'primary',
+            onPress: () => {
+              setDialog(null);
+              router.replace('/');
+            },
+          },
+        ],
+      });
+      return;
+    }
+    // Só depois do commit. Se falhar aqui, a abertura seguinte vê a sessão
+    // já salva e limpa o diário em silêncio.
+    await journal.end(recordingId).catch((e) => console.warn('[recording] journal.end:', e));
 
-            const lapsToSave: LapRecord[] = result.laps.map((lap, i) =>
-              toLapRecord(lap, session.id, i)
-            );
-            for (const lap of lapsToSave) {
-              await saveLap(lap);
-            }
-
-            if (lapsToSave.length === 0) {
-              Alert.alert(
-                'Nenhuma volta completa',
-                'Não detectei voltas fechadas nessa sessão.',
-                [{ text: 'OK', onPress: () => router.replace(`/session/${session.id}`) }]
-              );
-              return;
-            }
-
-            const best = lapsToSave.reduce(
-              (b, l) => (l.durationMs < b.durationMs ? l : b),
-              lapsToSave[0]
-            );
-
-            // ===== Gamification: processar milestones (PB, XP, level up) =====
-            // Detecta se essa é nova PB, sub-threshold, streak, etc. Atualiza
-            // estado de XP e cria PB record. Modal de celebração abre quando
-            // session/[id] montar e ler a queue (não bloqueia navegação).
-            try {
-              const trackIdForGame = params.trackId ?? null;
-              const layoutIdForGame = params.layoutId ?? null;
-              const previousPb = trackIdForGame
-                ? await getCurrentPb(trackIdForGame, layoutIdForGame)
-                : null;
-              const previousStreak = await computePreviousStreak(
-                trackIdForGame,
-                layoutIdForGame,
-                session.id
-              );
-              const gameState = await getGamificationState();
-
-              const result = processSessionMilestones({
-                trackId: trackIdForGame,
-                layoutId: layoutIdForGame,
-                sessionId: session.id,
-                bestLapMs: best.durationMs,
-                bestLapId: best.id,
-                previousPbMs: previousPb?.durationMs ?? null,
-                previousStreakCount: previousStreak,
-                currentXp: gameState.xp,
-              });
-
-              await saveGamificationState({
-                ...gameState,
-                xp: result.newXp,
-                level: gameState.level, // levelForXp recalcula na leitura
-                updatedAt: Date.now(),
-              });
-              if (result.isNewPb && trackIdForGame) {
-                await savePbRecord({
-                  id: `pb_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-                  trackId: trackIdForGame,
-                  layoutId: layoutIdForGame,
-                  sessionId: session.id,
-                  lapId: best.id,
-                  durationMs: best.durationMs,
-                  celebrated: false,
-                  createdAt: Date.now(),
-                });
-              }
-              // Achievements — processa só DEPOIS de salvar laps e ter
-              // contagens corretas pra "10 sessões", "100 voltas", etc.
-              const stats = await getStatsForAchievements(trackIdForGame);
-              const previousLevel = levelForXp(gameState.xp);
-              const newLevel = levelForXp(result.newXp);
-              const newStreak = result.isNewPb ? previousStreak + 1 : 0;
-              const newAchievements = await processAchievementsAfterSession({
-                sessionId: session.id,
-                trackId: trackIdForGame,
-                bestLapMs: best.durationMs,
-                isNewPb: result.isNewPb,
-                newStreak,
-                totalLapsAfter: stats.totalLaps,
-                totalSessionsAfter: stats.totalSessions,
-                sessionsOnSameTrack: stats.sessionsOnTrack,
-                newLevel,
-                previousLevel,
-              });
-
-              if (result.milestones.length > 0 || newAchievements.length > 0) {
-                setPendingCelebration({
-                  sessionId: session.id,
-                  milestones: result.milestones,
-                  xpGained: result.xpGained,
-                  newXp: result.newXp,
-                  achievements: newAchievements,
-                });
-              }
-
-              // Refresh dos desafios diários — atualiza progresso de "X voltas",
-              // "sub-50s", etc baseado na sessão recém salva.
-              await refreshTodayChallenges();
-
-              // ===== Background (NÃO bloqueia a navegação) =====
-              // IA (LLM) e publish no leaderboard são chamadas de REDE e podem
-              // demorar/travar. Se a gente desse `await` aqui, a tela do cockpit
-              // congelava esperando a resposta ANTES de navegar pro resumo
-              // (o "trava toda vez ao encerrar"). Roda solto: o insight aparece
-              // no Coach flutuante quando chegar; o leaderboard é best-effort.
-              const isNewPb = result.isNewPb;
-              const xpGained = result.xpGained;
-              void (async () => {
-                try {
-                  const peakKmh = msToKmh(peakSpeedMs(best.samples));
-                  const profileForInsight = await getProfile().catch(() => null);
-                  const aiInsight = await requestQuickInsight({
-                    trackName: params.trackName ?? 'Pista',
-                    bestLapMs: best.durationMs,
-                    previousPbMs: previousPb?.durationMs ?? null,
-                    lapCount: lapsToSave.length,
-                    peakKmh,
-                    pilotName: profileForInsight?.name ?? null,
-                  });
-
-                  if (aiInsight) {
-                    pushCoachInsight({
-                      title: aiInsight.title,
-                      body: aiInsight.body,
-                      metric: aiInsight.metric,
-                      sessionId: session.id,
-                    });
-                  } else if (isNewPb) {
-                    // Fallback sem IA: mensagem genérica de PB
-                    pushCoachInsight({
-                      title: 'Nova melhor volta',
-                      body: `Você bateu ${(best.durationMs / 1000).toFixed(3)}s. Tenta repetir nas próximas 3 voltas antes de empurrar mais.`,
-                      metric: `${(best.durationMs / 1000).toFixed(3)}s`,
-                      sessionId: session.id,
-                    });
-                  } else if (xpGained >= 50) {
-                    pushCoachInsight({
-                      title: 'Sessão registrada',
-                      body: `Volta consistente. Pra próxima, foca em 1 curva específica — mais ganho que tentar a volta inteira.`,
-                      sessionId: session.id,
-                    });
-                  }
-                } catch {
-                  // IA é opcional — engole qualquer erro.
-                }
-
-                // Publica PB no leaderboard público (Supabase) — opcional, falha
-                // silenciosa se Supabase não configurado. Só publica novas PBs.
-                if (isNewPb && trackIdForGame) {
-                  try {
-                    const pilotId = await ensurePilot();
-                    if (pilotId) {
-                      await publishLeaderboardEntry({
-                        pilotId,
-                        trackId: trackIdForGame,
-                        layoutId: layoutIdForGame,
-                        bestLapMs: best.durationMs,
-                        sessionId: session.id,
-                      });
-                    }
-                  } catch {
-                    // Sem Supabase / sem internet / RLS reject — engole.
-                  }
-                }
-              })();
-            } catch {
-              // Gamification é "nice to have" — qualquer erro engole e não
-              // bloqueia o fluxo principal de salvar a sessão.
-            }
-
-            if (reference && best.durationMs < reference.durationMs) {
-              // Pergunta IN-APP (não Alert nativo, que vira a orientação e trava).
-              setPendingRef({ sessionId: session.id, best, reference });
-            } else {
+    const { session, laps: lapsToSave } = saved;
+    if (lapsToSave.length === 0) {
+      setDialog({
+        title: 'NENHUMA VOLTA COMPLETA',
+        message: 'Não detectei voltas fechadas nessa sessão.',
+        actions: [
+          {
+            label: 'OK',
+            variant: 'primary',
+            onPress: () => {
+              setDialog(null);
               router.replace(`/session/${session.id}`);
-            }
+            },
+          },
+        ],
+      });
+      return;
+    }
+
+    // XP, PB, conquistas e desafios; IA e leaderboard seguem soltos, sem
+    // segurar a navegação.
+    await runPostSaveEffects(session, lapsToSave, { fromRecovery: false }, postSaveDeps);
+
+    const best = lapsToSave.reduce(
+      (b, l) => (l.durationMs < b.durationMs ? l : b),
+      lapsToSave[0]
+    );
+    if (reference && best.durationMs < reference.durationMs) {
+      // Pergunta IN-APP (não Alert nativo, que vira a orientação e trava).
+      setPendingRef({ sessionId: session.id, best, reference });
+    } else {
+      router.replace(`/session/${session.id}`);
+    }
+  };
+
+  /** "Descartar" na confirmação de saída: para o GPS, apaga o diário e sai. */
+  const discardRecording = async () => {
+    const recordingId = journal.recordingId;
+    await stop();
+    if (recordingId) await journal.end(recordingId).catch(() => {});
+    router.replace('/');
+  };
+
+  const dispatchExit = (action: ExitAction) => {
+    const r = exitGuard(exitState, action);
+    setExitState(r.state);
+    if (r.effect === 'finish') doFinish();
+    else if (r.effect === 'discard') discardRecording();
   };
 
   const handleCancel = () => {
     if (state === 'recording') {
-      Alert.alert('Cancelar sessão?', 'Os dados gravados serão descartados.', [
-        { text: 'Continuar', style: 'cancel' },
-        {
-          text: 'Cancelar',
-          style: 'destructive',
-          onPress: async () => {
-            await stop();
-            router.replace('/');
-          },
-        },
-      ]);
+      dispatchExit('requestExit');
     } else {
       // No idle: se usuário ativou "Compartilhar ao vivo" mas mudou de
       // ideia, encerra a live session pra não deixar órfã no Supabase.
@@ -628,6 +538,54 @@ export default function Recording() {
       router.replace('/');
     }
   };
+
+  // Botão voltar do Android: gravando, abre a confirmação; saindo ou
+  // salvando, não faz nada. No idle, segue o comportamento padrão.
+  useEffect(() => {
+    if (state === 'idle') return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (state === 'recording') dispatchExit('requestExit');
+      return true;
+    });
+    return () => sub.remove();
+  }, [state, exitState]);
+
+  const handleAskDisableLive = () => {
+    if (!live) return;
+    setDialog({
+      title: 'DESATIVAR TRANSMISSÃO?',
+      message: `Quem tá com o código ${live.code} vai perder o sinal.`,
+      actions: [
+        {
+          label: 'Desativar',
+          variant: 'destructive',
+          onPress: () => {
+            setDialog(null);
+            handleStopLive();
+          },
+        },
+        { label: 'Manter ativo', variant: 'secondary', onPress: () => setDialog(null) },
+      ],
+    });
+  };
+
+  const dialogEl = (
+    <>
+      <CockpitDialog
+        visible={exitState === 'confirming'}
+        title="SAIR DA GRAVAÇÃO?"
+        message={`${info.lapsCompleted} volta(s) completa(s) até agora.`}
+        actions={[
+          { ...EXIT_OPTIONS[0], onPress: () => dispatchExit(EXIT_OPTIONS[0].action) },
+          { ...EXIT_OPTIONS[1], onPress: () => dispatchExit(EXIT_OPTIONS[1].action) },
+          { ...EXIT_OPTIONS[2], onPress: () => dispatchExit(EXIT_OPTIONS[2].action) },
+        ]}
+      />
+      {dialog && (
+        <CockpitDialog visible title={dialog.title} message={dialog.message} actions={dialog.actions} />
+      )}
+    </>
+  );
 
   const acc = accuracyLabel(info.lastAccuracy);
   // Delta em tempo real estilo MyChron — vem do tracker no hook.
@@ -666,7 +624,8 @@ export default function Recording() {
         live={live}
         liveStarting={liveStarting}
         onEnableLive={handleStartLive}
-        onDisableLive={handleStopLive}
+        onAskDisableLive={handleAskDisableLive}
+        overlay={dialogEl}
       />
     );
   }
@@ -1023,6 +982,8 @@ export default function Recording() {
           </ScrollView>
         </View>
       </Modal>
+
+      {dialogEl}
     </View>
   );
 }
@@ -1156,7 +1117,8 @@ function IdleView({
   live,
   liveStarting,
   onEnableLive,
-  onDisableLive,
+  onAskDisableLive,
+  overlay,
 }: {
   trackName: string;
   trackId: string | null;
@@ -1168,7 +1130,10 @@ function IdleView({
   live: LiveSessionInfo | null;
   liveStarting: boolean;
   onEnableLive: () => Promise<void> | void;
-  onDisableLive: () => Promise<void> | void;
+  /** Tocar no card com a live ligada: a tela pergunta num diálogo in-app. */
+  onAskDisableLive: () => void;
+  /** Diálogos da tela, desenhados por cima de tudo. */
+  overlay: ReactNode;
 }) {
   const insets = useSafeAreaInsets();
   const track = trackId ? findTrackById(trackId) : undefined;
@@ -1255,7 +1220,7 @@ function IdleView({
         live={live}
         liveStarting={liveStarting}
         onEnable={onEnableLive}
-        onDisable={onDisableLive}
+        onAskDisable={onAskDisableLive}
       />
       {startBtn}
     </View>
@@ -1288,6 +1253,8 @@ function IdleView({
           {controls}
         </ScrollView>
       )}
+
+      {overlay}
     </View>
   );
 }
@@ -1308,24 +1275,17 @@ function LiveTogglePanel({
   live,
   liveStarting,
   onEnable,
-  onDisable,
+  onAskDisable,
 }: {
   live: LiveSessionInfo | null;
   liveStarting: boolean;
   onEnable: () => Promise<void> | void;
-  onDisable: () => Promise<void> | void;
+  onAskDisable: () => void;
 }) {
   const handleTap = () => {
     if (liveStarting) return;
     if (live) {
-      Alert.alert(
-        'Desativar transmissão?',
-        `Quem tá com o código ${live.code} vai perder o sinal.`,
-        [
-          { text: 'Manter ativo', style: 'cancel' },
-          { text: 'Desativar', style: 'destructive', onPress: () => onDisable() },
-        ]
-      );
+      onAskDisable();
     } else {
       onEnable();
     }

@@ -532,13 +532,15 @@ No mesmo arquivo fica o `defineTask`, que só chama esse handler.
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste estático: `app/recording.tsx` não contém `Alert.alert` nem importa `Alert`.
-- [ ] Teste estático: o arquivo registra `BackHandler.addEventListener('hardwareBackPress'`.
-- [ ] Gate: `npm test && npm run typecheck`, só com a baseline; 45 testes passam.
+- [x] Teste estático: `app/recording.tsx` não contém `Alert.alert` nem importa `Alert`.
+- [x] Teste estático: o arquivo registra `BackHandler.addEventListener('hardwareBackPress'`.
+- [x] Gate: `npm test && npm run typecheck`, só com a baseline; 46 testes passam (um a mais que o previsto, herdado da T10).
 
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(gravação): encerrar atômico e saída só com confirmação`
+**Status**: ✅
+**Nota**: as dependências reais do `runPostSaveEffects` ficaram em `src/recording/runtime.ts` (`postSaveDeps`), junto do diário. A rota `/recovery` usa `as any`, como as outras rotas que faltam no `.expo/types/router.d.ts` (gerado só pelo `expo start`). O `startedAt` da sessão segue sendo a hora do "Encerrar", como antes. O "Poucos dados" apaga o diário, como o descarte de antes.
 
 ---
 
