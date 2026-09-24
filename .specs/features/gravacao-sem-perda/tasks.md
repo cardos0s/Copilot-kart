@@ -563,13 +563,15 @@ No mesmo arquivo fica o `defineTask`, que só chama esse handler.
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste estático: o arquivo não contém `Alert.alert` nem importa `Alert`.
-- [ ] Teste estático: o `router.replace` para `/recording` inclui `layoutId`.
-- [ ] Gate: `npm test && npm run typecheck`, só com a baseline; 47 testes passam.
+- [x] Teste estático: o arquivo não contém `Alert.alert` nem importa `Alert`.
+- [x] Teste estático: o `router.replace` para `/recording` inclui `layoutId`.
+- [x] Gate: `npm test && npm run typecheck`, só com a baseline; 48 testes passam (um a mais que o previsto, herdado da T10).
 
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(reconhecimento): sem alerta nativo e o traçado novo vai para a cronometragem`
+**Status**: ✅
+**Nota**: com o `detectorOptions` saíram também o `BENCH_MODE` e o `BENCH_DETECTOR_OPTIONS`, que só existiam para ele. A falha ao salvar o traçado mostra "Não consegui salvar o traçado. Ele fica guardado e o app oferece recuperar na próxima abertura.", variante da mensagem de REC-05 (a spec só define o texto para a sessão).
 
 ---
 

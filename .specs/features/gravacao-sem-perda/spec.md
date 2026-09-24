@@ -184,7 +184,7 @@ piloto não perdoa.
 | REC-08 | P1: Sem alerta nativo em paisagem | Design | Implementing |
 | REC-09 | P1: GPS nunca sozinho (AC 1, tarefa órfã) | Design | Implementing |
 | REC-10 | P1: GPS nunca sozinho (AC 2, 3, falhas de início e de escrita) | Design | Implementing |
-| REC-11 | P2: Traçado e setup certos (AC 1) | Design | Pending |
+| REC-11 | P2: Traçado e setup certos (AC 1) | Design | Implementing |
 | REC-12 | P2: Traçado e setup certos (AC 2, 3, null e migração) | Design | Implementing |
 | REC-13 | P2: Traçado e setup certos (AC 4, bloqueio de nova gravação) | Design | Implementing |
 

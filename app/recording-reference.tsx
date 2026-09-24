@@ -1,34 +1,30 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, Pressable, Alert, ScrollView } from 'react-native';
+import { useState, useMemo, useEffect } from 'react';
+import { View, Text, StyleSheet, Pressable, BackHandler, ScrollView } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Line } from 'react-native-svg';
-import { useLapRecorder } from '../src/hooks/useLapRecorder';
+import { useLapRecorder, GPS_START_ERROR } from '../src/hooks/useLapRecorder';
 import { useLockLandscape } from '../src/hooks/useLockLandscape';
-import { listLayoutsForTrack, saveLayout } from '../src/storage/db';
-import { polylineLength, GpsSample } from '../src/lib/geometry';
+import { sqliteLayoutRepo } from '../src/storage/sessionRepo';
+import { GpsSample } from '../src/lib/geometry';
+import { normalizeId, saveReferenceLayout } from '../src/recording/finishSession';
+import { UnresolvedRecordingError } from '../src/recording/journal';
+import { EXIT_OPTIONS, exitGuard, type ExitAction, type ExitState } from '../src/recording/exitGuard';
+import { journal } from '../src/recording/runtime';
+import { CockpitDialog, type CockpitDialogAction } from '../src/components/CockpitDialog';
 import { LapResultOverlay } from '../src/components/LapResultOverlay';
 import { TrackSilhouette } from '../src/components/TrackSilhouette';
 import { formatLapPlain as fmtLapPlain } from '../src/lib/format';
 import { colors, fonts, spacing, radius, typography } from '../src/theme';
 
-/**
- * MODO BENCH — TESTE IR-E-VOLTAR NA RUA DE CASA.
- *
- * Parâmetros do detector relaxados pra aceitar velocidades de caminhada
- * e trajetos lineares curtos (80m pra um lado + 80m de volta = "volta" de 160m).
- *
- * DESLIGAR (mudar pra false) antes de qualquer teste em pista ou produção.
- * Enquanto ativado, um banner vermelho aparece no topo da tela.
- */
-const BENCH_MODE = false;
+/** Falha ao salvar o traçado: o diário fica e a recuperação aparece na próxima abertura. */
+const SAVE_LAYOUT_ERROR =
+  'Não consegui salvar o traçado. Ele fica guardado e o app oferece recuperar na próxima abertura.';
 
-const BENCH_DETECTOR_OPTIONS = {
-  ritmoSpeedMs: 0.6,         // 2.2 km/h — caminhada tranquila atinge
-  ritmoMinSustainedMs: 0.4,  // histerese proporcional
-  minLapDistance: 100,       // 160m de volta dá folga
-  minLapDuration: 90_000,    // 90s (caminhada 160m ≈ 130s, folga)
-  lineRadius: 25,            // tolerância maior pra GPS de cidade
+type DialogState = {
+  title: string;
+  message?: string;
+  actions: [CockpitDialogAction] | [CockpitDialogAction, CockpitDialogAction];
 };
 
 function fmtTime(ms: number) {
@@ -137,7 +133,11 @@ export default function RecordingReference() {
   useLockLandscape();
   const [targetLaps, setTargetLaps] = useState(3);
   const [starting, setStarting] = useState(false);
-  const targetReachedHandledRef = useRef(false);
+  // Meta de voltas atingida: faixa na tela, sem toque; a gravação segue.
+  const [targetReached, setTargetReached] = useState(false);
+  // Diálogo in-app: a tela fica presa em paisagem, e o alerta nativo trava o iOS.
+  const [dialog, setDialog] = useState<DialogState | null>(null);
+  const [exitState, setExitState] = useState<ExitState>('recording');
 
   /**
    * Overlay de transição pós-reconhecimento. Quando setado, mostra
@@ -148,6 +148,8 @@ export default function RecordingReference() {
     lapsCount: number;
     bestMs: number;
     lengthM: number;
+    /** Traçado recém-criado: a cronometragem compara contra ele (REC-11). */
+    layoutId: string;
   } | null>(null);
   const [countdown, setCountdown] = useState(5);
 
@@ -161,7 +163,11 @@ export default function RecordingReference() {
           // Auto-navega quando chega a 0
           router.replace({
             pathname: '/recording',
-            params: { trackId: params.trackId!, trackName: params.trackName! },
+            params: {
+              trackId: params.trackId!,
+              trackName: params.trackName!,
+              layoutId: transition.layoutId,
+            },
           });
           return 0;
         }
@@ -176,115 +182,160 @@ export default function RecordingReference() {
     router.replace('/');
   };
 
-  const handleTargetReached = () => {
-    if (targetReachedHandledRef.current) return;
-    targetReachedHandledRef.current = true;
-    Alert.alert(
-      'Voltas completas! 🏁',
-      `Você completou ${targetLaps} volta(s). Posso encerrar e salvar a referência agora, ou continuar gravando se quiser mais voltas pra melhorar a precisão.`,
-      [
-        { text: 'Continuar gravando', style: 'cancel', onPress: () => { targetReachedHandledRef.current = false; } },
-        { text: 'Encerrar e salvar', onPress: handleFinish },
-      ]
-    );
-  };
+  const handleTargetReached = () => setTargetReached(true);
 
   const { state, info, liveSamples, start, stop } = useLapRecorder({
     targetLaps,
     onTargetReached: handleTargetReached,
-    detectorOptions: BENCH_MODE ? BENCH_DETECTOR_OPTIONS : undefined,
-  } as any);
+  });
 
   const handleStart = async () => {
     setStarting(true);
     try {
-      await start();
+      await start({
+        meta: {
+          mode: 'reference',
+          trackId: normalizeId(params.trackId),
+          trackName: params.trackName ?? 'Pista',
+          layoutId: null,
+          layoutName: params.layoutName?.trim() || null,
+          kartSetupId: null,
+        },
+      });
     } catch (e: any) {
-      Alert.alert('Erro', e.message ?? 'Falha ao iniciar GPS');
+      if (e instanceof UnresolvedRecordingError) {
+        // Gravação interrompida pendente: recuperar ou descartar antes (REC-13).
+        setStarting(false);
+        router.replace('/recovery' as any);
+        return;
+      }
+      setDialog({
+        title: 'ERRO',
+        message: e?.message ?? GPS_START_ERROR,
+        actions: [{ label: 'OK', variant: 'primary', onPress: () => setDialog(null) }],
+      });
     }
     setStarting(false);
   };
 
+  /** Diálogo de um botão só que sai para a home. */
+  const leaveWith = (title: string, message: string) =>
+    setDialog({
+      title,
+      message,
+      actions: [
+        {
+          label: 'OK',
+          variant: 'primary',
+          onPress: () => {
+            setDialog(null);
+            router.replace('/');
+          },
+        },
+      ],
+    });
+
   const handleFinish = async () => {
+    setDialog(null);
     // stop() agora entrega tudo pronto: samples completos, voltas já recortadas.
     // A fonte de verdade é a mesma que alimentou o modal — sem re-detecção.
+    const recordingId = journal.recordingId ?? `rec_${Date.now()}`;
     const result = await stop();
 
     if (result.allSamples.length < 30) {
-      Alert.alert('Poucos dados', 'Não consegui captar o suficiente pra detectar uma volta.');
-      router.replace('/');
+      await journal.end(recordingId).catch(() => {});
+      leaveWith('POUCOS DADOS', 'Não consegui captar o suficiente pra detectar uma volta.');
       return;
     }
 
     if (result.laps.length === 0) {
-      Alert.alert(
-        'Nenhuma volta completa',
+      await journal.end(recordingId).catch(() => {});
+      leaveWith(
+        'NENHUMA VOLTA COMPLETA',
         'Não detectei nenhuma volta fechada. É preciso passar pela linha de largada pelo menos 2 vezes. Tenta de novo.'
       );
-      router.replace('/');
       return;
     }
 
-    // Melhor volta = a mais rápida. O critério de referência é qualidade
-    // (traçado limpo), não média — uma volta rápida e limpa serve melhor
-    // como baseline do que a média de três voltas ruins.
-    const best = result.laps.reduce((b, l) =>
-      l.durationMs < b.durationMs ? l : b
-    , result.laps[0]);
+    // Cria sempre um layout NOVO a partir da melhor volta (a primeira da
+    // pista vira default). O id vem da gravação, então salvar de novo não
+    // duplica. Só depois apaga o diário.
+    let layout;
+    try {
+      layout = await saveReferenceLayout(
+        {
+          recordingId,
+          trackId: params.trackId!,
+          layoutName: params.layoutName,
+          laps: result.laps,
+          recordedAt: Date.now(),
+        },
+        sqliteLayoutRepo
+      );
+    } catch (e) {
+      console.warn('[recording-reference] falha ao salvar o traçado:', e);
+      leaveWith('ERRO AO SALVAR', SAVE_LAYOUT_ERROR);
+      return;
+    }
+    await journal
+      .end(recordingId)
+      .catch((e) => console.warn('[recording-reference] journal.end:', e));
 
-    const lengthM = polylineLength(best.samples);
-
-    // Cria sempre um layout NOVO em vez de substituir o existente. Se essa
-    // é a primeira referência da pista, marca como default automaticamente.
-    const existing = await listLayoutsForTrack(params.trackId!);
-    const isFirst = existing.length === 0;
-    const name = params.layoutName?.trim() || (isFirst ? 'Layout principal' : `Layout ${existing.length + 1}`);
-    await saveLayout({
-      id: `layout_${params.trackId}_${Date.now()}`,
-      trackId: params.trackId!,
-      name,
-      samples: best.samples,
-      durationMs: best.durationMs,
-      lengthM,
-      recordedAt: Date.now(),
-      isDefault: isFirst,
-    });
-
-    // Em vez de Alert bloqueante, dispara o overlay de countdown — driver
+    // Em vez de diálogo bloqueante, dispara o overlay de countdown — driver
     // ainda tá no kart, então auto-transição pra cronometragem é a default.
     // 5s de janela pra cancelar caso queira parar/pit.
     setTransition({
       lapsCount: result.laps.length,
-      bestMs: best.durationMs,
-      lengthM,
+      bestMs: layout.durationMs,
+      lengthM: layout.lengthM,
+      layoutId: layout.id,
     });
   };
 
   const handleFinishConfirm = () => {
-    Alert.alert(
-      'Encerrar reconhecimento?',
-      `Detectei ${info.lapsCompleted} volta(s) completa(s) até agora.`,
-      [
-        { text: 'Continuar gravando', style: 'cancel' },
-        { text: 'Encerrar', style: 'destructive', onPress: handleFinish },
-      ]
-    );
+    setDialog({
+      title: 'ENCERRAR RECONHECIMENTO?',
+      message: `Detectei ${info.lapsCompleted} volta(s) completa(s) até agora.`,
+      actions: [
+        { label: 'Encerrar', variant: 'destructive', onPress: handleFinish },
+        { label: 'Continuar gravando', variant: 'secondary', onPress: () => setDialog(null) },
+      ],
+    });
+  };
+
+  /** "Descartar" na confirmação de saída: para o GPS, apaga o diário e sai. */
+  const discardRecording = async () => {
+    const recordingId = journal.recordingId;
+    await stop();
+    if (recordingId) await journal.end(recordingId).catch(() => {});
+    router.replace('/');
+  };
+
+  const dispatchExit = (action: ExitAction) => {
+    const r = exitGuard(exitState, action);
+    setExitState(r.state);
+    if (r.effect === 'finish') handleFinish();
+    else if (r.effect === 'discard') discardRecording();
   };
 
   const handleCancel = () => {
     if (state === 'recording') {
-      Alert.alert('Cancelar reconhecimento?', 'Os dados gravados serão descartados.', [
-        { text: 'Continuar', style: 'cancel' },
-        {
-          text: 'Cancelar',
-          style: 'destructive',
-          onPress: async () => { await stop(); router.replace('/'); },
-        },
-      ]);
+      dispatchExit('requestExit');
     } else {
       router.replace('/');
     }
   };
+
+  // Botão voltar do Android: gravando, abre a confirmação; saindo ou
+  // salvando, não faz nada. No idle, segue o comportamento padrão.
+  useEffect(() => {
+    if (state === 'idle') return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (state === 'recording') dispatchExit('requestExit');
+      return true;
+    });
+    return () => sub.remove();
+  }, [state, exitState]);
 
   const acc = accuracyLabel(info.lastAccuracy);
   const progress = Math.min(1, info.lapsCompleted / targetLaps);
@@ -434,6 +485,16 @@ export default function RecordingReference() {
         }
       />
 
+      {/* Meta atingida: faixa que não pede toque; a gravação segue até o
+          piloto encerrar (REC-08, AC 2). */}
+      {targetReached && state === 'recording' && !transition && (
+        <View pointerEvents="none" style={[s.targetBanner, { top: insets.top + spacing.s }]}>
+          <Text style={s.targetBannerText}>
+            META ATINGIDA · {info.lapsCompleted} volta(s). Siga gravando ou encerre quando quiser.
+          </Text>
+        </View>
+      )}
+
       {/* Overlay de transição auto pra cronometragem */}
       {transition && (
         <View style={s.transitionOverlay}>
@@ -459,6 +520,20 @@ export default function RecordingReference() {
             </Pressable>
           </View>
         </View>
+      )}
+
+      <CockpitDialog
+        visible={exitState === 'confirming'}
+        title="SAIR DO RECONHECIMENTO?"
+        message={`${info.lapsCompleted} volta(s) completa(s) até agora.`}
+        actions={[
+          { ...EXIT_OPTIONS[0], onPress: () => dispatchExit(EXIT_OPTIONS[0].action) },
+          { ...EXIT_OPTIONS[1], onPress: () => dispatchExit(EXIT_OPTIONS[1].action) },
+          { ...EXIT_OPTIONS[2], onPress: () => dispatchExit(EXIT_OPTIONS[2].action) },
+        ]}
+      />
+      {dialog && (
+        <CockpitDialog visible title={dialog.title} message={dialog.message} actions={dialog.actions} />
       )}
     </View>
   );
@@ -742,6 +817,25 @@ const s = StyleSheet.create({
   },
 
   /* Transition overlay (auto -> cronometragem) */
+  targetBanner: {
+    position: 'absolute',
+    left: spacing.xxl,
+    right: spacing.xxl,
+    backgroundColor: colors.surfaceHigh,
+    borderWidth: 1,
+    borderColor: colors.success,
+    borderRadius: radius.m,
+    paddingVertical: spacing.s,
+    paddingHorizontal: spacing.l,
+    alignItems: 'center',
+  },
+  targetBannerText: {
+    fontFamily: fonts.semibold,
+    fontSize: 14,
+    letterSpacing: 0.6,
+    color: colors.success,
+    textAlign: 'center',
+  },
   transitionOverlay: {
     position: 'absolute',
     top: 0,
