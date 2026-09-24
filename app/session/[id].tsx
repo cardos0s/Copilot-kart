@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ErrorBoundary } from '../../src/components/ErrorBoundary';
+import { RecoveredBadge } from '../../src/components/RecoveredBadge';
 import {
   getSession,
   getLapsForSession,
@@ -396,6 +397,7 @@ function SessionScreenInner() {
     return (
       <View style={s.root}>
         <ScreenHeader title="SESSÃO" subtitle={session?.trackName} />
+        {session?.recovered && <RecoveredBadge style={{ alignSelf: 'center' }} />}
         <View style={[s.center, { flex: 1, padding: spacing.huge }]}>
           <Text style={s.emptyTitle}>Dados insuficientes</Text>
           <Text style={s.emptyText}>
@@ -410,6 +412,7 @@ function SessionScreenInner() {
     return (
       <View style={s.root}>
         <ScreenHeader title="SESSÃO" subtitle={session?.trackName} />
+        {session?.recovered && <RecoveredBadge style={{ alignSelf: 'center' }} />}
         <View style={[s.center, { flex: 1, padding: spacing.huge }]}>
           <Text style={s.emptyTitle}>Não foi possível analisar</Text>
           <Text style={s.emptyText}>
@@ -483,6 +486,7 @@ function SessionScreenInner() {
             : trackDisplayName
         }
       />
+      {session?.recovered && <RecoveredBadge style={{ alignSelf: 'center' }} />}
 
       <ScrollView
         ref={mapScrollRef}

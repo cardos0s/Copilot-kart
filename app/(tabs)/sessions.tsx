@@ -14,6 +14,7 @@ import {
 } from '../../src/storage/db';
 import { findTrackById } from '../../src/data/tracks';
 import { TrackSilhouette } from '../../src/components/TrackSilhouette';
+import { RecoveredBadge } from '../../src/components/RecoveredBadge';
 import { Icon, PillTabs, tabBarSpace } from '../../src/components/ui';
 import { colors, fonts, radius, spacing } from '../../src/theme';
 
@@ -335,6 +336,7 @@ function SessionRow({
                 <Text style={s.badgeText}>RECORDE</Text>
               </View>
             )}
+            {item.recovered && <RecoveredBadge />}
           </View>
           <Text style={s.rowMeta}>
             {fmtTime(item.startedAt)} · {item.lapCount} {item.lapCount === 1 ? 'volta' : 'voltas'}

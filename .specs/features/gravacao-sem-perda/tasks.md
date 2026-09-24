@@ -469,12 +469,14 @@ No mesmo arquivo fica o `defineTask`, que só chama esse handler.
 - Skill: NONE
 
 **Done when**:
-- [ ] O selo aparece nos dois lugares só quando `recovered` é verdadeiro.
-- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+- [x] O selo aparece nos dois lugares só quando `recovered` é verdadeiro.
+- [x] Gate: `npm test && npm run typecheck`, só com a baseline.
 
 **Tests**: none
 **Gate**: build
 **Commit**: `feat(sessões): selo de sessão recuperada`
+**Status**: ✅
+**Nota**: na análise, o selo fica logo abaixo do cabeçalho "ANÁLISE DE VOLTAS" e também nos estados "Dados insuficientes" e "Não foi possível analisar" (as linhas 398 e 412 citadas).
 
 ---
 
