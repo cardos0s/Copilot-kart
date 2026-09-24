@@ -181,7 +181,7 @@ piloto não perdoa.
 | REC-05 | P1: Encerrar atômico (AC 1, 2) | Design | Implementing |
 | REC-06 | P1: Encerrar atômico (AC 3, init do banco sem corrida) | Design | Implementing |
 | REC-07 | P1: Sair só com confirmação | Design | Implementing |
-| REC-08 | P1: Sem alerta nativo em paisagem | Design | Pending |
+| REC-08 | P1: Sem alerta nativo em paisagem | Design | Implementing |
 | REC-09 | P1: GPS nunca sozinho (AC 1, tarefa órfã) | Design | Implementing |
 | REC-10 | P1: GPS nunca sozinho (AC 2, 3, falhas de início e de escrita) | Design | Implementing |
 | REC-11 | P2: Traçado e setup certos (AC 1) | Design | Pending |

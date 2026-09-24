@@ -445,12 +445,14 @@ No mesmo arquivo fica o `defineTask`, que só chama esse handler.
 - Skill: NONE
 
 **Done when**:
-- [ ] O componente aceita de 1 a 3 ações, cada uma com a variante `primary | secondary | destructive`.
-- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+- [x] O componente aceita de 1 a 3 ações, cada uma com a variante `primary | secondary | destructive`.
+- [x] Gate: `npm test && npm run typecheck`, só com a baseline.
 
 **Tests**: none
 **Gate**: build
 **Commit**: `feat(ui): diálogo do cockpit, sem alerta nativo`
+**Status**: ✅
+**Nota**: é uma `View` absoluta, não `Modal` (o `Modal` do RN assume retrato no iOS). A tela renderiza o diálogo como último filho da raiz.
 
 ---
 
