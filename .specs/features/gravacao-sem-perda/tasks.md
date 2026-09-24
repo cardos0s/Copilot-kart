@@ -343,15 +343,16 @@ No mesmo arquivo fica o `defineTask`, que só chama esse handler.
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: `requestExit` em `recording` leva a `confirming`, com as opções "Continuar gravando", "Encerrar e salvar" e "Descartar".
-- [ ] Teste: `continue` volta a `recording` sem efeito.
-- [ ] Teste: `finish` emite o efeito `finish`, que é o mesmo do botão "Encerrar".
-- [ ] Teste: `discard` emite o efeito `discard`.
-- [ ] Gate: `npm test`; 40 testes passam.
+- [x] Teste: `requestExit` em `recording` leva a `confirming`, com as opções "Continuar gravando", "Encerrar e salvar" e "Descartar".
+- [x] Teste: `continue` volta a `recording` sem efeito.
+- [x] Teste: `finish` emite o efeito `finish`, que é o mesmo do botão "Encerrar".
+- [x] Teste: `discard` emite o efeito `discard`.
+- [x] Gate: `npm test`; 40 testes passam.
 
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(gravação): confirmação antes de sair da gravação`
+**Status**: ✅
 
 ---
 
