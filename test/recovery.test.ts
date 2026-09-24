@@ -5,6 +5,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
+import type { GpsSample } from '../src/lib/geometry';
+import { detectLaps } from '../src/lib/lapDetector';
 import type { TrackLayout } from '../src/storage/db';
 import { sliceLaps, type LayoutRepo } from '../src/recording/finishSession';
 import { RecordingJournal, type RecordingMetaInput } from '../src/recording/journal';
@@ -169,4 +171,53 @@ test('discard: apaga o diário', async () => {
   await discard(id, { store });
   assert.equal(store.active, null);
   assert.equal(store.chunks.has(id), false);
+});
+
+/** Grava pelo diário os pontos dados, em pedaços de 25, como `journalWith`. */
+async function journalFromSamples(meta: RecordingMetaInput, samples: GpsSample[]) {
+  const store = fakeJournalStore();
+  const journal = new RecordingJournal(store, () => T0);
+  const id = await journal.begin(meta);
+  for (let i = 0; i < samples.length; i += 25) {
+    const batch = samples.slice(i, i + 25);
+    journal.appendGps(batch);
+    await journal.flushIfDue(batch[batch.length - 1].t);
+  }
+  await journal.flush();
+  return { store, id };
+}
+
+test('recover: buraco de 200 s sem pontos no meio segue a regra do detectLaps e a volta que o atravessa não entra', async () => {
+  // 4 voltas de 55 s a 5 Hz, com 5 s de aquecimento (25 pontos). Da metade
+  // da 3ª volta em diante, tudo chega 200 s depois: as voltas 1 e 2 vêm
+  // antes do buraco, a 3ª o atravessa e a 4ª vem depois.
+  const GAP_MS = 200_000;
+  const base = generateLapSamples({ numLaps: 4, warmupS: 5, cooldownS: 10, startTimestamp: T0 });
+  const gapIdx = 25 + Math.floor(2.5 * 275);
+  const samples = base.map((p, i) => (i < gapIdx ? p : { ...p, t: p.t + GAP_MS }));
+  const gapFrom = samples[gapIdx - 1].t;
+  const gapTo = samples[gapIdx].t;
+  assert.equal(gapTo - gapFrom, GAP_MS + 200);
+
+  const { store, id } = await journalFromSamples(RACE, samples);
+  const { d, sessions } = deps(store);
+  await recover(id, d);
+
+  // Exatamente as voltas que o detectLaps devolve para os mesmos pontos.
+  const detected = detectLaps(samples).laps;
+  assert.equal(sessions.sessions.length, 1);
+  assert.deepEqual(
+    sessions.laps.map((l) => [l.startedAt, l.durationMs]),
+    detected.map((l) => [l.startedAt, l.durationMs]),
+  );
+  // Voltas 1, 2 e 4: a que atravessa o buraco passou de 180 s e foi descartada.
+  assert.equal(sessions.laps.length, 3);
+  for (const l of sessions.laps) {
+    assert.ok(l.durationMs <= 180_000, `volta de ${l.durationMs} ms`);
+    const crossesGap = l.startedAt <= gapFrom && l.startedAt + l.durationMs >= gapTo;
+    assert.equal(crossesGap, false, `a volta que começa em ${l.startedAt} atravessa o buraco`);
+  }
+  assert.equal(sessions.laps.filter((l) => l.startedAt < gapFrom).length, 2);
+  assert.equal(sessions.laps.filter((l) => l.startedAt > gapTo).length, 1);
+  assert.equal(store.active, null);
 });

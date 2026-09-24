@@ -807,12 +807,14 @@ No mesmo arquivo fica o `defineTask`, que só chama esse handler.
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: um diário com 2 voltas, depois 200 s sem pontos, depois mais 2 voltas → `recover` cria a sessão com exatamente as voltas que `detectLaps` devolve para os mesmos pontos, e a volta que atravessa o buraco não entra.
-- [ ] Gate: `npm test`.
+- [x] Teste: um diário com 2 voltas, depois 200 s sem pontos, depois mais 2 voltas → `recover` cria a sessão com exatamente as voltas que `detectLaps` devolve para os mesmos pontos, e a volta que atravessa o buraco não entra.
+- [x] Gate: `npm test`; 61 testes passam.
 
 **Tests**: unit
 **Gate**: quick
 **Commit**: `test(gravação): recuperação atravessando buraco de mais de 180 s`
+**Status**: ✅
+**Nota**: o buraco fica no meio da 3ª volta, e a sessão sai com as voltas 1, 2 e 4. Com `maxLapDuration` trocado para 300 s, o teste falha (conferido e revertido).
 
 ---
 
