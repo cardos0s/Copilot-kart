@@ -658,14 +658,16 @@ No mesmo arquivo fica o `defineTask`, que só chama esse handler.
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: `uiActive = true` e `journal = null` → os pontos vão ao `buf` e `stopLocationUpdates` não é chamado.
-- [ ] Teste: `uiActive = false` e `journal = null` → `stopLocationUpdates` é chamado e o `buf` não recebe nada (o teste atual continua valendo).
-- [ ] O hook liga e desliga a flag (`useLapRecorder.ts`: `start`, `stop`, cleanup do unmount).
-- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+- [x] Teste: `uiActive = true` e `journal = null` → os pontos vão ao `buf` e `stopLocationUpdates` não é chamado.
+- [x] Teste: `uiActive = false` e `journal = null` → `stopLocationUpdates` é chamado e o `buf` não recebe nada (o teste atual continua valendo).
+- [x] O hook liga e desliga a flag (`useLapRecorder.ts`: `start`, `stop`, cleanup do unmount).
+- [x] Gate: `npm test && npm run typecheck`, só com a baseline; 52 testes passam.
 
 **Tests**: unit
 **Gate**: build
-**Commit**: `fix(gravação): GPS segue vivo nas telas que gravam sem diário`
+**Commit**: `fix(gravação): o GPS segue vivo nas telas que gravam sem diário`
+**Status**: ✅
+**Nota**: o hook liga a flag depois do `journal.begin` (se o `begin` rejeita, nada liga) e a desliga também no `catch` da falha ao ligar o GPS. Os dois testes novos cobrem diário com `recordingId` nulo e diário `null`.
 
 ---
 

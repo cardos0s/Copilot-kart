@@ -31,7 +31,7 @@ function loc(timestamp: number, accuracy: number | null, lat = -14.86): Location
   };
 }
 
-async function setup(active: boolean) {
+async function setup(active: boolean, uiActive = false) {
   const store = fakeJournalStore();
   const journal = new RecordingJournal(store, () => NOW);
   const id = active
@@ -49,6 +49,7 @@ async function setup(active: boolean) {
   const deps: LocationTaskDeps = {
     buf,
     journal,
+    uiActive,
     stopLocationUpdates: async () => {
       calls.stop++;
     },
@@ -92,6 +93,35 @@ test('handleLocations: sem diário ativo, para a tarefa e nada vai ao diário', 
   await handleLocations([loc(NOW - 123, 4)], { ...deps, journal: null });
   assert.equal(calls.stop, 2);
   assert.equal(store.chunks.size, 0);
+});
+
+test('handleLocations: tela de gravação ativa sem diário, os pontos vão só ao buf e a tarefa segue', async () => {
+  const { store, journal, buf, deps, calls } = await setup(false, true);
+  await handleLocations([loc(NOW - 223, 4), loc(NOW - 123, 5)], deps);
+
+  assert.equal(calls.stop, 0);
+  assert.deepEqual(buf.samples, [
+    { t: NOW - 223, lat: -14.86, lng: -40.84, speed: 12, accuracy: 4, heading: 90, altitude: 900, altitudeAccuracy: 3 },
+    { t: NOW - 123, lat: -14.86, lng: -40.84, speed: 12, accuracy: 5, heading: 90, altitude: 900, altitudeAccuracy: 3 },
+  ]);
+  await journal.flush();
+  assert.equal(journal.recordingId, null);
+  assert.equal(store.chunks.size, 0);
+
+  // Sem diário nenhum configurado, o mesmo.
+  await handleLocations([loc(NOW - 23, 6)], { ...deps, journal: null });
+  assert.equal(calls.stop, 0);
+  assert.deepEqual(buf.samples.map((s) => s.accuracy), [4, 5, 6]);
+  assert.equal(store.chunks.size, 0);
+});
+
+test('handleLocations: sem tela de gravação e sem diário, para a tarefa e o buf não recebe nada', async () => {
+  const { buf, deps, calls } = await setup(false, false);
+  await handleLocations([loc(NOW - 123, 4)], deps);
+  await handleLocations([loc(NOW - 123, 4)], { ...deps, journal: null });
+
+  assert.equal(calls.stop, 2);
+  assert.deepEqual(buf.samples, []);
 });
 
 test('handleLocations: timestamp sub-segundo é usado; quantizado ou zero vira now espalhado a 100 ms', async () => {

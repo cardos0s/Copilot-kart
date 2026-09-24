@@ -3,8 +3,10 @@
  * `defineTask` em `locationTask.ts` só chama `handleLocations`.
  *
  * Filtra o fix pela precisão (30 m), resolve o timestamp e entrega o ponto ao
- * buffer da UI e ao diário. Sem gravação ativa, a tarefa para a si mesma, para
- * o GPS nunca ficar ligado sem uma gravação na tela.
+ * buffer da UI e, se houver, ao diário. Sem diário ativo e sem tela de gravação
+ * ligada no processo, a tarefa para a si mesma, para o GPS nunca ficar ligado
+ * sem uma gravação na tela. As telas que gravam sem diário (Corrida contra a
+ * lenda, Competição) recebem os pontos só no buffer.
  */
 import type { LocationObject } from 'expo-location';
 import type { GpsSample } from '../lib/geometry';
@@ -20,6 +22,8 @@ export type LocationLike = Pick<LocationObject, 'timestamp'> & {
 export type LocationTaskDeps = {
   buf: { samples: GpsSample[] };
   journal: Pick<RecordingJournal, 'recordingId' | 'appendGps' | 'flushIfDue'> | null;
+  /** Alguma tela de gravação ligou o GPS neste processo. */
+  uiActive: boolean;
   stopLocationUpdates(): Promise<void>;
   now(): number;
 };
@@ -27,8 +31,8 @@ export type LocationTaskDeps = {
 export const MAX_ACCURACY_M = 30;
 
 export async function handleLocations(locations: LocationLike[], deps: LocationTaskDeps): Promise<void> {
-  const journal = deps.journal;
-  if (!journal || !journal.recordingId) {
+  const journal = deps.journal?.recordingId ? deps.journal : null;
+  if (!journal && !deps.uiActive) {
     await deps.stopLocationUpdates();
     return;
   }
@@ -61,6 +65,7 @@ export async function handleLocations(locations: LocationLike[], deps: LocationT
   if (samples.length === 0) return;
 
   deps.buf.samples.push(...samples);
+  if (!journal) return;
   journal.appendGps(samples);
   await journal.flushIfDue(arrivalNow);
 }

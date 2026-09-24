@@ -18,10 +18,20 @@ if (!buf.imu) buf.imu = [];
 (globalThis as any).__kartlapBuf = buf;
 
 let journal: LocationTaskDeps['journal'] = null;
+let uiActive = false;
 
 /** O hook de gravação liga o diário aqui ao começar e desliga ao terminar. */
 export function setLocationTaskJournal(j: LocationTaskDeps['journal']): void {
   journal = j;
+}
+
+/**
+ * O hook de gravação marca aqui que uma tela ligou o GPS neste processo. Vale
+ * também para as telas que gravam sem diário. Um processo relançado pelo
+ * sistema começa com `false`, e a tarefa órfã se para.
+ */
+export function setLocationTaskUiActive(v: boolean): void {
+  uiActive = v;
 }
 
 async function stopLocationUpdates(): Promise<void> {
@@ -44,6 +54,7 @@ TaskManager.defineTask(BG_TASK, async ({ data, error }) => {
   await handleLocations(locations, {
     buf,
     journal,
+    uiActive,
     stopLocationUpdates,
     now: Date.now,
   });

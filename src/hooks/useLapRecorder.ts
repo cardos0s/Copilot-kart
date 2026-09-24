@@ -8,7 +8,12 @@ import { detectLaps, DetectedLap } from '../lib/lapDetector';
 import { DeltaTracker } from '../lib/realtimeDelta';
 import { sliceLaps, type RecordedLap } from '../recording/finishSession';
 import type { RecordingMetaInput } from '../recording/journal';
-import { BG_TASK, buf, setLocationTaskJournal } from '../recording/locationTask';
+import {
+  BG_TASK,
+  buf,
+  setLocationTaskJournal,
+  setLocationTaskUiActive,
+} from '../recording/locationTask';
 import { journal } from '../recording/runtime';
 
 // IMU update rate em ms. 20ms = 50Hz — suficiente pra capturar rotação de
@@ -346,6 +351,8 @@ export function useLapRecorder(options?: LapRecorderOptions) {
       }
       setLocationTaskJournal(journal);
     }
+    // Tela de gravação ligada: a tarefa entrega ao buffer mesmo sem diário.
+    setLocationTaskUiActive(true);
 
     const simulate = startOpts?.simulate === true;
     if (simulate) {
@@ -405,6 +412,7 @@ export function useLapRecorder(options?: LapRecorderOptions) {
         console.warn('start:', e);
         deactivateKeepAwake('copilot-recording');
         setLocationTaskJournal(null);
+        setLocationTaskUiActive(false);
         if (recordingId) await journal.end(recordingId).catch(() => {});
         setState('idle');
         throw new Error(GPS_START_ERROR);
@@ -716,6 +724,7 @@ export function useLapRecorder(options?: LapRecorderOptions) {
       console.warn('stop:', e);
     }
     setLocationTaskJournal(null);
+    setLocationTaskUiActive(false);
     stopImuCapture();
     deactivateKeepAwake('copilot-recording');
 
@@ -760,6 +769,7 @@ export function useLapRecorder(options?: LapRecorderOptions) {
       if (simRef.current) clearInterval(simRef.current);
       if (pollRef.current) clearInterval(pollRef.current);
       setLocationTaskJournal(null);
+      setLocationTaskUiActive(false);
       Location.hasStartedLocationUpdatesAsync(BG_TASK).then((started) => {
         if (started) Location.stopLocationUpdatesAsync(BG_TASK).catch(() => {});
       });
