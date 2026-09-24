@@ -592,13 +592,15 @@ No mesmo arquivo fica o `defineTask`, que só chama esse handler.
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste estático: as telas `recording` e `recording-reference` têm `gestureEnabled: false` nas options.
-- [ ] Teste estático: o arquivo importa `locationTask`.
-- [ ] Gate: `npm test && npm run typecheck`, só com a baseline; 49 testes passam.
+- [x] Teste estático: as telas `recording` e `recording-reference` têm `gestureEnabled: false` nas options.
+- [x] Teste estático: o arquivo importa `locationTask`.
+- [x] Gate: `npm test && npm run typecheck`, só com a baseline; 50 testes passam (um a mais que o previsto, herdado da T10).
 
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(gravação): abertura para a tarefa órfã e leva à recuperação`
+**Status**: ✅
+**Nota**: a checagem real fica em `src/recording/runtime.ts` (`bootCheck`, memoizada por processo, com `hasStartedLocationUpdatesAsync`/`stopLocationUpdatesAsync` sobre o `BG_TASK`). A splash espera o resultado, e o `AuthGate` só redireciona uma vez por abertura. Gravação ilegível chega em `/recovery?unreadable=1`, porque o `bootCheck` já apagou o diário.
 
 ---
 

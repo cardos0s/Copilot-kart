@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+// A tarefa de localização precisa existir mesmo quando o sistema relança o app
+// em segundo plano, antes de qualquer tela montar.
+import '../src/recording/locationTask';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, View } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -25,6 +28,7 @@ import {
   RobotoMono_600SemiBold,
 } from '@expo-google-fonts/roboto-mono';
 import { getProfile } from '../src/storage/profile';
+import { bootCheck } from '../src/recording/runtime';
 import { SplashLoader } from '../src/components/SplashLoader';
 import { colors } from '../src/theme';
 
@@ -54,9 +58,30 @@ async function hideAndroidNavBar() {
 function AuthGate() {
   const router = useRouter();
   const segments = useSegments();
+  // A recuperação é oferecida uma vez por abertura; depois de resolvida, a
+  // navegação segue normal.
+  const bootHandledRef = useRef(false);
 
   useEffect(() => {
     (async () => {
+      // Gravação interrompida (ou ilegível) vai para a recuperação antes da
+      // home (REC-02). O GPS órfão já foi parado pela mesma checagem (REC-09).
+      if (!bootHandledRef.current) {
+        bootHandledRef.current = true;
+        const boot = await bootCheck().catch((e) => {
+          console.warn('[boot] checagem falhou:', e);
+          return { kind: 'none' } as const;
+        });
+        if (boot.kind === 'interrupted') {
+          router.replace('/recovery' as any);
+          return;
+        }
+        if (boot.kind === 'unreadable') {
+          router.replace({ pathname: '/recovery' as any, params: { unreadable: '1' } });
+          return;
+        }
+      }
+
       const profile = await getProfile();
       const hasProfile = profile !== null && !!profile.name;
 
@@ -104,6 +129,8 @@ export default function RootLayout() {
     (async () => {
       try {
         await getProfile();
+        // A splash só sai depois da checagem da gravação interrompida.
+        await bootCheck().catch(() => {});
       } finally {
         setProfileReady(true);
       }
@@ -148,8 +175,12 @@ export default function RootLayout() {
             <Stack.Screen name="onboarding" options={{ headerShown: false }} />
             <Stack.Screen name="new-session" options={{ title: 'Nova sessão' }} />
             <Stack.Screen name="at-track" options={{ headerShown: false }} />
-            <Stack.Screen name="recording" options={{ headerShown: false }} />
-            <Stack.Screen name="recording-reference" options={{ headerShown: false }} />
+            <Stack.Screen name="recording" options={{ headerShown: false, gestureEnabled: false }} />
+            <Stack.Screen
+              name="recording-reference"
+              options={{ headerShown: false, gestureEnabled: false }}
+            />
+            <Stack.Screen name="recovery" options={{ headerShown: false, gestureEnabled: false }} />
             <Stack.Screen name="session/[id]" options={{ headerShown: false }} />
             <Stack.Screen name="settings" options={{ headerShown: false }} />
             <Stack.Screen name="ai-key" options={{ headerShown: false }} />
