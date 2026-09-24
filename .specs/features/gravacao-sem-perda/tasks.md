@@ -622,12 +622,14 @@ No mesmo arquivo fica o `defineTask`, que só chama esse handler.
 - Skill: NONE
 
 **Done when**:
-- [ ] Os três estados da tela (recuperável, sem volta e ilegível) estão implementados.
-- [ ] Gate: `npm test && npm run typecheck`, só com a baseline; 49 testes passam.
+- [x] Os três estados da tela (recuperável, sem volta e ilegível) estão implementados.
+- [x] Gate: `npm test && npm run typecheck`, só com a baseline; 50 testes passam (a T19 não tem teste; o número é o da T18).
 
 **Tests**: none
 **Gate**: build
 **Commit**: `feat(gravação): tela de recuperação`
+**Status**: ✅
+**Nota**: a tela roda de novo a checagem de abertura (`runBootCheck` com `bootCheckDeps` do `runtime.ts`), o que cobre a chegada pelo `UnresolvedRecordingError` e limpa em silêncio uma sessão já salva. "Recuperar" numa corrida roda os efeitos pós-salvamento com `fromRecovery: true`. Se a recuperação falha, a tela mostra a mensagem de REC-05 e mantém as opções. O estado ilegível tem só "OK", que leva para a home.
 
 ---
 

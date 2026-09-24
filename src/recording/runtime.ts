@@ -26,11 +26,12 @@ import {
 } from '../storage/db';
 import { sqliteJournalStore } from '../storage/journalStore';
 import { getProfile } from '../storage/profile';
-import { sqliteSessionRepo } from '../storage/sessionRepo';
-import { runBootCheck, type BootResult } from './bootCheck';
+import { sqliteLayoutRepo, sqliteSessionRepo } from '../storage/sessionRepo';
+import { runBootCheck, type BootCheckDeps, type BootResult } from './bootCheck';
 import { RecordingJournal } from './journal';
 import { BG_TASK } from './locationTask';
 import type { PostSaveDeps } from './postSave';
+import type { RecoveryDeps } from './recovery';
 
 /** Diário único do processo: há no máximo uma gravação por vez. */
 export const journal = new RecordingJournal(sqliteJournalStore);
@@ -55,17 +56,25 @@ export const postSaveDeps: PostSaveDeps = {
   publishLeaderboardEntry,
 };
 
+/** Tarefa de localização real e o armazenamento em SQLite. */
+export const bootCheckDeps: BootCheckDeps = {
+  store: sqliteJournalStore,
+  isLocationTaskRunning: () => Location.hasStartedLocationUpdatesAsync(BG_TASK),
+  stopLocationUpdates: () => Location.stopLocationUpdatesAsync(BG_TASK),
+  sessionExists: (id) => sqliteSessionRepo.sessionExists(id),
+};
+
 /**
  * Checagem da abertura, uma vez por processo: para a tarefa de localização
  * órfã e descobre a gravação interrompida. O layout raiz espera o resultado
  * antes de sair da splash.
  */
-export const bootCheck = once(
-  (): Promise<BootResult> =>
-    runBootCheck({
-      store: sqliteJournalStore,
-      isLocationTaskRunning: () => Location.hasStartedLocationUpdatesAsync(BG_TASK),
-      stopLocationUpdates: () => Location.stopLocationUpdatesAsync(BG_TASK),
-      sessionExists: (id) => sqliteSessionRepo.sessionExists(id),
-    })
-);
+export const bootCheck = once((): Promise<BootResult> => runBootCheck(bootCheckDeps));
+
+/** "Recuperar" e "Descartar" sobre o SQLite. */
+export const recoveryDeps: RecoveryDeps = {
+  store: sqliteJournalStore,
+  sessions: sqliteSessionRepo,
+  layouts: sqliteLayoutRepo,
+  now: Date.now,
+};
