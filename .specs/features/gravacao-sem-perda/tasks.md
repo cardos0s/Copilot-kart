@@ -113,13 +113,14 @@ T18 -> T19
 - Skill: NONE
 
 **Done when**:
-- [ ] `npm test` roda e passa os 5 testes do detector.
-- [ ] `tsconfig.json` exclui `landing`, e `npm run typecheck` mostra exatamente os 8 erros da baseline.
-- [ ] Gate: `npm test && npm run typecheck`.
+- [x] `npm test` roda e passa os 5 testes do detector.
+- [x] `tsconfig.json` exclui `landing`, e `npm run typecheck` mostra exatamente os 8 erros da baseline.
+- [x] Gate: `npm test && npm run typecheck`.
 
 **Tests**: unit
 **Gate**: build
 **Commit**: `test: runner node:test com tsx e typecheck sem a landing`
+**Status**: ✅
 
 ---
 
