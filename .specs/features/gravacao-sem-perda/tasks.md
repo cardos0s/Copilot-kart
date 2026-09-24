@@ -421,13 +421,14 @@ No mesmo arquivo fica o `defineTask`, que só chama esse handler.
 - Skill: NONE
 
 **Done when**:
-- [ ] Implementa a interface da T5, sem erro de tipo.
-- [ ] `busy_timeout` aplicado na conexão.
-- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+- [x] Implementa a interface da T5, sem erro de tipo.
+- [x] `busy_timeout` aplicado na conexão.
+- [x] Gate: `npm test && npm run typecheck`, só com a baseline.
 
 **Tests**: none
 **Gate**: build
 **Commit**: `feat(db): armazenamento do diário de gravação`
+**Status**: ✅
 
 ---
 
