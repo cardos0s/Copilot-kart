@@ -94,6 +94,16 @@ T17 -> T18
 T18 -> T19
 ```
 
+### Phase 5: Correções do Verificador (iteração 1)
+
+Saídas do `validation.md` de 24/09 (FAIL). Dependem das fases 1 a 4.
+
+```
+T21 -> T22
+```
+
+T20, T23, T24, T25 e T26 não dependem de nenhuma tarefa da fase.
+
 ---
 
 ## Task Breakdown
@@ -630,6 +640,167 @@ No mesmo arquivo fica o `defineTask`, que só chama esse handler.
 **Commit**: `feat(gravação): tela de recuperação`
 **Status**: ✅
 **Nota**: a tela roda de novo a checagem de abertura (`runBootCheck` com `bootCheckDeps` do `runtime.ts`), o que cobre a chegada pelo `UnresolvedRecordingError` e limpa em silêncio uma sessão já salva. "Recuperar" numa corrida roda os efeitos pós-salvamento com `fromRecovery: true`. Se a recuperação falha, a tela mostra a mensagem de REC-05 e mantém as opções. O estado ilegível tem só "OK", que leva para a home.
+
+---
+
+### Phase 5: Correções do Verificador (iteração 1)
+
+#### T20: GPS não morre em gravação sem diário
+
+**What**: A tarefa de localização só se desliga sozinha quando não há diário ativo **e** nenhuma tela de gravação ligada no processo. `LocationTaskDeps` ganha `uiActive: boolean`. `locationTask.ts` expõe `setLocationTaskUiActive(v)`, e o `useLapRecorder` liga a flag no `start()` e desliga no `stop()` e no unmount. Com a UI ativa e sem diário (Corrida contra a lenda, Competição), os pontos vão só ao `buf`.
+**Where**: `src/recording/locationHandler.ts`
+**Depends on**: None
+**Reuses**: `setLocationTaskJournal` (mesmo padrão)
+**Requirement**: REC-09 (regressão achada pelo Verificador)
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Teste: `uiActive = true` e `journal = null` → os pontos vão ao `buf` e `stopLocationUpdates` não é chamado.
+- [ ] Teste: `uiActive = false` e `journal = null` → `stopLocationUpdates` é chamado e o `buf` não recebe nada (o teste atual continua valendo).
+- [ ] O hook liga e desliga a flag (`useLapRecorder.ts`: `start`, `stop`, cleanup do unmount).
+- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+
+**Tests**: unit
+**Gate**: build
+**Commit**: `fix(gravação): GPS segue vivo nas telas que gravam sem diário`
+
+---
+
+#### T21: Encerrar como função testável
+
+**What**: Extrair do `doFinish` de `app/recording.tsx` a função pura `finishRecording(result, meta, deps)`. Ela devolve `{ kind: 'too-few' } | { kind: 'saved', saved } | { kind: 'save-failed' }` e só chama `journal.end` depois do commit. Em `save-failed`, não chama `journal.end` nem os efeitos pós-salvamento. A tela passa a usar a função e mantém os diálogos e a navegação atuais.
+**Where**: `src/recording/finishRecording.ts`
+**Depends on**: None
+**Reuses**: `saveRecordedSession`, `runPostSaveEffects`
+**Requirement**: REC-05 (AC 2), REC-01 (AC 9)
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Teste: com o repo falhando na 3ª volta, o resultado é `save-failed`, `journal.end` não é chamado e o diário continua com os pedaços (o Independent Test da story).
+- [ ] Teste: com menos de 30 pontos, o resultado é `too-few` e o diário é apagado.
+- [ ] Teste: com sucesso, o resultado é `saved`, a sessão tem as voltas, e `journal.end` roda depois do commit.
+- [ ] `app/recording.tsx` usa `finishRecording`, e os testes estáticos da tela continuam passando.
+- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+
+**Tests**: unit
+**Gate**: build
+**Commit**: `refactor(gravação): encerrar vira função testável`
+
+---
+
+#### T22: Aviso de salvamento automático na gravação
+
+**What**: O HUD de `app/recording.tsx` mostra a faixa "Salvamento automático falhou" enquanto `info.autosaveFailed` for verdadeiro.
+**Where**: `app/recording.tsx`
+**Depends on**: T21
+**Reuses**: estilos do HUD da própria tela
+**Requirement**: REC-10 (AC 3), edge case do disco cheio
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Teste estático: o arquivo contém o texto exato "Salvamento automático falhou" renderizado sob a condição `info.autosaveFailed`.
+- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+
+**Tests**: unit
+**Gate**: build
+**Commit**: `feat(gravação): aviso no HUD quando o salvamento automático falha`
+
+---
+
+#### T23: Aviso de salvamento automático no reconhecimento
+
+**What**: A mesma faixa de T22 no cockpit de `app/recording-reference.tsx`.
+**Where**: `app/recording-reference.tsx`
+**Depends on**: None
+**Reuses**: o padrão de T22
+**Requirement**: REC-10 (AC 3)
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Teste estático: o arquivo contém "Salvamento automático falhou" sob a condição `info.autosaveFailed`.
+- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+
+**Tests**: unit
+**Gate**: build
+**Commit**: `feat(reconhecimento): aviso quando o salvamento automático falha`
+
+---
+
+#### T24: Competição sem alerta nativo
+
+**What**: O `Alert.alert` de erro ao iniciar o GPS em `app/competition-race.tsx:127` vira `CockpitDialog`, e o import de `Alert` sai.
+**Where**: `app/competition-race.tsx`
+**Depends on**: None
+**Reuses**: `CockpitDialog`
+**Requirement**: REC-08 (AC 1)
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Teste estático: o arquivo não contém `Alert.alert` nem importa `Alert`.
+- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+
+**Tests**: unit
+**Gate**: build
+**Commit**: `fix(competição): erro do GPS em diálogo in-app, sem alerta nativo`
+
+---
+
+#### T25: Corrida contra a lenda sem alerta nativo
+
+**What**: O mesmo de T24 em `app/legend-race.tsx:90`. A tela sai do app na feature `produto-limpo` (AD-004), mas enquanto existir não pode travar.
+**Where**: `app/legend-race.tsx`
+**Depends on**: None
+**Reuses**: `CockpitDialog`
+**Requirement**: REC-08 (AC 1)
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Teste estático: o arquivo não contém `Alert.alert` nem importa `Alert`.
+- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+
+**Tests**: unit
+**Gate**: build
+**Commit**: `fix(lendas): erro do GPS em diálogo in-app, sem alerta nativo`
+
+---
+
+#### T26: Recuperação com buraco de mais de 180 s
+
+**What**: Teste do edge case "mais de 180 s sem pontos no meio": a recuperação aplica a mesma regra de descarte do `detectLaps`, sem tratamento especial.
+**Where**: `test/recovery.test.ts`
+**Depends on**: None
+**Reuses**: `test/helpers/syntheticTrack.ts`
+**Requirement**: edge case da spec (REC-03)
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Teste: um diário com 2 voltas, depois 200 s sem pontos, depois mais 2 voltas → `recover` cria a sessão com exatamente as voltas que `detectLaps` devolve para os mesmos pontos, e a volta que atravessa o buraco não entra.
+- [ ] Gate: `npm test`.
+
+**Tests**: unit
+**Gate**: quick
+**Commit**: `test(gravação): recuperação atravessando buraco de mais de 180 s`
 
 ---
 
