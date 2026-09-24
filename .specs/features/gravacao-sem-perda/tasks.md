@@ -104,6 +104,10 @@ T21 -> T22
 
 T20, T23, T24, T25 e T26 não dependem de nenhuma tarefa da fase.
 
+### Phase 6: Correções do Verificador (iteração 2)
+
+T27 não depende de nenhuma tarefa da fase.
+
 ---
 
 ## Task Breakdown
@@ -815,6 +819,31 @@ No mesmo arquivo fica o `defineTask`, que só chama esse handler.
 **Commit**: `test(gravação): recuperação atravessando buraco de mais de 180 s`
 **Status**: ✅
 **Nota**: o buraco fica no meio da 3ª volta, e a sessão sai com as voltas 1, 2 e 4. Com `maxLapDuration` trocado para 300 s, o teste falha (conferido e revertido).
+
+---
+
+### Phase 6: Correções do Verificador (iteração 2)
+
+#### T27: Teste do caminho real da gravação na tarefa de localização
+
+**What**: Cobrir o estado que a tela de gravação produz em produção (diário ativo **e** `uiActive = true`). Na rodada 2, o mutante que deixa de gravar no diário nesse estado sobreviveu.
+**Where**: `test/locationHandler.test.ts`
+**Depends on**: None
+**Reuses**: `setup(active, uiActive)` do próprio teste
+**Requirement**: REC-01 (AC 1)
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [x] Teste: com diário e tela ativos, os pontos vão ao `buf` e ao diário com o payload completo, e `stopLocationUpdates` não é chamado.
+- [x] Gate: `npm test`; 62 testes passam.
+
+**Tests**: unit
+**Gate**: quick
+**Status**: ✅
+**Commit**: `test(gravação): caminho real da gravação na tarefa de localização`
 
 ---
 

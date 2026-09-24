@@ -81,6 +81,20 @@ test('handleLocations: com diário ativo, os pontos vão ao buf e ao diário', a
   assert.equal(calls.stop, 0);
 });
 
+test('handleLocations: gravação real (diário ativo e tela ativa), os pontos vão ao buf e ao diário e a tarefa segue', async () => {
+  const { buf, journal, store, id, deps, calls } = await setup(true, true);
+  await handleLocations([loc(NOW - 223, 4), loc(NOW - 123, 5)], deps);
+
+  const expected: GpsSample[] = [
+    { t: NOW - 223, lat: -14.86, lng: -40.84, speed: 12, accuracy: 4, heading: 90, altitude: 900, altitudeAccuracy: 3 },
+    { t: NOW - 123, lat: -14.86, lng: -40.84, speed: 12, accuracy: 5, heading: 90, altitude: 900, altitudeAccuracy: 3 },
+  ];
+  assert.deepEqual(buf.samples, expected);
+  await journal.flush();
+  assert.deepEqual(persistedGps(store, id!), expected);
+  assert.equal(calls.stop, 0);
+});
+
 test('handleLocations: sem diário ativo, para a tarefa e nada vai ao diário', async () => {
   const { store, journal, deps, calls } = await setup(false);
   await handleLocations([loc(NOW - 123, 4)], deps);
