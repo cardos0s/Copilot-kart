@@ -495,6 +495,17 @@ export default function RecordingReference() {
         </View>
       )}
 
+      {/* A escrita durável falhou: a gravação segue em memória (REC-10, AC 3).
+          Faixa sem toque; desce quando a da meta está na tela. */}
+      {info.autosaveFailed && (
+        <View
+          pointerEvents="none"
+          style={[s.autosaveBanner, { top: insets.top + spacing.s + (targetReached ? 48 : 0) }]}
+        >
+          <Text style={s.autosaveBannerText}>Salvamento automático falhou</Text>
+        </View>
+      )}
+
       {/* Overlay de transição auto pra cronometragem */}
       {transition && (
         <View style={s.transitionOverlay}>
@@ -834,6 +845,25 @@ const s = StyleSheet.create({
     fontSize: 14,
     letterSpacing: 0.6,
     color: colors.success,
+    textAlign: 'center',
+  },
+  autosaveBanner: {
+    position: 'absolute',
+    left: spacing.xxl,
+    right: spacing.xxl,
+    backgroundColor: colors.surfaceHigh,
+    borderWidth: 1,
+    borderColor: colors.danger,
+    borderRadius: radius.m,
+    paddingVertical: spacing.s,
+    paddingHorizontal: spacing.l,
+    alignItems: 'center',
+  },
+  autosaveBannerText: {
+    fontFamily: fonts.semibold,
+    fontSize: 14,
+    letterSpacing: 0.6,
+    color: colors.danger,
     textAlign: 'center',
   },
   transitionOverlay: {

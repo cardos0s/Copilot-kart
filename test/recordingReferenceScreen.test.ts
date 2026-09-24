@@ -23,3 +23,9 @@ test('recording-reference.tsx: o router.replace para /recording inclui layoutId'
   assert.equal(toRecording.length, 1, 'uma transição para /recording');
   assert.match(toRecording[0], /params:\s*\{[^}]*\blayoutId\b/);
 });
+
+test('recording-reference.tsx: mostra "Salvamento automático falhou" sob info.autosaveFailed', () => {
+  const cond = /\{info\.autosaveFailed && \(([\s\S]*?)\)\}/.exec(SRC);
+  assert.ok(cond, 'há um bloco renderizado sob {info.autosaveFailed && (...)}');
+  assert.ok(cond[1].includes('>Salvamento automático falhou<'));
+});

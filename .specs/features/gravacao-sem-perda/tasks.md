@@ -735,12 +735,14 @@ No mesmo arquivo fica o `defineTask`, que só chama esse handler.
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste estático: o arquivo contém "Salvamento automático falhou" sob a condição `info.autosaveFailed`.
-- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+- [x] Teste estático: o arquivo contém "Salvamento automático falhou" sob a condição `info.autosaveFailed`.
+- [x] Gate: `npm test && npm run typecheck`, só com a baseline; 58 testes passam.
 
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(reconhecimento): aviso quando o salvamento automático falha`
+**Status**: ✅
+**Nota**: a faixa copia o formato da faixa da meta, com borda e texto em vermelho, e desce 48 pt quando a faixa da meta está na tela, para as duas não se sobreporem. Não pede toque.
 
 ---
 
