@@ -45,10 +45,10 @@
 ## Handoff
 
 - **Feature**: `.specs/features/tempos-honestos/` (2ª de 7). A 1ª, `gravacao-sem-perda`, está com o Verificador PASS e a UAT no aparelho pendente.
-- **Phase / Task**: Specify. A spec está escrita e validada e espera a aprovação da Julia. A linha do traçado e os terços exatos foram decididos por ela em 25/09.
+- **Phase / Task**: Design escrito (`design.md`, abordagem A: pontos de fronteira sintéticos), aguardando a aprovação da Julia. A spec foi aprovada em 25/09.
 - **Completed**: gravacao-sem-perda T1–T27.
 - **In-progress**: nada.
-- **Next step**: aprovada a spec, ir para o Design (gate perpendicular e sentido no `lapDetector`, setores interpolados no hook e na análise, p99).
+- **Next step**: aprovado o design, registrar a AD-006 (a volta começa e termina em pontos sintéticos na linha) e quebrar em `tasks.md`.
 - **Blockers**: nenhum. A pendência D1 da gravacao-sem-perda (demo gravando num diário guardado depois de falhar o "Encerrar") fica registrada no `validation.md` dela e não entra aqui.
-- **Uncommitted files**: `.specs/features/tempos-honestos/spec.md`, `CockPit-Guia-do-Testador.pdf`.
+- **Uncommitted files**: `.specs/features/tempos-honestos/design.md`, `CockPit-Guia-do-Testador.pdf`.
 - **Branch**: `feat/tempos-honestos`, criada a partir de `feat/gravacao-sem-perda`.
