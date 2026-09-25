@@ -44,11 +44,11 @@
 
 ## Handoff
 
-- **Feature**: `.specs/features/gravacao-sem-perda/`, a 1ª de 7 (roteiro em `docs/levantamento-loja.md` §7).
-- **Phase / Task**: Execute concluído (T1–T27). O Verificador deu PASS na rodada 3 (`validation.md`), e o `validate_state` está ok.
-- **Completed**: T1–T27; lições L-001 a L-003 registradas como candidatas.
+- **Feature**: `.specs/features/tempos-honestos/` (2ª de 7). A 1ª, `gravacao-sem-perda`, está com o Verificador PASS e a UAT no aparelho pendente.
+- **Phase / Task**: Specify. A spec está escrita e validada e espera a aprovação da Julia. A linha do traçado e os terços exatos foram decididos por ela em 25/09.
+- **Completed**: gravacao-sem-perda T1–T27.
 - **In-progress**: nada.
-- **Next step**: a Julia roda o Roteiro de UAT (`tasks.md`) num dev build por EAS. Depois, decidir sobre o D1 do `validation.md` e seguir para a spec de `tempos-honestos`.
-- **Blockers**: a UAT depende do aparelho. Não houve push; a branch é só local.
-- **Uncommitted files**: `CockPit-Guia-do-Testador.pdf`.
-- **Branch**: `feat/gravacao-sem-perda`.
+- **Next step**: aprovada a spec, ir para o Design (gate perpendicular e sentido no `lapDetector`, setores interpolados no hook e na análise, p99).
+- **Blockers**: nenhum. A pendência D1 da gravacao-sem-perda (demo gravando num diário guardado depois de falhar o "Encerrar") fica registrada no `validation.md` dela e não entra aqui.
+- **Uncommitted files**: `.specs/features/tempos-honestos/spec.md`, `CockPit-Guia-do-Testador.pdf`.
+- **Branch**: `feat/tempos-honestos`, criada a partir de `feat/gravacao-sem-perda`.
