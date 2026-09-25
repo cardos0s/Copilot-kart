@@ -14,7 +14,7 @@ Regras do repo que valem aqui:
 ---
 
 **Design**: `.specs/features/gravacao-sem-perda/design.md`
-**Status**: Draft
+**Status**: Done (Verificador PASS na rodada 3; UAT no aparelho pendente)
 
 ---
 

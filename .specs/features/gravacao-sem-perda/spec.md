@@ -174,21 +174,21 @@ piloto não perdoa.
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| REC-01 | P1: Sobrevive a crash (AC 1, persistência de no máximo 10 s) | Design | Implementing |
-| REC-02 | P1: Sobrevive a crash (AC 2, 6, 7, oferta de recuperação) | Design | Implementing |
-| REC-03 | P1: Sobrevive a crash (AC 3, 4, 8, recuperar sem duplicar) | Design | Implementing |
-| REC-04 | P1: Sobrevive a crash (AC 5, 9, limpeza) | Design | Implementing |
-| REC-05 | P1: Encerrar atômico (AC 1, 2) | Design | Implementing |
-| REC-06 | P1: Encerrar atômico (AC 3, init do banco sem corrida) | Design | Implementing |
-| REC-07 | P1: Sair só com confirmação | Design | Implementing |
-| REC-08 | P1: Sem alerta nativo em paisagem | Design | Implementing |
-| REC-09 | P1: GPS nunca sozinho (AC 1, tarefa órfã) | Design | Implementing |
-| REC-10 | P1: GPS nunca sozinho (AC 2, 3, falhas de início e de escrita) | Design | Implementing |
-| REC-11 | P2: Traçado e setup certos (AC 1) | Design | Implementing |
-| REC-12 | P2: Traçado e setup certos (AC 2, 3, null e migração) | Design | Implementing |
-| REC-13 | P2: Traçado e setup certos (AC 4, bloqueio de nova gravação) | Design | Implementing |
+| REC-01 | P1: Sobrevive a crash (AC 1, persistência de no máximo 10 s) | Design | Verified |
+| REC-02 | P1: Sobrevive a crash (AC 2, 6, 7, oferta de recuperação) | Design | Verified |
+| REC-03 | P1: Sobrevive a crash (AC 3, 4, 8, recuperar sem duplicar) | Design | Verified |
+| REC-04 | P1: Sobrevive a crash (AC 5, 9, limpeza) | Design | Verified |
+| REC-05 | P1: Encerrar atômico (AC 1, 2) | Design | Verified |
+| REC-06 | P1: Encerrar atômico (AC 3, init do banco sem corrida) | Design | Verified |
+| REC-07 | P1: Sair só com confirmação | Design | Verified |
+| REC-08 | P1: Sem alerta nativo em paisagem | Design | Verified |
+| REC-09 | P1: GPS nunca sozinho (AC 1, tarefa órfã) | Design | Verified |
+| REC-10 | P1: GPS nunca sozinho (AC 2, 3, falhas de início e de escrita) | Design | Verified |
+| REC-11 | P2: Traçado e setup certos (AC 1) | Design | Verified |
+| REC-12 | P2: Traçado e setup certos (AC 2, 3, null e migração) | Design | Verified |
+| REC-13 | P2: Traçado e setup certos (AC 4, bloqueio de nova gravação) | Design | Verified |
 
-**Coverage:** 13 total, 0 mapped to tasks, 13 unmapped ⚠️ (Tasks ainda não existe)
+**Coverage:** 13 total, 13 mapeados em tasks (T1–T27), 0 sem tarefa. Verificado pelo Verificador na rodada 3 (24/09): 62 testes, 15/15 mutações mortas. A UAT no aparelho continua pendente (roteiro em `tasks.md`).
 
 ---
 

@@ -44,11 +44,11 @@
 
 ## Handoff
 
-- **Feature**: `.specs/features/gravacao-sem-perda/` (1ª de 7; o roteiro está em `docs/levantamento-loja.md` §7)
-- **Phase / Task**: `tasks.md` escrito (T1–T19, 4 fases) e validado (0 erros), aguardando aprovação. Spec e design foram aprovados em 24/09
-- **Completed**: levantamento; AD-001 a AD-005; spec; design
-- **In-progress**: nada
-- **Next step**: com as tasks aprovadas, criar a branch `feat/gravacao-sem-perda` a partir da `main` e executar a partir da T1
-- **Blockers**: nenhum
-- **Uncommitted files**: `.specs/`, `docs/telemetria.md`, `docs/levantamento-loja.md`, `CockPit-Guia-do-Testador.pdf`
-- **Branch**: main
+- **Feature**: `.specs/features/gravacao-sem-perda/`, a 1ª de 7 (roteiro em `docs/levantamento-loja.md` §7).
+- **Phase / Task**: Execute concluído (T1–T27). O Verificador deu PASS na rodada 3 (`validation.md`), e o `validate_state` está ok.
+- **Completed**: T1–T27; lições L-001 a L-003 registradas como candidatas.
+- **In-progress**: nada.
+- **Next step**: a Julia roda o Roteiro de UAT (`tasks.md`) num dev build por EAS. Depois, decidir sobre o D1 do `validation.md` e seguir para a spec de `tempos-honestos`.
+- **Blockers**: a UAT depende do aparelho. Não houve push; a branch é só local.
+- **Uncommitted files**: `CockPit-Guia-do-Testador.pdf`.
+- **Branch**: `feat/gravacao-sem-perda`.

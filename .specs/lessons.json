@@ -1,0 +1,63 @@
+{
+  "schema": 1,
+  "promote_threshold": 2,
+  "window_days": 45,
+  "quarantine_threshold": 2,
+  "next_id": 4,
+  "lessons": [
+    {
+      "id": "L-001",
+      "key": "surviving_mutant::teste com dependencia injetada precisa cobrir a combinacao de flags que producao de fato gera diario ativo uiactive true nao so os estados isolados",
+      "text": "Teste com dependência injetada precisa cobrir a combinação de flags que produção de fato gera (diário ativo + uiActive=true), não só os estados isolados.",
+      "signal": "surviving_mutant",
+      "scope": "src/recording",
+      "status": "candidate",
+      "features": [
+        "gravacao-sem-perda"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "src/recording/locationHandler.ts:68 (rodada 2) (src/recording)"
+      ],
+      "created": "2026-09-25T00:10:05Z",
+      "last_seen": "2026-09-25T00:10:05Z"
+    },
+    {
+      "id": "L-002",
+      "key": "ac_gap::ao mudar o contrato de um hook compartilhado uselaprecorder fazer grep de todos os chamadores e cobrir o caminho de quem nao passa o parametro novo",
+      "text": "Ao mudar o contrato de um hook compartilhado (useLapRecorder), fazer grep de todos os chamadores e cobrir o caminho de quem não passa o parâmetro novo.",
+      "signal": "ac_gap",
+      "scope": "src/hooks",
+      "status": "candidate",
+      "features": [
+        "gravacao-sem-perda"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "app/legend-race.tsx:88, app/competition-race.tsx:125 (rodada 1) (src/hooks)"
+      ],
+      "created": "2026-09-25T00:10:05Z",
+      "last_seen": "2026-09-25T00:10:05Z"
+    },
+    {
+      "id": "L-003",
+      "key": "ac_gap::ac de mensagem visivel nao fecha no hook exigir teste estatico na tela que renderiza o texto exato da spec sob a condicao",
+      "text": "AC de mensagem visível não fecha no hook: exigir teste estático na tela que renderiza o texto exato da spec sob a condição.",
+      "signal": "ac_gap",
+      "scope": "app",
+      "status": "candidate",
+      "features": [
+        "gravacao-sem-perda"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "REC-10 AC 3 (rodada 1) (app)"
+      ],
+      "created": "2026-09-25T00:10:06Z",
+      "last_seen": "2026-09-25T00:10:06Z"
+    }
+  ]
+}
