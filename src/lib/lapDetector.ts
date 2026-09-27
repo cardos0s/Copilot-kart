@@ -12,15 +12,16 @@
  *      velocidade acima de um limiar por N samples consecutivos. Antes
  *      disso é paddock: jitter de GPS parado, piloto arrumando macacão.
  *
- *   2. "Linha de largada" — é o ponto onde o ritmo começou. Não pedimos
- *      pro usuário marcar; usamos o ponto físico onde ele começou a andar
- *      a sério. Na prática, é onde ele saiu do box pra pista.
+ *   2. "Linha de largada" — com traçado de referência, é a linha do traçado
+ *      (`lineFromLayout`, passada em `options.line`). Sem traçado, é o ponto
+ *      onde o ritmo começou, com o rumo do movimento (`lineFromMotion`).
+ *      A linha é um segmento perpendicular ao rumo, com sentido.
  *
- *   3. "Voltas" — a cada sample depois do início do ritmo, checa se o
- *      piloto voltou pra perto da linha de largada DEPOIS de ter andado
- *      uma distância mínima e por um tempo mínimo. Três validações que
- *      filtram jitter (piloto que cruza, sai 16m e volta não é volta) e
- *      voltas anormalmente rápidas (bug ou teletransporte).
+ *   3. "Voltas" — a volta fecha no instante interpolado em que a trajetória
+ *      atravessa a linha no sentido dela (`crossing`), desde que o piloto
+ *      tenha andado uma distância mínima e a duração fique entre o mínimo
+ *      e o máximo. Cruzamento que não fecha volta (parado na linha, jitter)
+ *      é ignorado e não reinicia a contagem.
  *
  * Performance: O(n) com n = número de samples. Uma sessão de 10min a 10Hz
  * tem 6000 samples; algoritmo roda em <5ms em JS. Pode ser chamado a cada
@@ -28,9 +29,10 @@
  */
 
 import { GpsSample, haversine } from './geometry';
+import { crossing, lineFromMotion, type CrossPoint, type StartLine } from './startLine';
 
 export type DetectLapsOptions = {
-  /** Raio em metros para considerar "cruzou a linha". Default: 15 */
+  /** Meia-largura da linha de chegada, em metros, para cada lado do ponto. Default: 15 */
   lineRadius?: number;
   /** Distância mínima percorrida para fechar uma volta. Default: 300m */
   minLapDistance?: number;
@@ -57,21 +59,25 @@ const DEFAULTS: Required<DetectLapsOptions> = {
 };
 
 export type DetectedLap = {
-  /** Índice em `samples` onde a volta começa (sample imediatamente após cruzar a linha anterior, ou movingStartIdx para a primeira). */
+  /** Índice do 1º ponto cru depois do cruzamento que abre a volta (o próprio ponto de ritmo, na 1ª volta sem traçado). */
   startIdx: number;
-  /** Índice em `samples` onde a volta termina (sample que cruzou a linha). */
+  /** Índice do 1º ponto cru depois do cruzamento que fecha a volta. */
   endIdx: number;
-  /** Duração em ms (samples[endIdx].t - samples[startIdx].t). */
+  /** Cruzamento interpolado que abre a volta. */
+  startCross: CrossPoint;
+  /** Cruzamento interpolado que fecha a volta. */
+  endCross: CrossPoint;
+  /** Duração em ms: round(endCross.t − startCross.t). */
   durationMs: number;
-  /** Timestamp absoluto de início da volta. */
+  /** Timestamp absoluto de início da volta: round(startCross.t). */
   startedAt: number;
 };
 
 export type DetectLapsResult = {
   /** Índice do primeiro sample "em ritmo". -1 se piloto nunca saiu do paddock. */
   movingStartIdx: number;
-  /** Ponto usado como linha de largada/chegada. null se movingStartIdx === -1. */
-  startFinishLine: { lat: number; lng: number } | null;
+  /** Linha de largada/chegada usada (ponto e rumo). null se movingStartIdx === -1. */
+  startFinishLine: StartLine | null;
   /** Voltas fechadas, em ordem cronológica. */
   laps: DetectedLap[];
 };
@@ -115,9 +121,10 @@ function findRitmoStart(
 
 export function detectLaps(
   samples: GpsSample[],
-  options?: DetectLapsOptions
+  options?: DetectLapsOptions & { line?: StartLine | null }
 ): DetectLapsResult {
-  const opts: Required<DetectLapsOptions> = { ...DEFAULTS, ...options };
+  const { line: layoutLine, ...rest } = options ?? {};
+  const opts: Required<DetectLapsOptions> = { ...DEFAULTS, ...rest };
 
   if (samples.length < 10) {
     return { movingStartIdx: -1, startFinishLine: null, laps: [] };
@@ -128,96 +135,55 @@ export function detectLaps(
     return { movingStartIdx: -1, startFinishLine: null, laps: [] };
   }
 
-  const startPoint = samples[movingStartIdx];
-  const startFinishLine = { lat: startPoint.lat, lng: startPoint.lng };
+  const line = layoutLine ?? lineFromMotion(samples, movingStartIdx);
 
-  // Varredura O(n) acumulando distância. Cada vez que a gente "fecha"
-  // uma volta, zera o acumulador e usa o sample de fechamento como novo
-  // startIdx pra próxima volta.
+  // Cruzamento que abriu a volta em curso. Sem traçado, a linha passa pelo
+  // ponto em que o ritmo começou, e esse ponto é o primeiro cruzamento
+  // (f = 0). Com traçado, o trecho até o primeiro cruzamento não é volta.
+  let open: { cross: CrossPoint; idx: number } | null = null;
+  if (!layoutLine) {
+    const p = samples[movingStartIdx];
+    open = { cross: { t: p.t, lat: p.lat, lng: p.lng, speed: p.speed }, idx: movingStartIdx };
+  }
+  let distSinceOpen = 0;
+
   const laps: DetectedLap[] = [];
-  let currentLapStartIdx = movingStartIdx;
-  let distSinceLapStart = 0;
-  let justCrossed = true; // evita múltiplas detecções no mesmo cruzamento
-  let prev = samples[movingStartIdx];
-  // Tempo de início da volta atual — INTERPOLADO no cruzamento da linha pra
-  // dar precisão de ms. Sem isso, o tempo "snapa" no sample mais próximo
-  // (GPS ~10Hz), virando múltiplos de ~100ms tipo 43.000 / 43.600.
-  let lapStartT = samples[movingStartIdx].t;
-  const cos0 = Math.cos((startFinishLine.lat * Math.PI) / 180);
-  const refineCrossingT = (idx: number): number => {
-    const Lx = startFinishLine.lng * cos0;
-    const Ly = startFinishLine.lat;
-    let bestD = Infinity;
-    let bestT = samples[idx].t;
-    const segs: [number, number][] = [];
-    if (idx - 1 >= 0) segs.push([idx - 1, idx]);
-    if (idx + 1 < samples.length) segs.push([idx, idx + 1]);
-    for (const [ai, bi] of segs) {
-      const ax = samples[ai].lng * cos0, ay = samples[ai].lat;
-      const bx = samples[bi].lng * cos0, by = samples[bi].lat;
-      const abx = bx - ax, aby = by - ay;
-      const len2 = abx * abx + aby * aby;
-      let f = len2 > 0 ? ((Lx - ax) * abx + (Ly - ay) * aby) / len2 : 0;
-      if (f < 0) f = 0; else if (f > 1) f = 1;
-      const px = ax + f * abx, py = ay + f * aby;
-      const dx = px - Lx, dy = py - Ly;
-      const d = dx * dx + dy * dy;
-      if (d < bestD) {
-        bestD = d;
-        bestT = samples[ai].t + f * (samples[bi].t - samples[ai].t);
-      }
-    }
-    return bestT;
-  };
+  const firstPair = layoutLine ? Math.max(1, movingStartIdx) : movingStartIdx + 1;
+  for (let i = firstPair; i < samples.length; i++) {
+    const a = samples[i - 1];
+    const b = samples[i];
+    if (open) distSinceOpen += haversine(a, b);
 
-  for (let i = movingStartIdx + 1; i < samples.length; i++) {
-    const curr = samples[i];
-    distSinceLapStart += haversine(prev, curr);
-    prev = curr;
+    const c = crossing(a, b, line, opts.lineRadius);
+    if (!c) continue;
+    const cross: CrossPoint = { t: c.t, lat: c.lat, lng: c.lng, speed: c.speed };
 
-    const distToStart = haversine(curr, startFinishLine);
-
-    // Saiu da zona de cruzamento? Libera a flag pro próximo cruzamento contar.
-    if (distToStart > opts.lineRadius * 2) {
-      justCrossed = false;
-    }
-
-    const elapsed = curr.t - samples[currentLapStartIdx].t;
-
-    const isClosingLap =
-      !justCrossed &&
-      distToStart < opts.lineRadius &&
-      distSinceLapStart >= opts.minLapDistance &&
-      elapsed >= opts.minLapDuration;
-
-    if (!isClosingLap) continue;
-
-    // Cruzamento interpolado (sub-sample) → tempo de volta com precisão de ms.
-    const crossT = refineCrossingT(i);
-
-    // Volta anormalmente longa (piloto parou no meio, foi no box, etc.)
-    // → descarta, mas ainda reseta o ponteiro. A próxima tentativa conta
-    // a partir daqui.
-    if (elapsed > opts.maxLapDuration) {
-      currentLapStartIdx = i;
-      distSinceLapStart = 0;
-      justCrossed = true;
-      lapStartT = crossT;
+    if (!open) {
+      open = { cross, idx: i };
+      distSinceOpen = 0;
       continue;
     }
 
-    laps.push({
-      startIdx: currentLapStartIdx,
-      endIdx: i,
-      durationMs: Math.round(crossT - lapStartT),
-      startedAt: Math.round(lapStartT),
-    });
+    const elapsed = cross.t - open.cross.t;
+    // Piloto parado na linha, jitter, volta curta demais: o cruzamento é
+    // ignorado e não reinicia a contagem.
+    if (distSinceOpen < opts.minLapDistance || elapsed < opts.minLapDuration) continue;
 
-    lapStartT = crossT;
-    currentLapStartIdx = i;
-    distSinceLapStart = 0;
-    justCrossed = true;
+    // Volta anormalmente longa (parou no meio, foi ao box): não é volta, mas
+    // a próxima conta a partir deste cruzamento.
+    if (elapsed <= opts.maxLapDuration) {
+      laps.push({
+        startIdx: open.idx,
+        endIdx: i,
+        startCross: open.cross,
+        endCross: cross,
+        durationMs: Math.round(cross.t - open.cross.t),
+        startedAt: Math.round(open.cross.t),
+      });
+    }
+    open = { cross, idx: i };
+    distSinceOpen = 0;
   }
 
-  return { movingStartIdx, startFinishLine, laps };
+  return { movingStartIdx, startFinishLine: line, laps };
 }

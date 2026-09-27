@@ -117,16 +117,16 @@ T11, T12, T13, T14 e T15 não dependem de nenhuma tarefa da fase. Todas as da fa
 - Skill: NONE
 
 **Done when**:
-- [ ] Os 5 casos atuais de `test/lapDetector.test.ts` continuam passando, sem mudar o que afirmam.
-- [ ] Teste: pista sintética a 10 Hz com duração real D, com todas as voltas (inclusive a 1ª) dentro de |duração − D| ≤ 20 ms.
-- [ ] Teste: a mesma a 5 Hz, também ≤ 20 ms.
-- [ ] Teste: com `line` do traçado e a gravação começando no meio da pista já andando, o trecho antes do 1º cruzamento não vira volta, e as voltas saem ≤ 20 ms.
-- [ ] Teste: duas gravações no mesmo traçado, começando em pontos diferentes, dão o mesmo tempo (± 20 ms).
-- [ ] Teste: o piloto para na linha e o jitter faz ir e voltar, mas o resultado é um cruzamento só (nenhuma volta extra).
-- [ ] Teste: um trajeto na contramão sobre a linha não fecha volta.
-- [ ] Teste: um buraco de mais de 2 s exatamente no cruzamento não fecha a volta ali.
-- [ ] Teste: `scripts/bench-leandro-melo-3laps.gpx` (parse com `fast-xml-parser`, já em devDependencies) dá 3 voltas, e pelo menos uma com `durationMs % 100 !== 0`.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Os 5 casos atuais de `test/lapDetector.test.ts` continuam passando, sem mudar o que afirmam.
+- [x] Teste: pista sintética a 10 Hz com duração real D, com todas as voltas (inclusive a 1ª) dentro de |duração − D| ≤ 20 ms.
+- [x] Teste: a mesma a 5 Hz, também ≤ 20 ms.
+- [x] Teste: com `line` do traçado e a gravação começando no meio da pista já andando, o trecho antes do 1º cruzamento não vira volta, e as voltas saem ≤ 20 ms.
+- [x] Teste: duas gravações no mesmo traçado, começando em pontos diferentes, dão o mesmo tempo (± 20 ms).
+- [x] Teste: o piloto para na linha e o jitter faz ir e voltar, mas o resultado é um cruzamento só (nenhuma volta extra).
+- [x] Teste: um trajeto na contramão sobre a linha não fecha volta.
+- [x] Teste: um buraco de mais de 2 s exatamente no cruzamento não fecha a volta ali.
+- [x] Teste: `scripts/bench-leandro-melo-3laps.gpx` (parse com `fast-xml-parser`, já em devDependencies) dá 3 voltas, e pelo menos uma com `durationMs % 100 !== 0`.
+- [x] Gate: `npm test`, contagem registrada: 79 testes, 0 falhas.
 
 **Tests**: unit
 **Gate**: quick
