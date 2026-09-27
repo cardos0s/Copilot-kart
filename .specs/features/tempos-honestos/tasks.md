@@ -90,13 +90,13 @@ T11, T12, T13, T14 e T15 não dependem de nenhuma tarefa da fase. Todas as da fa
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: um par a e b que atravessa a linha no sentido certo devolve `t = t_a + f·(t_b − t_a)` com o `f` geométrico exato (um caso com `f = 0,25` conhecido).
-- [ ] Teste: o mesmo par invertido (contramão) devolve `null`.
-- [ ] Teste: um par que passa a 16 m do ponto (fora da meia-largura de 15 m) devolve `null`; a 14 m, cruza.
-- [ ] Teste: um par que chega perto sem atravessar (`u_a` e `u_b` do mesmo lado) devolve `null`.
-- [ ] Teste: um par com `t_b − t_a` de 2001 ms devolve `null`.
-- [ ] Teste: `lineFromLayout` com 4 pontos ou comprimento zero devolve `null`; com um traçado válido, o rumo aponta para o primeiro ponto a 5 m ou mais (± 1°).
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste: um par a e b que atravessa a linha no sentido certo devolve `t = t_a + f·(t_b − t_a)` com o `f` geométrico exato (um caso com `f = 0,25` conhecido).
+- [x] Teste: o mesmo par invertido (contramão) devolve `null`.
+- [x] Teste: um par que passa a 16 m do ponto (fora da meia-largura de 15 m) devolve `null`; a 14 m, cruza.
+- [x] Teste: um par que chega perto sem atravessar (`u_a` e `u_b` do mesmo lado) devolve `null`.
+- [x] Teste: um par com `t_b − t_a` de 2001 ms devolve `null`.
+- [x] Teste: `lineFromLayout` com 4 pontos ou comprimento zero devolve `null`; com um traçado válido, o rumo aponta para o primeiro ponto a 5 m ou mais (± 1°).
+- [x] Gate: `npm test`, contagem registrada: 70 testes, 0 falhas.
 
 **Tests**: unit
 **Gate**: quick
