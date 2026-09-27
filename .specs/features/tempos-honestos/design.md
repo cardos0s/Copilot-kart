@@ -1,7 +1,7 @@
 # Tempos honestos — Design
 
 **Spec**: `.specs/features/tempos-honestos/spec.md`
-**Status**: Draft
+**Status**: Approved (27/09)
 
 ---
 
@@ -202,7 +202,7 @@ migração. As voltas antigas continuam sem fronteira, e a análise delas se com
 | Percentil | Nearest-rank sobre os pontos filtrados | Determinístico e sem interpolação, fácil de testar com valor exato |
 | `trustsRaw` no relógio | Liga no primeiro sub-segundo e vale até o fim da gravação | O aparelho que já mostrou sub-segundo tem relógio GNSS confiável |
 
-**Decisão de projeto (entra no `STATE.md` como AD-006 se o design for aprovado):** a volta
+**Decisão de projeto (AD-006 no `STATE.md`):** a volta
 salva começa e termina em pontos sintéticos na linha de chegada, e **toda** régua de tempo
 (volta, setores, delta) é derivada desses pontos. Uma feature futura que mexa em volta
 (sync da `conta-e-backup`, ranking da `nuvem-segura`) precisa preservar essa invariante.

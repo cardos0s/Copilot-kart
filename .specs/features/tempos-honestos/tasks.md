@@ -1,0 +1,507 @@
+# Tempos honestos — Tasks
+
+## Execution Protocol (MANDATORY -- do not skip)
+
+Implement these tasks with the `tlc-spec-driven` skill: **activate it by name and follow its Execute flow and Critical Rules.** Do not search for skill files by filesystem path. The skill is the source of truth for the full flow (per-task cycle, sub-agent delegation, adequacy review, Verifier, discrimination sensor).
+
+**If the skill cannot be activated, STOP and tell the user - do not proceed without it.**
+
+Regras do repo que valem aqui:
+- Commits em Conventional Commits, em português, com a descrição em minúscula. **Sem `Co-Authored-By` e sem nenhuma referência a IA** no histórico.
+- Branch `feat/tempos-honestos`, criada a partir de `feat/gravacao-sem-perda`. Nada de push sem autorização explícita.
+- **Não rodar build nativo, prebuild, `expo start` nem `eas`.** Trava a máquina.
+- AD-006 (`STATE.md`): a volta começa e termina em pontos sintéticos na linha. Nenhuma tarefa pode quebrar isso.
+
+---
+
+**Design**: `.specs/features/tempos-honestos/design.md`
+**Status**: Draft
+
+---
+
+## Test Coverage Matrix
+
+> Segue a matriz da `gravacao-sem-perda`, aprovada em 24/09. Diretrizes: não há `AGENTS.md`, `CONTRIBUTING.md` nem config de cobertura, então valem os defaults fortes. Os testes existentes (62, `test/*.test.ts`) são o piso de estilo.
+
+| Code Layer | Required Test Type | Coverage Expectation | Location Pattern | Run Command |
+| ---------- | ------------------ | -------------------- | ---------------- | ----------- |
+| Lógica pura (`src/lib/*.ts`, `src/recording/*.ts`) | unit | Todos os ramos; 1:1 com os ACs de TMP-01 a TMP-14; todo edge case listado tem teste; valores numéricos da spec (≤ 20 ms, < 81 km/h) assertados exatamente | `test/*.test.ts` | `npm test` |
+| Invariantes estáticas das telas (fonte da régua, `—` no pico) | unit (estático, lê o fonte) | Uma asserção por AC que só a tela cobre | `test/*.test.ts` | `npm test` |
+| Hook e telas React Native | none | Build gate mais a UAT no aparelho, ao fim | – | build gate + UAT |
+| Documentação (`docs/telemetria.md`) | none | Build gate | – | build gate |
+
+## Gate Check Commands
+
+| Gate Level | When to Use | Command |
+| ---------- | ----------- | ------- |
+| Quick | Tarefas com teste unitário | `npm test` |
+| Full | Igual ao Quick | `npm test` |
+| Build | Tarefas sem teste, e o fim de cada fase | `npm test && npm run typecheck` |
+
+**Baseline do typecheck:** os mesmos 8 erros da `gravacao-sem-perda`:
+- `app/career.tsx:195`
+- `app/leaderboard.tsx:125`, `:141`, `:166`
+- `app/recap.tsx:131`
+- `app/onboarding/email.tsx:31`, `:34`
+- `app/onboarding/mode.tsx:39`
+
+O gate passa só se aparecerem exatamente esses. O `tsc` demora mais de 2 min: rodar com timeout de 600000 ms.
+
+**Contagem de testes:** hoje são 62. Ela só pode crescer. Cada tarefa registra no "Done when" o número real depois dela.
+
+---
+
+## Execution Plan
+
+### Phase 1: Núcleo puro (testado em Node)
+
+```
+T1 -> T2
+T2 -> T3
+T3 -> T4
+```
+
+T5, T6, T7 e T8 não dependem de nenhuma tarefa da fase.
+
+### Phase 2: Fiação
+
+```
+T9 -> T10
+```
+
+T11, T12, T13, T14 e T15 não dependem de nenhuma tarefa da fase. Todas as da fase dependem da fase 1.
+
+---
+
+## Task Breakdown
+
+### Phase 1: Núcleo puro (testado em Node)
+
+#### T1: Linha de chegada e teste de cruzamento
+
+**What**: Criar `lineFromLayout`, `lineFromMotion` e `crossing(a, b, line, halfWidthM = 15)`, com o segmento perpendicular ao rumo e sentido obrigatório. Estender `test/helpers/syntheticTrack.ts` com taxa (Hz), fase inicial e duração real conhecida.
+**Where**: `src/lib/startLine.ts`
+**Depends on**: None
+**Reuses**: `makeLocalProjector`, `haversine`
+**Requirement**: TMP-01 (AC 1), TMP-03 (AC 5, 6), TMP-04, edge cases do traçado curto e do buraco de 2 s
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Teste: um par a e b que atravessa a linha no sentido certo devolve `t = t_a + f·(t_b − t_a)` com o `f` geométrico exato (um caso com `f = 0,25` conhecido).
+- [ ] Teste: o mesmo par invertido (contramão) devolve `null`.
+- [ ] Teste: um par que passa a 16 m do ponto (fora da meia-largura de 15 m) devolve `null`; a 14 m, cruza.
+- [ ] Teste: um par que chega perto sem atravessar (`u_a` e `u_b` do mesmo lado) devolve `null`.
+- [ ] Teste: um par com `t_b − t_a` de 2001 ms devolve `null`.
+- [ ] Teste: `lineFromLayout` com 4 pontos ou comprimento zero devolve `null`; com um traçado válido, o rumo aponta para o primeiro ponto a 5 m ou mais (± 1°).
+- [ ] Gate: `npm test`, contagem registrada.
+
+**Tests**: unit
+**Gate**: quick
+**Commit**: `feat(tempos): linha de chegada com sentido e cruzamento interpolado`
+
+---
+
+#### T2: Detector de voltas pelo cruzamento da linha
+
+**What**: Reescrever o miolo de `detectLaps` sobre `crossing`, com a opção `line`. `DetectedLap` ganha `startCross`/`endCross`, e duração e `startedAt` saem deles. Saem a trava `justCrossed` e o raio em torno do ponto. As regras de 300 m e de 25–180 s continuam.
+**Where**: `src/lib/lapDetector.ts`
+**Depends on**: T1
+**Reuses**: `findRitmoStart`, `DEFAULTS`
+**Requirement**: TMP-01, TMP-02, TMP-03, TMP-04, TMP-05, edge cases de parar na linha e do buraco
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Os 5 casos atuais de `test/lapDetector.test.ts` continuam passando, sem mudar o que afirmam.
+- [ ] Teste: pista sintética a 10 Hz com duração real D, com todas as voltas (inclusive a 1ª) dentro de |duração − D| ≤ 20 ms.
+- [ ] Teste: a mesma a 5 Hz, também ≤ 20 ms.
+- [ ] Teste: com `line` do traçado e a gravação começando no meio da pista já andando, o trecho antes do 1º cruzamento não vira volta, e as voltas saem ≤ 20 ms.
+- [ ] Teste: duas gravações no mesmo traçado, começando em pontos diferentes, dão o mesmo tempo (± 20 ms).
+- [ ] Teste: o piloto para na linha e o jitter faz ir e voltar, mas o resultado é um cruzamento só (nenhuma volta extra).
+- [ ] Teste: um trajeto na contramão sobre a linha não fecha volta.
+- [ ] Teste: um buraco de mais de 2 s exatamente no cruzamento não fecha a volta ali.
+- [ ] Teste: `scripts/bench-leandro-melo-3laps.gpx` (parse com `fast-xml-parser`, já em devDependencies) dá 3 voltas, e pelo menos uma com `durationMs % 100 !== 0`.
+- [ ] Gate: `npm test`, contagem registrada.
+
+**Tests**: unit
+**Gate**: quick
+**Commit**: `feat(tempos): volta fecha no cruzamento interpolado da linha`
+
+---
+
+#### T3: Volta com pontos de fronteira
+
+**What**: `sliceLaps(samples, imu, line?)` monta cada volta como `[startCross synthetic, pontos internos, endCross synthetic]` e recorta a IMU por `[startCross.t, endCross.t]`. `GpsSample` ganha o campo opcional `synthetic?: true`.
+**Where**: `src/recording/finishSession.ts`
+**Depends on**: T2
+**Reuses**: `sliceLaps` atual
+**Requirement**: TMP-06 (base), AD-006
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Teste: em cada volta, `samples[0].t === startCross.t`, `samples[last].t === endCross.t`, os dois têm `synthetic: true` e `durationMs === round(last.t − first.t)`.
+- [ ] Teste: o `endCross` da volta N é igual ao `startCross` da volta N+1 (mesma lat/lng/t).
+- [ ] Teste: nenhum ponto interno fica fora de `(startCross.t, endCross.t)`.
+- [ ] Teste: a IMU da volta fica toda dentro de `[startCross.t, endCross.t]`.
+- [ ] Os testes existentes de `finishSession` e `recovery` continuam passando.
+- [ ] Gate: `npm test`, contagem registrada.
+
+**Tests**: unit
+**Gate**: quick
+**Commit**: `feat(tempos): volta começa e termina na linha de chegada`
+
+---
+
+#### T4: Régua única de S1/S2/S3
+
+**What**: Criar `sectorSplits(lapSamples, ref)`, `referenceFromLayout(samples)` e `referenceFromLap(lap)`.
+**Where**: `src/lib/sectors.ts`
+**Depends on**: T3
+**Reuses**: `buildReferenceLap`, `matchLapToReference`, `interpolateTimeAtS`
+**Requirement**: TMP-07, TMP-09
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Teste: numa volta sintética com fronteiras, S1, S2 e S3 correspondem aos terços do comprimento do traçado (em velocidade constante, cada um é D/3 ± 20 ms).
+- [ ] Teste: `s1 + s2 + s3 === durationMs` (± 1 ms).
+- [ ] Teste: numa volta em curso que ainda não chegou a 2/3, `s2Ms` e `s3Ms` são `null` e `s1Ms` é número.
+- [ ] Teste: a mesma volta, calculada como "em curso" no fechamento e como "fechada", dá os mesmos S1/S2/S3 (diferença ≤ 20 ms).
+- [ ] Teste: sem traçado, `referenceFromLap(melhorVolta)` é usado e os terços saem do comprimento dessa volta.
+- [ ] Gate: `npm test`, contagem registrada.
+
+**Tests**: unit
+**Gate**: quick
+**Commit**: `feat(tempos): uma régua só para S1, S2 e S3`
+
+---
+
+#### T5: Delta ao vivo começa no início do traçado
+
+**What**: `DeltaTracker.resetLap()` põe o hint no segmento 0.
+**Where**: `src/lib/realtimeDelta.ts`
+**Depends on**: None
+**Reuses**: `DeltaTracker`
+**Requirement**: TMP-10
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Teste: depois de `resetLap()`, o primeiro ponto em cima da linha (que também coincide com o fim da polilinha) casa com `sCurrent < 5 % do comprimento`.
+- [ ] Gate: `npm test`, contagem registrada.
+
+**Tests**: unit
+**Gate**: quick
+**Commit**: `fix(tempos): delta da volta nova casa no início do traçado`
+
+---
+
+#### T6: Pico de velocidade pelo percentil 99
+
+**What**: `peakSpeedMs` e `peakSpeedMsOfLaps` passam a devolver o p99 (nearest-rank) dos pontos com precisão de até 10 m, ou `null`.
+**Where**: `src/lib/speed.ts`
+**Depends on**: None
+**Reuses**: nada
+**Requirement**: TMP-11 (AC 1, 2, 4)
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Teste: numa volta com cerca de 500 pontos a ~80 km/h e um único ponto a 150 km/h, o pico fica abaixo de 81 km/h.
+- [ ] Teste: o p99 bate com o nearest-rank calculado à mão num conjunto pequeno conhecido.
+- [ ] Teste: pontos com precisão acima de 10 m são ignorados; sem nenhum ponto bom, o resultado é `null`.
+- [ ] Gate: `npm test`, contagem registrada.
+
+**Tests**: unit
+**Gate**: quick
+**Commit**: `fix(tempos): pico de velocidade ignora fix ruim isolado`
+
+---
+
+#### T7: Insights com dados limpos e média correta
+
+**What**: `buildLapInsight` aplica `cleanSamples(10)` e `repairDegenerateTimestamps` em cada volta, e divide a média de cada curva só pelas voltas válidas naquela curva. Criar também `lapsForInsight(sessions, anchor)`, que filtra pelo traçado da sessão âncora.
+**Where**: `src/lib/lapInsight.ts`
+**Depends on**: None
+**Reuses**: `cleanSamples`, `repairDegenerateTimestamps`
+**Requirement**: TMP-12, TMP-13
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Teste: 3 voltas boas e 1 com a curva 2 inválida dão, na curva 2, a média exata das 3 boas.
+- [ ] Teste: uma volta com timestamps degenerados é reparada antes de entrar (o resultado bate com o da mesma volta com timestamps corretos, ± 20 ms na perda da curva).
+- [ ] Teste: fixes acima de 10 m não entram.
+- [ ] Teste: `lapsForInsight` com sessões de dois traçados na mesma pista devolve só as do traçado da âncora.
+- [ ] Gate: `npm test`, contagem registrada.
+
+**Tests**: unit
+**Gate**: quick
+**Commit**: `fix(insights): mesma limpeza da análise e média só com voltas válidas`
+
+---
+
+#### T8: Timestamp do GPS confiável no segundo cheio
+
+**What**: `handleLocations` ganha `clock: { trustsRaw; lastT }`. O primeiro sub-segundo liga `trustsRaw`, e todo `t` emitido é `max(t, lastT + 1)`. O `locationTask.ts` zera o `clock` em cada gravação.
+**Where**: `src/recording/locationHandler.ts`
+**Depends on**: None
+**Reuses**: regra atual de timestamp
+**Requirement**: TMP-14
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Teste: um lote com t = …49.900, …50.000, …50.100 mantém os três timestamps originais.
+- [ ] Teste: um aparelho que só entrega timestamps quantizados mantém o comportamento atual (horário de chegada espalhado a 100 ms).
+- [ ] Teste: os timestamps emitidos são estritamente crescentes entre lotes, inclusive quando um lote traz um `t` repetido.
+- [ ] Os testes existentes de `locationHandler` continuam passando.
+- [ ] Gate: `npm test`, contagem registrada.
+
+**Tests**: unit
+**Gate**: quick
+**Commit**: `fix(gravação): timestamp do GPS confiável mesmo no segundo cheio`
+
+---
+
+### Phase 2: Fiação
+
+#### T9: Mesma linha no "Encerrar" e na recuperação
+
+**What**: `RecordingMeta` ganha o campo opcional `line`, sem mudar `version`. `finishRecording` e `recover` passam `meta.line` ao `sliceLaps` e ao `summarize`. Um diário antigo sem `line` usa a linha inferida.
+**Where**: `src/recording/recovery.ts`
+**Depends on**: None
+**Reuses**: T3
+**Requirement**: TMP-06
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Teste: um diário com `meta.line` recupera voltas com o mesmo tempo (± 1 ms) que o `detectLaps` com essa linha sobre os mesmos pontos.
+- [ ] Teste: `finishRecording` com `meta.line` salva voltas com `startCross` na linha do traçado.
+- [ ] Teste: um diário sem `line` (formato antigo) continua legível e recupera com a linha inferida.
+- [ ] Gate: `npm test`, contagem registrada.
+
+**Tests**: unit
+**Gate**: quick
+**Commit**: `feat(tempos): a recuperação e o encerrar usam a linha da gravação`
+
+---
+
+#### T10: Hook usa a linha do traçado e a régua única
+
+**What**: No `useLapRecorder`:
+- `setLayoutReference` guarda a `line` via `lineFromLayout` e o `ReferenceLap` do traçado;
+- o `start()` inclui `line` na meta do diário;
+- o poll chama `detectLaps(all, { line })`;
+- `currentSectors` e `lastClosedLapSectors` saem de `sectorSplits` sobre a volta em curso e a fechada, que passam a ser as mesmas da publicação;
+- sai a marcação de limite por `last.t`;
+- o `stop()` usa `sliceLaps(…, line)`.
+**Where**: `src/hooks/useLapRecorder.ts`
+**Depends on**: T9
+**Reuses**: T1–T4
+**Requirement**: TMP-05, TMP-06, TMP-07 (AC 2), TMP-08
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Teste estático: o hook importa `sectorSplits` e `lineFromLayout`, e não contém mais `sectorBoundaryTsRef`.
+- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+
+**Tests**: unit
+**Gate**: build
+**Commit**: `feat(tempos): cockpit usa a linha do traçado e a régua única de setores`
+
+---
+
+#### T11: Análise da sessão com a régua única
+
+**What**: Na tela de sessão, S1/S2/S3 saem de `sectorSplits` contra o traçado da sessão (`getLayout(session.layoutId)`) ou, sem traçado, contra a melhor volta. Sai o `groupThirds` 7/7/6. O pico usa o `peakSpeedMs` novo (com "—" quando `null`), inclusive no marcador do mapa (`:1315-1322`).
+**Where**: `app/session/[id].tsx`
+**Depends on**: None
+**Reuses**: T4, T6
+**Requirement**: TMP-07 (AC 3), TMP-09, TMP-11 (AC 3)
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Teste estático: o arquivo não define `groupThirds`, importa `sectorSplits` e não calcula mais o pico por laço de máximo bruto.
+- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+
+**Tests**: unit
+**Gate**: build
+**Commit**: `feat(sessão): setores e pico pela mesma régua do cockpit`
+
+---
+
+#### T12: Pico na home
+
+**What**: A home usa `peakSpeedMsOfLaps` novo e mostra "—" quando o valor é `null`.
+**Where**: `app/(tabs)/index.tsx`
+**Depends on**: None
+**Reuses**: T6
+**Requirement**: TMP-11 (AC 3, 4)
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Teste estático: o valor `null` do pico chega à UI como "—".
+- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+
+**Tests**: unit
+**Gate**: build
+**Commit**: `fix(home): pico de velocidade sem fix ruim`
+
+---
+
+#### T13: Insights só do mesmo traçado
+
+**What**: `app/(tabs)/insights.tsx` usa `lapsForInsight` (T7) para montar o conjunto.
+**Where**: `app/(tabs)/insights.tsx`
+**Depends on**: None
+**Reuses**: T7
+**Requirement**: TMP-13
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Teste estático: a tela chama `lapsForInsight`, e o filtro só por `trackId` saiu.
+- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+
+**Tests**: unit
+**Gate**: build
+**Commit**: `fix(insights): sua volta só com o mesmo traçado`
+
+---
+
+#### T14: Pico nulo no prompt da IA
+
+**What**: `runPostSaveEffects` manda `peakKmh: null` para `requestQuickInsight` quando o pico é `null`, em vez de 0.
+**Where**: `src/recording/postSave.ts`
+**Depends on**: None
+**Reuses**: T6
+**Requirement**: TMP-11 (AC 3)
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Teste: numa volta sem nenhum ponto de até 10 m, a IA recebe `peakKmh: null`.
+- [ ] Teste: numa volta com um ponto isolado a 150 km/h, a IA recebe menos de 81 km/h.
+- [ ] Gate: `npm test`, contagem registrada.
+
+**Tests**: unit
+**Gate**: quick
+**Commit**: `fix(tempos): IA recebe o pico honesto`
+
+---
+
+#### T15: `telemetria.md` com as regras novas
+
+**What**: Atualizar os §2, §4, §6, §8, §10, §12 e §13 do `docs/telemetria.md`: linha com sentido e segmento, pontos de fronteira (AD-006), terços exatos, p99, relógio `trustsRaw` e as constantes. Corrigir também os erros que o levantamento de 24/09 achou no documento.
+**Where**: `docs/telemetria.md`
+**Depends on**: None
+**Reuses**: `docs/levantamento-loja.md` §2 ("Correções ao `telemetria.md`")
+**Requirement**: Success Criteria da spec
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Cada constante do §12 aponta para o arquivo em que está hoje.
+- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+
+**Tests**: none
+**Gate**: build
+**Commit**: `docs(telemetria): regras novas de linha, setores e pico`
+
+---
+
+## Phase Execution Map
+
+Phase 1 → Phase 2. As dependências dentro de cada fase estão nos diagramas do Execution Plan.
+A execução é sequencial, uma tarefa por vez, na ordem dos números.
+
+---
+
+## Roteiro de UAT no aparelho (depois da T15)
+
+1. Gravar 3 voltas numa pista **com traçado**, começando já andando. A 1ª volta só conta no primeiro cruzamento da linha, e os tempos não terminam todos em 00.
+2. Com a equipe no painel web, conferir que o S1/S2/S3 publicado no fechamento da volta é igual ao da análise da sessão (± 0,02 s).
+3. Gravar numa pista **sem traçado**: a análise mostra S1/S2/S3 pela melhor volta, e o cockpit fica sem setores.
+4. Passar pela linha na contramão (box): não fecha volta.
+5. A home e a sessão mostram o pico, e "—" quando não há ponto bom.
+
+---
+
+## Task Granularity Check
+
+| Task | Scope | Status |
+| ---- | ----- | ------ |
+| T1 | 3 funções da linha, mais a extensão do helper de teste | ⚠️ coeso |
+| T2 | 1 função (`detectLaps`) | ✅ |
+| T3 | 1 função (`sliceLaps`) | ✅ |
+| T4 | 1 função e 2 construtores | ⚠️ coeso |
+| T5 | 1 método | ✅ |
+| T6 | 2 funções irmãs | ✅ |
+| T7 | 1 função e 1 filtro | ⚠️ coeso |
+| T8 | 1 handler | ✅ |
+| T9 | 1 fluxo (meta → slice) | ✅ |
+| T10 | 1 hook | ✅ |
+| T11 | 1 tela | ✅ |
+| T12 | 1 tela | ✅ |
+| T13 | 1 tela | ✅ |
+| T14 | 1 função | ✅ |
+| T15 | 1 documento | ✅ |
+
+## Diagram-Definition Cross-Check
+
+| Task | Depends On (task body) | Diagram Shows | Status |
+| ---- | ---------------------- | ------------- | ------ |
+| T1 | None | – | ✅ |
+| T2 | T1 | T1 → T2 | ✅ |
+| T3 | T2 | T2 → T3 | ✅ |
+| T4 | T3 | T3 → T4 | ✅ |
+| T5–T8 | None | – | ✅ |
+| T9 | None (usa a fase 1) | – | ✅ |
+| T10 | T9 | T9 → T10 | ✅ |
+| T11–T15 | None (usam a fase 1) | – | ✅ |
+
+## Test Co-location Validation
+
+| Task | Code Layer Created/Modified | Matrix Requires | Task Says | Status |
+| ---- | --------------------------- | --------------- | --------- | ------ |
+| T1–T9, T14 | lógica pura | unit | unit | ✅ |
+| T10 | hook RN com invariante estática | unit (estático) | unit | ✅ |
+| T11–T13 | tela RN com invariante estática | unit (estático) | unit | ✅ |
+| T15 | documentação | none | none | ✅ |
