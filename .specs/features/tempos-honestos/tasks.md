@@ -15,7 +15,7 @@ Regras do repo que valem aqui:
 ---
 
 **Design**: `.specs/features/tempos-honestos/design.md`
-**Status**: Draft
+**Status**: Approved (27/09)
 
 ---
 
