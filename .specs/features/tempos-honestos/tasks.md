@@ -71,7 +71,7 @@ T5, T6, T7 e T8 não dependem de nenhuma tarefa da fase. A T16 entrou depois da 
 T9 -> T10
 ```
 
-T11, T12, T13, T14 e T15 não dependem de nenhuma tarefa da fase. Todas as da fase dependem da fase 1.
+T11, T12, T13, T14, T15 e T17 não dependem de nenhuma tarefa da fase. Todas as da fase dependem da fase 1.
 
 ---
 
@@ -470,6 +470,28 @@ T11, T12, T13, T14 e T15 não dependem de nenhuma tarefa da fase. Todas as da fa
 **Tests**: none
 **Gate**: build
 **Commit**: `docs(telemetria): regras novas de linha, setores e pico`
+
+---
+
+#### T17: Escala de velocidade dos insights pelo pico honesto
+
+**What**: `buildLapInsight` calcula `maxKmh` (a escala da pintura por velocidade em "Sua volta") com o `peakSpeedMs` novo, e não mais com o máximo bruto da melhor volta. O lote 1b achou essa lacuna do TMP-11 AC 3, que nenhuma tarefa cobria.
+**Where**: `src/lib/lapInsight.ts`
+**Depends on**: None
+**Reuses**: T6
+**Requirement**: TMP-11 (AC 3)
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Teste: numa melhor volta a ~80 km/h com um único ponto a 150 km/h, `maxKmh` fica abaixo de 81.
+- [ ] Gate: `npm test`, contagem registrada.
+
+**Tests**: unit
+**Gate**: quick
+**Commit**: `fix(insights): escala de velocidade sem fix ruim`
 
 ---
 
