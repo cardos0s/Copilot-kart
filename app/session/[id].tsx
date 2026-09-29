@@ -553,7 +553,7 @@ function SessionScreenInner() {
             const isSel = lap.id === selected.id;
             const isRef = !useExternalRef && lap.id === sessionBest.id;
             const delta = lap.durationMs - refDurationMs;
-            const peakKmh = msToKmh(peakSpeedMs(lap.samples));
+            const peakKmh = msToKmh(peakSpeedMs(lap.samples) ?? 0);
             return (
               <Pressable
                 key={lap.id}
@@ -611,8 +611,8 @@ function SessionScreenInner() {
             refDurationMs={refDurationMs}
             selectedDurationMs={selected.durationMs}
             isSelectedReference={isSelectedReference}
-            refPeakKmh={msToKmh(peakSpeedMs(refSamples))}
-            selectedPeakKmh={msToKmh(peakSpeedMs(selected.samples))}
+            refPeakKmh={msToKmh(peakSpeedMs(refSamples) ?? 0)}
+            selectedPeakKmh={msToKmh(peakSpeedMs(selected.samples) ?? 0)}
             bestLabel={useExternalRef ? 'REF' : `V${lapIndex(laps, sessionBest)}`}
             currentLabel={`V${lapIndex(laps, selected)}`}
             currentIndex={lapIndex(laps, selected)}

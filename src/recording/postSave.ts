@@ -139,7 +139,7 @@ export async function runPostSaveEffects(
       const xpGained = result.xpGained;
       background = (async () => {
         try {
-          const peakKmh = msToKmh(peakSpeedMs(best.samples));
+          const peakKmh = msToKmh(peakSpeedMs(best.samples) ?? 0);
           const profileForInsight = await deps.getProfile().catch(() => null);
           const aiInsight = await deps.requestQuickInsight({
             trackName: session.trackName,

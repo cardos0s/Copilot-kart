@@ -247,10 +247,10 @@ T11, T12, T13, T14 e T15 não dependem de nenhuma tarefa da fase. Todas as da fa
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: numa volta com cerca de 500 pontos a ~80 km/h e um único ponto a 150 km/h, o pico fica abaixo de 81 km/h.
-- [ ] Teste: o p99 bate com o nearest-rank calculado à mão num conjunto pequeno conhecido.
-- [ ] Teste: pontos com precisão acima de 10 m são ignorados; sem nenhum ponto bom, o resultado é `null`.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste: numa volta com cerca de 500 pontos a ~80 km/h e um único ponto a 150 km/h, o pico fica abaixo de 81 km/h.
+- [x] Teste: o p99 bate com o nearest-rank calculado à mão num conjunto pequeno conhecido.
+- [x] Teste: pontos com precisão acima de 10 m são ignorados; sem nenhum ponto bom, o resultado é `null`.
+- [x] Gate: `npm test`, contagem registrada: 95 testes, 0 falhas.
 
 **Tests**: unit
 **Gate**: quick

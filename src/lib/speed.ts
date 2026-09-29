@@ -12,26 +12,35 @@ export function msToKmh(speedMs: number): number {
   return speedMs * 3.6;
 }
 
-/** Pico de velocidade em m/s nos samples (0 se vazio). */
-export function peakSpeedMs(samples: GpsSample[]): number {
-  let max = 0;
-  for (const s of samples) {
-    if (s.speed > max) max = s.speed;
-  }
-  return max;
+/** Só pontos com precisão de até 10 m entram no pico. */
+const PEAK_MAX_ACCURACY_M = 10;
+
+/**
+ * Pico de velocidade em m/s: percentil 99 (nearest-rank) da velocidade dos
+ * pontos com precisão de até 10 m. Um ponto fora da curva em ~500 por volta
+ * não chega ao p99. Sem nenhum ponto bom, `null` (a interface mostra "—").
+ */
+export function peakSpeedMs(samples: GpsSample[]): number | null {
+  const speeds = samples
+    .filter((s) => s.accuracy <= PEAK_MAX_ACCURACY_M)
+    .map((s) => s.speed)
+    .sort((a, b) => a - b);
+  if (speeds.length === 0) return null;
+  return speeds[Math.ceil(0.99 * speeds.length) - 1];
 }
 
 /** Pico em km/h direto. */
-export function peakSpeedKmh(samples: GpsSample[]): number {
-  return msToKmh(peakSpeedMs(samples));
+export function peakSpeedKmh(samples: GpsSample[]): number | null {
+  const p = peakSpeedMs(samples);
+  return p === null ? null : msToKmh(p);
 }
 
-/** Pico entre todas as voltas (m/s). */
-export function peakSpeedMsOfLaps(laps: LapRecord[]): number {
-  let max = 0;
+/** Maior pico entre as voltas (m/s), com a mesma regra; `null` se nenhuma tem ponto bom. */
+export function peakSpeedMsOfLaps(laps: LapRecord[]): number | null {
+  let max: number | null = null;
   for (const lap of laps) {
     const p = peakSpeedMs(lap.samples);
-    if (p > max) max = p;
+    if (p !== null && (max === null || p > max)) max = p;
   }
   return max;
 }

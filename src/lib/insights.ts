@@ -112,7 +112,7 @@ export async function computeSmartInsights(opts?: {
   const avgLapMs = allDurations.length
     ? allDurations.reduce((a, b) => a + b, 0) / allDurations.length
     : null;
-  const peakKmh = allLaps.length ? msToKmh(Math.max(0, ...allLaps.map((l) => peakSpeedMs(l.samples)))) : 0;
+  const peakKmh = allLaps.length ? msToKmh(Math.max(0, ...allLaps.map((l) => peakSpeedMs(l.samples) ?? 0))) : 0;
 
   // Score com 3 componentes
   const scoreBreakdown = computeScore(allDurations);
@@ -375,7 +375,7 @@ function computeSpeedTrend(
     if (!sd.session.trackId) continue;
     let peak = 0;
     for (const lap of sd.laps) {
-      const p = peakSpeedMs(lap.samples);
+      const p = peakSpeedMs(lap.samples) ?? 0;
       if (p > peak) peak = p;
     }
     if (peak <= 0) continue;

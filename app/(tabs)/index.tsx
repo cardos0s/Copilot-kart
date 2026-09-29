@@ -72,7 +72,7 @@ export default function Home() {
         const laps = await getLapsForSession(sess.id);
         const lapMsList = laps.map((l) => l.durationMs);
         const bestLapMs = lapMsList.length ? Math.min(...lapMsList) : null;
-        const peakSpeedKmh = msToKmh(peakSpeedMsOfLaps(laps));
+        const peakSpeedKmh = msToKmh(peakSpeedMsOfLaps(laps) ?? 0);
         return { ...sess, bestLapMs, lapMsList, peakSpeedKmh, laps };
       })
     );
