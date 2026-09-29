@@ -26,7 +26,8 @@ const HERO_TRACE = 'rgba(91, 140, 255, 0.30)';
 type SessionWithStats = Session & {
   bestLapMs: number | null;
   lapMsList: number[];
-  peakSpeedKmh: number;
+  /** Pico p99 da sessão; null sem nenhum ponto de até 10 m (a UI mostra "—"). */
+  peakSpeedKmh: number | null;
   laps: LapRecord[];
 };
 
@@ -38,7 +39,8 @@ function fmtDate(ts: number) {
   });
 }
 
-function fmtKmh(v: number): string {
+function fmtKmh(v: number | null): string {
+  if (v === null) return '—';
   return v.toFixed(1).replace('.', ',');
 }
 
@@ -72,7 +74,8 @@ export default function Home() {
         const laps = await getLapsForSession(sess.id);
         const lapMsList = laps.map((l) => l.durationMs);
         const bestLapMs = lapMsList.length ? Math.min(...lapMsList) : null;
-        const peakSpeedKmh = msToKmh(peakSpeedMsOfLaps(laps) ?? 0);
+        const peakMs = peakSpeedMsOfLaps(laps);
+        const peakSpeedKmh = peakMs === null ? null : msToKmh(peakMs);
         return { ...sess, bestLapMs, lapMsList, peakSpeedKmh, laps };
       })
     );
