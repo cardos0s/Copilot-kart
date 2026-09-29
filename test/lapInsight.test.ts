@@ -151,3 +151,23 @@ test('lapsForInsight: com sessões de dois traçados na mesma pista, devolve só
   // Âncora sem traçado: só as sessões sem traçado da mesma pista.
   assert.deepEqual(lapsForInsight(sessions, sessions[5]).map((s) => s.id), ['n1']);
 });
+
+// --- TMP-11 AC 3: a escala de velocidade do "Sua volta" usa o pico honesto ---
+
+test('buildLapInsight: numa melhor volta a ~80 km/h com um único ponto a 150 km/h, maxKmh fica abaixo de 81', () => {
+  // 500 pontos a 10 Hz, na pista de retângulo, a 80 km/h (±0,5); o ponto 250 salta para 150 km/h.
+  const v = 80 / 3.6;
+  const t0 = 1_700_000_000_000 + 999 * 1_000_000;
+  const samples: GpsSample[] = Array.from({ length: 500 }, (_, i) => {
+    const { lat, lng } = proj.toLatLng(xyAt(i * v * 0.1));
+    return { t: t0 + i * 100, lat, lng, speed: v + ((i % 3) - 1) * 0.1, accuracy: 4 };
+  });
+  samples[250] = { ...samples[250], speed: 150 / 3.6 };
+  const best: LapRecord = { id: 'lap_pico', sessionId: 's_pico', samples, startedAt: t0, durationMs: 49_900 };
+
+  const insight = buildLapInsight([best]);
+  assert.ok(insight);
+  assert.equal(insight.best.id, 'lap_pico');
+  assert.ok(insight.maxKmh < 81, `maxKmh ${insight.maxKmh}`);
+  assert.ok(insight.maxKmh > 79, `maxKmh ${insight.maxKmh}`);
+});

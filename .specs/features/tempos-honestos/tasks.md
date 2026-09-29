@@ -500,8 +500,8 @@ T11, T12, T13, T14, T15 e T17 não dependem de nenhuma tarefa da fase. Todas as 
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: numa melhor volta a ~80 km/h com um único ponto a 150 km/h, `maxKmh` fica abaixo de 81.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste: numa melhor volta a ~80 km/h com um único ponto a 150 km/h, `maxKmh` fica abaixo de 81.
+- [x] Gate: `npm test`, contagem registrada: 116 testes, 0 falhas. Build do fim da fase (`npm test && npm run typecheck`): só os 8 erros da baseline.
 
 **Tests**: unit
 **Gate**: quick

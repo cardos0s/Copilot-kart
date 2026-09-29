@@ -12,6 +12,7 @@ import { analyzeCorners } from './cornerAnalysis';
 import { detectCorners } from './corners';
 import { buildReferenceLap, GpsSample } from './geometry';
 import { LapRecord, cleanSamples, matchLapToReference, repairDegenerateTimestamps } from './analysis';
+import { msToKmh, peakSpeedMs } from './speed';
 import type { Session } from '../storage/db';
 
 export type CornerLoss = {
@@ -67,7 +68,10 @@ export function buildLapInsight(laps: LapRecord[]): LapInsight | null {
 
   const speeds = best.samples.map((p: GpsSample) => p.speed * 3.6).filter((v) => isFinite(v));
   const minKmh = speeds.length ? Math.min(...speeds) : 0;
-  const maxKmh = speeds.length ? Math.max(...speeds) : 0;
+  // Topo da escala pelo pico honesto (p99, TMP-11): uma fix ruim isolada não
+  // achata a pintura da volta inteira.
+  const peak = peakSpeedMs(best.samples);
+  const maxKmh = peak === null ? 0 : msToKmh(peak);
 
   const empty: LapInsight = {
     best, minKmh, maxKmh, corners: [], totalLossMs: 0, lapsUsed: 0, worst: null,
