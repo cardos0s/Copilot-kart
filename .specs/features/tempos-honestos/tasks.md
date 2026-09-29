@@ -77,6 +77,7 @@ T11, T12, T13, T14, T15 e T17 não dependem de nenhuma tarefa da fase. Todas as 
 
 ```
 T18 -> T19
+T19 -> T20
 ```
 
 ---
@@ -568,6 +569,30 @@ T18 -> T19
 **Tests**: unit
 **Gate**: build
 **Commit**: `fix(tempos): cronômetro e delta ao vivo contam do cruzamento da linha`
+
+---
+
+#### T20: Volta em curso depois de um box (mais de 180 s)
+
+**What**: `DetectLapsResult` passa a expor `openCross`, o cruzamento que abriu a volta em curso, inclusive quando a volta anterior foi descartada por passar de 180 s. `liveLapClock` e o `currentLapSamples` do hook (setores ao vivo) usam `openCross`, e não o `endCross` da última volta fechada. O lote 3 achou esse caso: hoje, depois de um box, o cronômetro, o delta e os setores ao vivo da volta seguinte saem errados.
+**Where**: `src/lib/lapDetector.ts`
+**Depends on**: T19
+**Reuses**: `liveLapClock` (T19)
+**Requirement**: TMP-03 (AC 7), TMP-07 (AC 2), AD-006
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Teste: duas voltas, depois uma parada de 200 s passando pela linha, depois a volta seguinte. `openCross.t` é o cruzamento depois da parada, e `liveLapClock` conta a partir dele.
+- [ ] Teste: numa sessão sem box, `openCross` é igual ao `endCross` da última volta fechada, e antes da 1ª volta é o 1º cruzamento (ou `null` com traçado antes de cruzar).
+- [ ] Teste estático: o `currentLapSamples` do hook usa `openCross`.
+- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+
+**Tests**: unit
+**Gate**: build
+**Commit**: `fix(tempos): volta depois do box conta do cruzamento certo`
 
 ---
 
