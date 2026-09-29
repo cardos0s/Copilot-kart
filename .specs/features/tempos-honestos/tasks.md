@@ -271,11 +271,11 @@ T11, T12, T13, T14 e T15 não dependem de nenhuma tarefa da fase. Todas as da fa
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: 3 voltas boas e 1 com a curva 2 inválida dão, na curva 2, a média exata das 3 boas.
-- [ ] Teste: uma volta com timestamps degenerados é reparada antes de entrar (o resultado bate com o da mesma volta com timestamps corretos, ± 20 ms na perda da curva).
-- [ ] Teste: fixes acima de 10 m não entram.
-- [ ] Teste: `lapsForInsight` com sessões de dois traçados na mesma pista devolve só as do traçado da âncora.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste: 3 voltas boas e 1 com a curva 2 inválida dão, na curva 2, a média exata das 3 boas.
+- [x] Teste: uma volta com timestamps degenerados é reparada antes de entrar (o resultado bate com o da mesma volta com timestamps corretos, ± 20 ms na perda da curva).
+- [x] Teste: fixes acima de 10 m não entram.
+- [x] Teste: `lapsForInsight` com sessões de dois traçados na mesma pista devolve só as do traçado da âncora.
+- [x] Gate: `npm test`, contagem registrada: 99 testes, 0 falhas.
 
 **Tests**: unit
 **Gate**: quick

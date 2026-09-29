@@ -188,8 +188,8 @@ Um app de telemetria cujo milésimo é inventado não deveria ir para a loja.
 | TMP-09 | P1: Setores (AC 5, sem traçado) | Design | Implementing |
 | TMP-10 | P1: Setores (AC 6, delta no início da volta) | Design | Implementing |
 | TMP-11 | P2: Pico de velocidade | Design | Implementing |
-| TMP-12 | P2: Insights (AC 1, 2) | Design | Pending |
-| TMP-13 | P2: Insights (AC 3, mesmo traçado) | Design | Pending |
+| TMP-12 | P2: Insights (AC 1, 2) | Design | Implementing |
+| TMP-13 | P2: Insights (AC 3, mesmo traçado) | Design | Implementing |
 | TMP-14 | P3: Timestamp no segundo cheio | Design | Pending |
 
 **Coverage:** 14 total, 0 mapped to tasks, 14 unmapped ⚠️ (Tasks ainda não existe)

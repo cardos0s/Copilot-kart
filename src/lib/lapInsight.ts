@@ -11,7 +11,8 @@
 import { analyzeCorners } from './cornerAnalysis';
 import { detectCorners } from './corners';
 import { buildReferenceLap, GpsSample } from './geometry';
-import { LapRecord, matchLapToReference } from './analysis';
+import { LapRecord, cleanSamples, matchLapToReference, repairDegenerateTimestamps } from './analysis';
+import type { Session } from '../storage/db';
 
 export type CornerLoss = {
   /** Número da curva na volta, começando em 1. */
@@ -41,8 +42,25 @@ export type LapInsight = {
 
 const MAX_LAPS = 60;
 
+/** Mesmas defesas da análise da sessão: fix de até 10 m e timestamp reparado. */
+function cleanLap(lap: LapRecord): LapRecord {
+  const cleaned = cleanSamples(lap.samples, 10);
+  const { samples } = repairDegenerateTimestamps(cleaned, lap.durationMs, lap.startedAt);
+  return { ...lap, samples };
+}
+
+/**
+ * Sessões que entram no "Sua volta": só as do mesmo traçado da âncora, na
+ * mesma pista (TMP-13). Âncora sem traçado fica com as sessões sem traçado.
+ */
+export function lapsForInsight(sessions: Session[], anchor: Session): Session[] {
+  const sameTrack = (x: Session) =>
+    anchor.trackId ? x.trackId === anchor.trackId : x.trackName === anchor.trackName;
+  return sessions.filter((x) => sameTrack(x) && x.layoutId === anchor.layoutId);
+}
+
 export function buildLapInsight(laps: LapRecord[]): LapInsight | null {
-  const usable = laps.filter((l) => l.samples && l.samples.length > 20);
+  const usable = laps.filter((l) => l.samples).map(cleanLap).filter((l) => l.samples.length > 20);
   if (usable.length === 0) return null;
 
   const best = usable.reduce((b, l) => (l.durationMs < b.durationMs ? l : b));
@@ -68,12 +86,14 @@ export function buildLapInsight(laps: LapRecord[]): LapInsight | null {
     // e o ganho estatístico depois de algumas dezenas é pequeno.
     const others = usable.filter((l) => l.id !== best.id).slice(0, MAX_LAPS);
 
-    const sums = new Map<number, { loss: number; losing: number; apex: number[] }>();
+    // `valid` conta as voltas com tempo válido na curva: a média divide só por elas.
+    const sums = new Map<number, { loss: number; losing: number; valid: number; apex: number[] }>();
     for (const lap of others) {
       const metrics = analyzeCorners(corners, ref, matchLapToReference(lap, ref), matchedBest);
       metrics.forEach((m, i) => {
         if (!m.valid || m.deltaMs == null) return;
-        const acc = sums.get(i) ?? { loss: 0, losing: 0, apex: [] };
+        const acc = sums.get(i) ?? { loss: 0, losing: 0, valid: 0, apex: [] };
+        acc.valid += 1;
         // Ganho não abate perda: a pergunta é onde o tempo VAI, e uma volta
         // excepcional numa curva não desfaz o custo médio dela.
         if (m.deltaMs > 0) { acc.loss += m.deltaMs; acc.losing += 1; }
@@ -87,7 +107,7 @@ export function buildLapInsight(laps: LapRecord[]): LapInsight | null {
       const apex = acc?.apex ?? [];
       return {
         number: i + 1,
-        lossMs: acc && others.length ? acc.loss / others.length : 0,
+        lossMs: acc && acc.valid ? acc.loss / acc.valid : 0,
         apexKmh: apex.length ? apex.reduce((a, b) => a + b, 0) / apex.length : null,
         lapsLosing: acc?.losing ?? 0,
       };
