@@ -57,11 +57,13 @@ O gate passa só se aparecerem exatamente esses. O `tsc` demora mais de 2 min: r
 
 ```
 T1 -> T2
+T2 -> T16
+T16 -> T3
 T2 -> T3
 T3 -> T4
 ```
 
-T5, T6, T7 e T8 não dependem de nenhuma tarefa da fase.
+T5, T6, T7 e T8 não dependem de nenhuma tarefa da fase. A T16 entrou depois da T2, por decisão da Julia em 29/09, e roda antes da T3.
 
 ### Phase 2: Fiação
 
@@ -134,11 +136,35 @@ T11, T12, T13, T14 e T15 não dependem de nenhuma tarefa da fase. Todas as da fa
 
 ---
 
+#### T16: Trava de saída da linha (kart parado não fecha volta)
+
+**What**: Um cruzamento só fecha volta se, desde o cruzamento anterior, o piloto se afastou mais de `2 × lineRadius` (30 m) do ponto da linha. É a regra do `justCrossed` antigo, agora junto com o teste de segmento e sentido. Aprovado pela Julia em 29/09 depois que o lote 1 apontou o risco.
+**Where**: `src/lib/lapDetector.ts`
+**Depends on**: T2
+**Reuses**: `crossing` (T1) e `DEFAULTS.lineRadius`
+**Requirement**: TMP-03 e o edge case "parar na linha e sair de novo"
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Teste: o kart para em cima da linha por 60 s a 10 Hz, com jitter de ±3 m que cruza a linha para a frente várias vezes e soma mais de 300 m de "distância", e o resultado é **nenhuma** volta extra.
+- [ ] Teste: depois da parada, o piloto sai e completa uma volta normal, que é contada com erro de no máximo 20 ms.
+- [ ] Os testes de precisão da T2 (10 e 5 Hz, com e sem traçado) continuam passando.
+- [ ] Gate: `npm test`, contagem registrada.
+
+**Tests**: unit
+**Gate**: quick
+**Commit**: `fix(tempos): kart parado na linha não fecha volta`
+
+---
+
 #### T3: Volta com pontos de fronteira
 
 **What**: `sliceLaps(samples, imu, line?)` monta cada volta como `[startCross synthetic, pontos internos, endCross synthetic]` e recorta a IMU por `[startCross.t, endCross.t]`. `GpsSample` ganha o campo opcional `synthetic?: true`.
 **Where**: `src/recording/finishSession.ts`
-**Depends on**: T2
+**Depends on**: T2, T16
 **Reuses**: `sliceLaps` atual
 **Requirement**: TMP-06 (base), AD-006
 
@@ -151,7 +177,7 @@ T11, T12, T13, T14 e T15 não dependem de nenhuma tarefa da fase. Todas as da fa
 - [ ] Teste: o `endCross` da volta N é igual ao `startCross` da volta N+1 (mesma lat/lng/t).
 - [ ] Teste: nenhum ponto interno fica fora de `(startCross.t, endCross.t)`.
 - [ ] Teste: a IMU da volta fica toda dentro de `[startCross.t, endCross.t]`.
-- [ ] Os testes existentes de `finishSession` e `recovery` continuam passando.
+- [ ] Os testes existentes de `finishSession` e `recovery` continuam passando. **Exceção autorizada pela Julia em 29/09:** o teste "sliceLaps: recorta a IMU pela janela de tempo de cada volta" passa a comparar `lap.samples.slice(1, -1)` com os pontos crus de `samples.slice(d.startIdx, d.endIdx + 1)` que caem em `startCross.t < t < endCross.t`, e ganha a checagem das duas fronteiras sintéticas. A parte da IMU fica igual.
 - [ ] Gate: `npm test`, contagem registrada.
 
 **Tests**: unit

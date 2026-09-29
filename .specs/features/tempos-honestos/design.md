@@ -92,7 +92,8 @@ implementações que precisam concordar.
   - Sem `line`, a linha vem de `lineFromMotion`. O primeiro cruzamento é o próprio ponto de ritmo, com `f = 0`. Isso corrige a 1ª volta (TMP-02).
   - Com `line`, a linha do traçado. O trecho antes do primeiro cruzamento não é volta (TMP-05).
   - Um cruzamento só fecha volta com 300 m ou mais percorridos e duração entre 25 s e 180 s desde o cruzamento anterior. Acima de 180 s, o ponteiro avança sem registrar volta, como hoje. Cruzamentos que não fecham volta (piloto parado na linha ou jitter) são ignorados e não reiniciam a contagem (edge case).
-  - A trava `justCrossed` e o raio de 15 m em volta do ponto saem. No lugar deles entra o teste de segmento com sentido.
+  - O raio de 15 m em volta do ponto sai; no lugar dele entra o teste de segmento com sentido.
+  - A trava de saída continua: um cruzamento só fecha volta se o piloto se afastou mais de 30 m da linha desde o cruzamento anterior. Foi revisto em 29/09 (T16), porque o jitter de um kart parado na linha soma 300 m em 10–30 s.
 
 ### sliceLaps (estendido)
 - **Location**: `src/recording/finishSession.ts`
