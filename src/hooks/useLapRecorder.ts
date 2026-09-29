@@ -3,9 +3,11 @@ import * as Location from 'expo-location';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { DEMO_LAP } from '../data/demoLap';
 import { Accelerometer, Gyroscope } from 'expo-sensors';
-import { GpsSample, ImuSample, LatLng } from '../lib/geometry';
+import { GpsSample, ImuSample, LatLng, ReferenceLap } from '../lib/geometry';
 import { detectLaps, DetectedLap } from '../lib/lapDetector';
 import { DeltaTracker } from '../lib/realtimeDelta';
+import { referenceFromLayout, sectorSplits } from '../lib/sectors';
+import { crossing, lineFromLayout, type CrossPoint, type StartLine } from '../lib/startLine';
 import { sliceLaps, type RecordedLap } from '../recording/finishSession';
 import type { RecordingMetaInput } from '../recording/journal';
 import {
@@ -85,6 +87,44 @@ function stopImuCapture() {
   gyroSub = null;
   pendingImu.accel = null;
   pendingImu.gyro = null;
+}
+
+/** Ponto sintético na linha de chegada (AD-006), como o `sliceLaps` monta. */
+function crossSample(cross: CrossPoint, accuracy: number): GpsSample {
+  return { t: cross.t, lat: cross.lat, lng: cross.lng, speed: cross.speed, accuracy, synthetic: true };
+}
+
+/**
+ * Pontos da volta em curso, do jeito que o `sliceLaps` vai recortá-la quando
+ * fechar: o cruzamento que a abriu (ponto sintético) e os pontos crus depois
+ * dele. Com voltas fechadas, ela abre no fim da última. Antes da primeira, no
+ * primeiro cruzamento da linha, como no `detectLaps`. `null` se ainda não abriu.
+ */
+function currentLapSamples(
+  all: GpsSample[],
+  laps: DetectedLap[],
+  movingStartIdx: number,
+  line: StartLine
+): GpsSample[] | null {
+  let cross: CrossPoint | null = null;
+  let idx = -1;
+  if (laps.length > 0) {
+    const lastLap = laps[laps.length - 1];
+    cross = lastLap.endCross;
+    idx = lastLap.endIdx;
+  } else if (movingStartIdx >= 0) {
+    for (let i = Math.max(1, movingStartIdx); i < all.length; i++) {
+      const c = crossing(all[i - 1], all[i], line);
+      if (c) {
+        cross = c;
+        idx = i;
+        break;
+      }
+    }
+  }
+  if (!cross) return null;
+  const t0 = cross.t;
+  return [crossSample(cross, all[idx].accuracy), ...all.slice(idx).filter((p) => p.t > t0)];
 }
 
 export type RecorderState = 'idle' | 'requesting' | 'recording' | 'stopped';
@@ -294,15 +334,16 @@ export function useLapRecorder(options?: LapRecorderOptions) {
   const closedLapDataRef = useRef<ClosedLapInfo | null>(null);
   const closedLapClearAtRef = useRef<number>(0);
 
-  // ===== Sectors =====
-  // Tracker separado, carregado com a referência do LAYOUT (não da sessão).
-  // Setores são geográficos: 1/3 e 2/3 da polyline da ref do layout. Não
-  // mexem com PB/anterior da sessão. Reutiliza o DeltaTracker só pela
-  // projeção (descarta o deltaMs interno — usamos apenas sNormalized).
-  const layoutTrackerRef = useRef<DeltaTracker>(new DeltaTracker());
-  // Timestamps de quando o piloto cruzou os limites geográficos. Resetado
-  // a cada volta nova. [s1End_ts, s2End_ts] — s3End é o end-of-lap.
-  const sectorBoundaryTsRef = useRef<[number | null, number | null]>([null, null]);
+  // ===== Linha e setores =====
+  // Linha de chegada e régua de S1/S2/S3 do traçado (`setLayoutReference`).
+  // Sem traçado, as duas ficam null: a linha é inferida e não há setores ao
+  // vivo (TMP-09). Setores são os terços do traçado, pela mesma `sectorSplits`
+  // da análise, e não mexem com PB/anterior da sessão.
+  const layoutLineRef = useRef<StartLine | null>(null);
+  const layoutSectorRefRef = useRef<ReferenceLap | null>(null);
+  // Linha da gravação em curso, fixada no start(): o poll, o diário e o
+  // stop() usam a mesma (TMP-06).
+  const recordingLineRef = useRef<StartLine | null>(null);
   // Melhores S1, S2, S3 vistos na sessão (atualizados a cada lap close).
   const bestSectorsRef = useRef<{ s1: number | null; s2: number | null; s3: number | null }>({
     s1: null,
@@ -332,10 +373,9 @@ export function useLapRecorder(options?: LapRecorderOptions) {
     newBestUntilRef.current = 0;
     closedLapDataRef.current = null;
     closedLapClearAtRef.current = 0;
-    // NÃO chama layoutTrackerRef.current.clear() — quem chamou setLayoutReference
-    // antes do start() perderia a ref. Só reseta o estado da volta (hint, lastS).
-    layoutTrackerRef.current.resetLap();
-    sectorBoundaryTsRef.current = [null, null];
+    // NÃO limpa a linha nem a régua do traçado: quem chamou setLayoutReference
+    // antes do start() perderia a ref.
+    recordingLineRef.current = layoutLineRef.current;
     bestSectorsRef.current = { s1: null, s2: null, s3: null };
     lastClosedLapSectorsRef.current = null;
 
@@ -344,7 +384,7 @@ export function useLapRecorder(options?: LapRecorderOptions) {
     let recordingId: string | null = null;
     if (startOpts?.meta) {
       try {
-        recordingId = await journal.begin(startOpts.meta);
+        recordingId = await journal.begin({ ...startOpts.meta, line: recordingLineRef.current });
       } catch (e) {
         setState('idle');
         throw e;
@@ -445,8 +485,11 @@ export function useLapRecorder(options?: LapRecorderOptions) {
       const all = allSamplesRef.current;
       const last = all[all.length - 1];
 
-      // Detecção de voltas — uma única chamada, mesma função que o stop() usa.
-      const detection = detectLaps(all);
+      // Detecção de voltas — uma única chamada, mesma função e mesma linha
+      // que o stop() usa.
+      const line = recordingLineRef.current;
+      const sectorRef = line ? layoutSectorRefRef.current : null;
+      const detection = detectLaps(all, { line });
       lastDetectionRef.current = detection.laps;
       movingStartIdxRef.current = detection.movingStartIdx;
 
@@ -527,31 +570,25 @@ export function useLapRecorder(options?: LapRecorderOptions) {
         // a partir do momento em que vê o novo lapNumber.
         closedLapClearAtRef.current = Date.now() + 1000;
 
-        // ===== Finaliza setores da volta que acabou de fechar =====
-        // Reconstrói S1/S2/S3 a partir dos timestamps de cruzamento de
-        // limite + start/end da volta. Só finaliza se conseguimos marcar
-        // OS DOIS limites (S1 end e S2 end). Senão, o layout ref pode não
-        // estar carregado ou GPS perdeu samples nos pontos críticos.
-        const lapStartT = last.startedAt;
-        const lapEndT = last.startedAt + last.durationMs;
-        const s1EndT = sectorBoundaryTsRef.current[0];
-        const s2EndT = sectorBoundaryTsRef.current[1];
-        if (s1EndT !== null && s2EndT !== null) {
-          const s1 = s1EndT - lapStartT;
-          const s2 = s2EndT - s1EndT;
-          const s3 = lapEndT - s2EndT;
-          lastClosedLapSectorsRef.current = { s1Ms: s1, s2Ms: s2, s3Ms: s3 };
-          // Atualiza melhores da sessão (campos independentes — best de cada
-          // setor pode vir de voltas diferentes).
-          const best = bestSectorsRef.current;
-          if (best.s1 === null || s1 < best.s1) best.s1 = s1;
-          if (best.s2 === null || s2 < best.s2) best.s2 = s2;
-          if (best.s3 === null || s3 < best.s3) best.s3 = s3;
+        // ===== Setores da volta que acabou de fechar =====
+        // A volta recortada pela mesma `sliceLaps` do stop() (pontos de
+        // fronteira na linha), medida pela mesma `sectorSplits` da análise.
+        // É o que vai para a equipe (TMP-08).
+        if (sectorRef) {
+          const sliced = sliceLaps(all, [], line);
+          const closedSamples = sliced[sliced.length - 1].samples;
+          const splits = sectorSplits(closedSamples, sectorRef);
+          lastClosedLapSectorsRef.current = splits;
+          const { s1Ms: s1, s2Ms: s2, s3Ms: s3 } = splits;
+          if (s1 !== null && s2 !== null && s3 !== null) {
+            // Atualiza melhores da sessão (campos independentes — best de
+            // cada setor pode vir de voltas diferentes).
+            const best = bestSectorsRef.current;
+            if (best.s1 === null || s1 < best.s1) best.s1 = s1;
+            if (best.s2 === null || s2 < best.s2) best.s2 = s2;
+            if (best.s3 === null || s3 < best.s3) best.s3 = s3;
+          }
         }
-        // Reset pro próximo lap. Layout tracker também reseta hint pra
-        // recomeçar a busca do começo da polyline.
-        sectorBoundaryTsRef.current = [null, null];
-        layoutTrackerRef.current.resetLap();
 
         // Força reload da referência no próximo bloco
         trackerLoadedFromRef.current = null;
@@ -594,77 +631,31 @@ export function useLapRecorder(options?: LapRecorderOptions) {
         liveDeltaMs = reading.deltaMs;
       }
 
-      // ===== Sectors: projeta sample atual no layout ref, atualiza =====
-      // Layout tracker projeta o ponto atual contra a polyline da referência
-      // do layout. sNormalized indica progresso geográfico [0..1] — usamos
-      // pra detectar quando o piloto cruzou 1/3 e 2/3 da pista.
-      //
-      // Diferente do delta tracker (que usa session PB), este usa o LAYOUT
-      // reference. Setores não mudam com PB — são geográficos.
-      let sNormForSector: number | null = null;
-      if (last && layoutTrackerRef.current.hasReference()) {
-        // compute() aceita lapElapsedMs mas só usamos sNormalized — passa 0.
-        const reading = layoutTrackerRef.current.compute(last, 0);
-        sNormForSector = reading.sNormalized;
-      }
-
-      // Recompute lapStart pra setores (mesma lógica do currentLapElapsedMs).
-      // Setores precisam do timestamp do 1º sample da volta atual pra
-      // calcular S1 = (s1End_ts - lapStart_ts).
-      let currentLapStartT: number | null = null;
-      if (last && detection.movingStartIdx >= 0) {
-        const startIdx =
-          detection.laps.length > 0
-            ? detection.laps[detection.laps.length - 1].endIdx + 1
-            : detection.movingStartIdx;
-        if (startIdx < all.length) {
-          currentLapStartT = all[startIdx].t;
-        }
-      }
-
-      // Marca cruzamento de limite (1/3 e 2/3). Só marca uma vez por volta
-      // — se sNormForSector oscilar perto do limite, o primeiro >= já fixou.
-      if (last && sNormForSector !== null && currentLapStartT !== null) {
-        if (sNormForSector >= 1 / 3 && sectorBoundaryTsRef.current[0] === null) {
-          sectorBoundaryTsRef.current[0] = last.t;
-        }
-        if (sNormForSector >= 2 / 3 && sectorBoundaryTsRef.current[1] === null) {
-          sectorBoundaryTsRef.current[1] = last.t;
-        }
-      }
-
-      // Setor atual + tempo decorrido nele.
+      // ===== Setores da volta em curso =====
+      // Os pontos da volta em curso, com o cruzamento que a abriu, pela mesma
+      // `sectorSplits` do fechamento e da análise (TMP-07). O setor ainda não
+      // alcançado fica null. S3 só sai quando a volta fecha.
       let currentSectorIdx: 0 | 1 | 2 | null = null;
       let currentSectorElapsedMs: number | null = null;
-      if (sNormForSector !== null) {
-        if (sNormForSector < 1 / 3) currentSectorIdx = 0;
-        else if (sNormForSector < 2 / 3) currentSectorIdx = 1;
-        else currentSectorIdx = 2;
-      }
-      if (last && currentSectorIdx !== null && currentLapStartT !== null) {
-        const s1EndT = sectorBoundaryTsRef.current[0];
-        const s2EndT = sectorBoundaryTsRef.current[1];
-        if (currentSectorIdx === 0) {
-          currentSectorElapsedMs = last.t - currentLapStartT;
-        } else if (currentSectorIdx === 1 && s1EndT !== null) {
-          currentSectorElapsedMs = last.t - s1EndT;
-        } else if (currentSectorIdx === 2 && s2EndT !== null) {
-          currentSectorElapsedMs = last.t - s2EndT;
+      let currentSectors: SectorTimes = { s1Ms: null, s2Ms: null, s3Ms: null };
+      if (last && line && sectorRef) {
+        const lapSamples = currentLapSamples(all, detection.laps, detection.movingStartIdx, line);
+        if (lapSamples) {
+          const splits = sectorSplits(lapSamples, sectorRef);
+          currentSectors = { s1Ms: splits.s1Ms, s2Ms: splits.s2Ms, s3Ms: null };
+          const lapStartT = lapSamples[0].t;
+          if (splits.s1Ms === null) {
+            currentSectorIdx = 0;
+            currentSectorElapsedMs = last.t - lapStartT;
+          } else if (splits.s2Ms === null) {
+            currentSectorIdx = 1;
+            currentSectorElapsedMs = last.t - (lapStartT + splits.s1Ms);
+          } else {
+            currentSectorIdx = 2;
+            currentSectorElapsedMs = last.t - (lapStartT + splits.s1Ms + splits.s2Ms);
+          }
         }
       }
-
-      // Parciais S1/S2 da volta em curso (S3 só preenche quando fecha →
-      // vai pro lastClosedLapSectors).
-      const s1EndT = sectorBoundaryTsRef.current[0];
-      const s2EndT = sectorBoundaryTsRef.current[1];
-      const currentSectors: SectorTimes = {
-        s1Ms:
-          s1EndT !== null && currentLapStartT !== null
-            ? s1EndT - currentLapStartT
-            : null,
-        s2Ms: s1EndT !== null && s2EndT !== null ? s2EndT - s1EndT : null,
-        s3Ms: null,
-      };
 
       // lastClosedLap só fica não-null por ~1s após o fechamento. Suficiente
       // pra UI capturar via useEffect e arrancar a animação local.
@@ -749,11 +740,12 @@ export function useLapRecorder(options?: LapRecorderOptions) {
 
     // Detecção final com os samples completos, incluindo o que chegou na
     // última janela. Essa é a fonte de verdade que os consumidores usam.
-    const detection = detectLaps(allSamples);
+    const line = recordingLineRef.current;
+    const detection = detectLaps(allSamples, { line });
 
     // Materializa as voltas (uma vez só, no fim): IMU recortada por
-    // timestamp, pela mesma função que a recuperação usa.
-    const laps: RecordedLap[] = sliceLaps(allSamples, allImuSamples);
+    // timestamp, pela mesma função e mesma linha que a recuperação usa.
+    const laps: RecordedLap[] = sliceLaps(allSamples, allImuSamples, line);
 
     return {
       allSamples,
@@ -797,13 +789,16 @@ export function useLapRecorder(options?: LapRecorderOptions) {
    * ficam todos null — a UI esconde a barra de setores e mostra só
    * velocímetro + cronômetro + delta pill.
    *
-   * Os limites geográficos S1/S2/S3 são 1/3 e 2/3 da polyline da ref (por
-   * distância acumulada). Independente da PB da sessão — setores não se
-   * movem quando o piloto bate volta nova.
+   * A linha de chegada é a do traçado (`lineFromLayout`), e S1/S2/S3 são os
+   * terços do traçado (`referenceFromLayout`). Independente da PB da sessão —
+   * setores não se movem quando o piloto bate volta nova. Traçado com menos
+   * de 5 pontos ou sem comprimento conta como sem traçado. A linha vale a
+   * partir do próximo start().
    */
   const setLayoutReference = useCallback(
-    (samples: GpsSample[], durationMs: number) => {
-      layoutTrackerRef.current.setReference(samples, durationMs);
+    (samples: GpsSample[], _durationMs: number) => {
+      layoutLineRef.current = lineFromLayout(samples);
+      layoutSectorRefRef.current = layoutLineRef.current ? referenceFromLayout(samples) : null;
     },
     []
   );
@@ -811,8 +806,8 @@ export function useLapRecorder(options?: LapRecorderOptions) {
   /** Limpa a referência de layout — usado quando o usuário desassocia a
    *  pista. Setores voltam a null. */
   const clearLayoutReference = useCallback(() => {
-    layoutTrackerRef.current.clear();
-    sectorBoundaryTsRef.current = [null, null];
+    layoutLineRef.current = null;
+    layoutSectorRefRef.current = null;
   }, []);
 
   return {

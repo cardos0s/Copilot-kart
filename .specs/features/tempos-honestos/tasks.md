@@ -353,8 +353,13 @@ T11, T12, T13, T14, T15 e T17 não dependem de nenhuma tarefa da fase. Todas as 
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste estático: o hook importa `sectorSplits` e `lineFromLayout`, e não contém mais `sectorBoundaryTsRef`.
-- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+- [x] Teste estático: o hook importa `sectorSplits` e `lineFromLayout`, e não contém mais `sectorBoundaryTsRef`. O mesmo arquivo (`test/lapRecorderHook.test.ts`) confere `detectLaps(all, { line })`, `sliceLaps(…, line)` no `stop()` e a `line` na meta do diário.
+- [x] Gate: `npm test && npm run typecheck`, só com a baseline: 108 testes, 0 falhas; typecheck com os 8 erros da baseline.
+
+**Notas da execução:**
+- A linha é fixada no `start()` (`recordingLineRef`) e vale para o poll, para a meta do diário e para o `stop()`. Um traçado que chegue depois do `start()` só vale na próxima gravação.
+- O setor atual (`currentSectorIdx`) e o tempo nele saem do mesmo `sectorSplits` da volta em curso. O `DeltaTracker` que só servia para projetar o setor saiu. Antes do primeiro cruzamento da linha do traçado não há volta aberta, e a barra de setores fica escondida.
+- Sem traçado, não há setores ao vivo (TMP-09).
 
 **Tests**: unit
 **Gate**: build

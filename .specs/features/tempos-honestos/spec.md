@@ -184,7 +184,7 @@ Um app de telemetria cujo milésimo é inventado não deveria ir para a loja.
 | TMP-05 | P1: Linha do traçado (AC 3, começa andando) | Design | Implementing |
 | TMP-06 | P1: Linha do traçado (AC 4, mesma linha no ao vivo, no Encerrar e na recuperação) | Design | Implementing |
 | TMP-07 | P1: Setores (AC 1, 2, 3) | Design | Implementing |
-| TMP-08 | P1: Setores (AC 4, publicação) | Design | Pending |
+| TMP-08 | P1: Setores (AC 4, publicação) | Design | Implementing |
 | TMP-09 | P1: Setores (AC 5, sem traçado) | Design | Implementing |
 | TMP-10 | P1: Setores (AC 6, delta no início da volta) | Design | Implementing |
 | TMP-11 | P2: Pico de velocidade | Design | Implementing |
