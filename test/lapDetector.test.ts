@@ -257,3 +257,70 @@ test('GPX de bancada: 3 voltas, e os tempos deixam de ser múltiplos de 100 ms',
     `tempos: ${laps.map((l) => l.durationMs).join(', ')}`,
   );
 });
+
+// ---------------------------------------------------------------------------
+// T16: trava de saída. Um cruzamento só fecha volta se o piloto se afastou
+// mais de 30 m (2 × lineRadius) da linha desde o cruzamento anterior.
+// TMP-03 e o edge case "parar na linha e sair de novo".
+// ---------------------------------------------------------------------------
+
+/** Ruído determinístico em [-1, 1] (LCG), para o jitter ser igual em toda rodada. */
+function seededNoise(seed: number) {
+  let s = seed >>> 0;
+  return () => {
+    s = (Math.imul(s, 1_664_525) + 1_013_904_223) >>> 0;
+    return (s / 0xffff_ffff) * 2 - 1;
+  };
+}
+
+test('Kart parado 60 s em cima da linha, com jitter de ±3 m que cruza para a frente e soma mais de 300 m, não fecha volta extra; a volta depois da parada sai a até 20 ms', () => {
+  const line = layoutLine();
+  const circumference = 2 * Math.PI * 120;
+  const T0 = 1_700_000_000_000;
+  const dt = 100;
+  const speed = circumference / (D / 1000);
+
+  // Anda de 0,5 até passar a linha (progresso 2) e para em cima dela...
+  const tArrive = T0 + 1.5 * D;
+  const moving1 = sampleTrack((t) => 0.5 + (t - T0) / D, T0, tArrive + dt, 10, speed);
+  // ...fica 60 s parado ali, com o GPS pulando ±3 m ao longo da pista...
+  const noise = seededNoise(219);
+  const tStop = moving1[moving1.length - 1].t + dt;
+  const tLeave = tStop + 60_000;
+  const stopped = sampleTrack(() => 2 + (3 / circumference) * noise(), tStop, tLeave, 10, 0.5);
+  // ...e sai da linha para duas voltas e um pouco.
+  const tGo = tLeave + dt;
+  const moving2 = sampleTrack((t) => 2 + (t - tGo) / D, tGo, tGo + 2.3 * D, 10, speed);
+  const samples = [...moving1, ...stopped, ...moving2];
+
+  // O jitter atravessa a linha para a frente várias vezes e soma mais de 300 m.
+  let jitterCrossings = 0;
+  let jitterDist = 0;
+  for (let i = 1; i < stopped.length; i++) {
+    if (crossing(stopped[i - 1], stopped[i], line)) jitterCrossings++;
+    jitterDist += Math.hypot(
+      (stopped[i].lat - stopped[i - 1].lat) * 111_320,
+      (stopped[i].lng - stopped[i - 1].lng) * 111_320 * Math.cos((stopped[i].lat * Math.PI) / 180),
+    );
+  }
+  assert.ok(jitterCrossings >= 5, `o jitter devia cruzar a linha várias vezes, cruzou ${jitterCrossings}`);
+  assert.ok(jitterDist > 300, `o jitter devia somar mais de 300 m, somou ${jitterDist.toFixed(0)} m`);
+
+  const { laps } = detectLaps(samples, { line });
+  // Passagens reais: chegada (progresso 2), saída + 1 volta (3) e + 2 voltas (4).
+  const tCross3 = tGo + D;
+  const tCross4 = tGo + 2 * D;
+  assert.equal(laps.length, 3, `voltas: ${laps.map((l) => l.durationMs).join(', ')}`);
+  assertLapsWithin([laps[0].durationMs], D, 'volta antes da parada');
+  // Nenhum cruzamento do jitter fecha volta.
+  for (const l of laps) {
+    assert.ok(l.endCross.t < tStop || l.endCross.t > tLeave, `volta fechou durante a parada (${l.endCross.t})`);
+  }
+  // A volta que contém a parada vai da chegada à linha até a passagem seguinte.
+  assert.ok(Math.abs(laps[1].startCross.t - tArrive) <= TOL_MS);
+  assert.ok(Math.abs(laps[1].durationMs - (tCross3 - tArrive)) <= TOL_MS, `volta com a parada: ${laps[1].durationMs}`);
+  // Depois da parada, a volta normal sai a até 20 ms da duração real.
+  assert.ok(Math.abs(laps[2].startCross.t - tCross3) <= TOL_MS);
+  assert.ok(Math.abs(laps[2].endCross.t - tCross4) <= TOL_MS);
+  assertLapsWithin([laps[2].durationMs], D, 'volta depois da parada');
+});

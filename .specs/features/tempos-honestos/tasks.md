@@ -149,10 +149,10 @@ T11, T12, T13, T14 e T15 não dependem de nenhuma tarefa da fase. Todas as da fa
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: o kart para em cima da linha por 60 s a 10 Hz, com jitter de ±3 m que cruza a linha para a frente várias vezes e soma mais de 300 m de "distância", e o resultado é **nenhuma** volta extra.
-- [ ] Teste: depois da parada, o piloto sai e completa uma volta normal, que é contada com erro de no máximo 20 ms.
-- [ ] Os testes de precisão da T2 (10 e 5 Hz, com e sem traçado) continuam passando.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste: o kart para em cima da linha por 60 s a 10 Hz, com jitter de ±3 m que cruza a linha para a frente várias vezes e soma mais de 300 m de "distância", e o resultado é **nenhuma** volta extra.
+- [x] Teste: depois da parada, o piloto sai e completa uma volta normal, que é contada com erro de no máximo 20 ms.
+- [x] Os testes de precisão da T2 (10 e 5 Hz, com e sem traçado) continuam passando.
+- [x] Gate: `npm test`, contagem registrada: 80 testes, 0 falhas.
 
 **Tests**: unit
 **Gate**: quick

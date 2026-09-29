@@ -20,8 +20,9 @@
  *   3. "Voltas" — a volta fecha no instante interpolado em que a trajetória
  *      atravessa a linha no sentido dela (`crossing`), desde que o piloto
  *      tenha andado uma distância mínima e a duração fique entre o mínimo
- *      e o máximo. Cruzamento que não fecha volta (parado na linha, jitter)
- *      é ignorado e não reinicia a contagem.
+ *      e o máximo, e que tenha se afastado mais de 2 × lineRadius da linha
+ *      desde o cruzamento anterior (trava de saída). Cruzamento que não fecha
+ *      volta (parado na linha, jitter) é ignorado e não reinicia a contagem.
  *
  * Performance: O(n) com n = número de samples. Uma sessão de 10min a 10Hz
  * tem 6000 samples; algoritmo roda em <5ms em JS. Pode ser chamado a cada
@@ -146,13 +147,21 @@ export function detectLaps(
     open = { cross: { t: p.t, lat: p.lat, lng: p.lng, speed: p.speed }, idx: movingStartIdx };
   }
   let distSinceOpen = 0;
+  // Trava de saída: depois de cada cruzamento, o próximo só fecha volta se o
+  // piloto se afastou mais de 2 × lineRadius do ponto da linha. Sem ela, o
+  // jitter de um kart parado na linha soma 300 m e 25 s e fecha volta falsa.
+  let leftLine = false;
+  const exitRadius = opts.lineRadius * 2;
 
   const laps: DetectedLap[] = [];
   const firstPair = layoutLine ? Math.max(1, movingStartIdx) : movingStartIdx + 1;
   for (let i = firstPair; i < samples.length; i++) {
     const a = samples[i - 1];
     const b = samples[i];
-    if (open) distSinceOpen += haversine(a, b);
+    if (open) {
+      distSinceOpen += haversine(a, b);
+      if (!leftLine && haversine(b, line) > exitRadius) leftLine = true;
+    }
 
     const c = crossing(a, b, line, opts.lineRadius);
     if (!c) continue;
@@ -161,12 +170,14 @@ export function detectLaps(
     if (!open) {
       open = { cross, idx: i };
       distSinceOpen = 0;
+      leftLine = false;
       continue;
     }
 
     const elapsed = cross.t - open.cross.t;
     // Piloto parado na linha, jitter, volta curta demais: o cruzamento é
     // ignorado e não reinicia a contagem.
+    if (!leftLine) continue;
     if (distSinceOpen < opts.minLapDistance || elapsed < opts.minLapDuration) continue;
 
     // Volta anormalmente longa (parou no meio, foi ao box): não é volta, mas
@@ -183,6 +194,7 @@ export function detectLaps(
     }
     open = { cross, idx: i };
     distSinceOpen = 0;
+    leftLine = false;
   }
 
   return { movingStartIdx, startFinishLine: line, laps };
