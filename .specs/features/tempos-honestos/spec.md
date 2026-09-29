@@ -182,7 +182,7 @@ Um app de telemetria cujo milésimo é inventado não deveria ir para a loja.
 | TMP-03 | P1: Milésimo real (AC 5, 6, 7, validade e sentido) | Design | Implementing |
 | TMP-04 | P1: Linha do traçado (AC 1, 2) | Design | Implementing |
 | TMP-05 | P1: Linha do traçado (AC 3, começa andando) | Design | Implementing |
-| TMP-06 | P1: Linha do traçado (AC 4, mesma linha no ao vivo, no Encerrar e na recuperação) | Design | Pending |
+| TMP-06 | P1: Linha do traçado (AC 4, mesma linha no ao vivo, no Encerrar e na recuperação) | Design | Implementing |
 | TMP-07 | P1: Setores (AC 1, 2, 3) | Design | Pending |
 | TMP-08 | P1: Setores (AC 4, publicação) | Design | Pending |
 | TMP-09 | P1: Setores (AC 5, sem traçado) | Design | Pending |

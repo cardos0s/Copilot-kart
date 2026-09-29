@@ -173,12 +173,12 @@ T11, T12, T13, T14 e T15 não dependem de nenhuma tarefa da fase. Todas as da fa
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: em cada volta, `samples[0].t === startCross.t`, `samples[last].t === endCross.t`, os dois têm `synthetic: true` e `durationMs === round(last.t − first.t)`.
-- [ ] Teste: o `endCross` da volta N é igual ao `startCross` da volta N+1 (mesma lat/lng/t).
-- [ ] Teste: nenhum ponto interno fica fora de `(startCross.t, endCross.t)`.
-- [ ] Teste: a IMU da volta fica toda dentro de `[startCross.t, endCross.t]`.
-- [ ] Os testes existentes de `finishSession` e `recovery` continuam passando. **Exceção autorizada pela Julia em 29/09:** o teste "sliceLaps: recorta a IMU pela janela de tempo de cada volta" passa a comparar `lap.samples.slice(1, -1)` com os pontos crus de `samples.slice(d.startIdx, d.endIdx + 1)` que caem em `startCross.t < t < endCross.t`, e ganha a checagem das duas fronteiras sintéticas. A parte da IMU fica igual.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste: em cada volta, `samples[0].t === startCross.t`, `samples[last].t === endCross.t`, os dois têm `synthetic: true` e `durationMs === round(last.t − first.t)`.
+- [x] Teste: o `endCross` da volta N é igual ao `startCross` da volta N+1 (mesma lat/lng/t).
+- [x] Teste: nenhum ponto interno fica fora de `(startCross.t, endCross.t)`.
+- [x] Teste: a IMU da volta fica toda dentro de `[startCross.t, endCross.t]`.
+- [x] Os testes existentes de `finishSession` e `recovery` continuam passando. **Exceção autorizada pela Julia em 29/09:** o teste "sliceLaps: recorta a IMU pela janela de tempo de cada volta" passa a comparar `lap.samples.slice(1, -1)` com os pontos crus de `samples.slice(d.startIdx, d.endIdx + 1)` que caem em `startCross.t < t < endCross.t`, e ganha a checagem das duas fronteiras sintéticas. A parte da IMU fica igual.
+- [x] Gate: `npm test`, contagem registrada: 84 testes, 0 falhas.
 
 **Tests**: unit
 **Gate**: quick

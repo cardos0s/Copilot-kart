@@ -20,6 +20,8 @@ export type GpsSample = {
   heading?: number; // graus, 0 = norte
   altitude?: number;         // metros sobre nível do mar (quando disponível)
   altitudeAccuracy?: number; // precisão vertical em metros
+  /** Ponto de fronteira da volta, interpolado na linha de chegada (AD-006). O GPS não o entregou. */
+  synthetic?: true;
 };
 
 /**

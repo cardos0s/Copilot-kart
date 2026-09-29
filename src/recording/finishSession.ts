@@ -8,6 +8,7 @@
 import type { LapRecord } from '../lib/analysis';
 import { polylineLength, type GpsSample, type ImuSample } from '../lib/geometry';
 import { detectLaps } from '../lib/lapDetector';
+import type { CrossPoint, StartLine } from '../lib/startLine';
 import type { Session, SessionMode, TrackLayout } from '../storage/db';
 
 export type RecordedLap = {
@@ -19,15 +20,34 @@ export type RecordedLap = {
 };
 
 /**
- * Detecta as voltas e recorta cada uma. A IMU é recortada por timestamp, não
- * por índice (50 Hz contra 10 Hz do GPS): entra tudo em [início, início + duração].
+ * Ponto de fronteira da volta, no cruzamento interpolado da linha. `idx` é o
+ * 1º ponto cru depois do cruzamento; a precisão é a pior do par interpolado.
  */
-export function sliceLaps(samples: GpsSample[], imu: ImuSample[]): RecordedLap[] {
-  return detectLaps(samples).laps.map((lap) => {
-    const lapEndT = lap.startedAt + lap.durationMs;
+function boundaryPoint(cross: CrossPoint, samples: GpsSample[], idx: number): GpsSample {
+  const b = samples[idx];
+  const a = samples[idx - 1];
+  const accuracy = a && cross.t < b.t ? Math.max(a.accuracy, b.accuracy) : b.accuracy;
+  return { t: cross.t, lat: cross.lat, lng: cross.lng, speed: cross.speed, accuracy, synthetic: true };
+}
+
+/**
+ * Detecta as voltas e recorta cada uma. A volta começa e termina em pontos
+ * sintéticos na linha (AD-006): `[startCross, pontos crus entre os dois
+ * cruzamentos, endCross]`. A IMU é recortada por timestamp, não por índice
+ * (50 Hz contra 10 Hz do GPS): entra tudo em [startCross.t, endCross.t].
+ */
+export function sliceLaps(samples: GpsSample[], imu: ImuSample[], line?: StartLine | null): RecordedLap[] {
+  return detectLaps(samples, { line }).laps.map((lap) => {
+    const t0 = lap.startCross.t;
+    const t1 = lap.endCross.t;
+    const inner = samples.slice(lap.startIdx, lap.endIdx + 1).filter((s) => s.t > t0 && s.t < t1);
     return {
-      samples: samples.slice(lap.startIdx, lap.endIdx + 1),
-      imuSamples: imu.filter((s) => s.t >= lap.startedAt && s.t <= lapEndT),
+      samples: [
+        boundaryPoint(lap.startCross, samples, lap.startIdx),
+        ...inner,
+        boundaryPoint(lap.endCross, samples, lap.endIdx),
+      ],
+      imuSamples: imu.filter((s) => s.t >= t0 && s.t <= t1),
       durationMs: lap.durationMs,
       startedAt: lap.startedAt,
     };
