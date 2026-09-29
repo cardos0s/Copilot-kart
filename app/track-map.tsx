@@ -23,6 +23,7 @@ import {
   repairDegenerateTimestamps,
 } from '../src/lib/analysis';
 import { buildReferenceLap, ReferenceLap } from '../src/lib/geometry';
+import { referenceFromLayout, sectorSplits } from '../src/lib/sectors';
 import { Corner, detectCorners } from '../src/lib/corners';
 import { peakSpeedInSectorMs, msToKmh } from '../src/lib/speed';
 import { findTrackById } from '../src/data/tracks';
@@ -52,7 +53,7 @@ type LoadResult =
         index: number;
         sStart: number;
         sEnd: number;
-        durationMs: number;
+        durationMs: number | null;
         firstCorner: number;
         lastCorner: number;
         isPb: boolean;
@@ -109,15 +110,24 @@ export default function TrackMapScreen() {
       refLap
     );
 
-    // Setores S1/S2/S3 — divide a pista em 3 partes IGUAIS por distância e
-    // pega o tempo da volta atual em cada uma.
+    // Setores S1/S2/S3 pela régua única (sectorSplits), como a sessão: contra
+    // o traçado, sobre os pontos da volta como foram salvos (só com o reparo
+    // de timestamp). O ponto de fronteira não pode sair no filtro (AD-006).
+    const sectorRef = referenceFromLayout(layout.samples);
+    if (!sectorRef) return setState({ kind: 'no-data' });
+    const { samples: savedSamples } = repairDegenerateTimestamps(
+      lap.samples,
+      lap.durationMs,
+      lap.startedAt
+    );
+    const splits = sectorSplits(savedSamples, sectorRef);
+    const sectorMs = [splits.s1Ms, splits.s2Ms, splits.s3Ms];
+    // Terços do traçado desenhado, só para pintar o mapa e achar as curvas.
     const sectorLen = refLap.totalLength / 3;
     const sectors = [0, 1, 2].map((i) => {
       const sStart = i * sectorLen;
       const sEnd = (i + 1) * sectorLen;
-      const tStart = interpolateT(matched.points, sStart) ?? 0;
-      const tEnd = interpolateT(matched.points, sEnd) ?? lap.durationMs;
-      const durationMs = Math.max(0, tEnd - tStart);
+      const durationMs = sectorMs[i];
       // Corners que caem nesse setor
       const cornersInside = corners.filter((c) => c.sStart >= sStart && c.sEnd <= sEnd);
       const firstCorner = cornersInside[0]?.index ?? 0;
@@ -135,10 +145,11 @@ export default function TrackMapScreen() {
     });
     // Marca o setor com menor durationMs como "PB"
     const bestSecIdx = sectors.reduce(
-      (b, sec, i) => (sec.durationMs < sectors[b].durationMs ? i : b),
-      0
+      (b, sec, i) =>
+        sec.durationMs !== null && (b < 0 || sec.durationMs < (sectors[b].durationMs ?? Infinity)) ? i : b,
+      -1
     );
-    sectors[bestSecIdx].isPb = true;
+    if (bestSecIdx >= 0) sectors[bestSecIdx].isPb = true;
 
     // Velocidade mínima por curva — útil pra ver onde travou freada
     const cornerSpeeds = corners.map((c) => {
@@ -243,7 +254,7 @@ export default function TrackMapScreen() {
                 )}
               </View>
               <Text style={[s.sectorTime, typography.mono]}>
-                {(sec.durationMs / 1000).toFixed(3)}
+                {sec.durationMs !== null ? (sec.durationMs / 1000).toFixed(3) : '—'}
               </Text>
               <Text style={s.sectorMeta}>
                 Curvas {sec.firstCorner}–{sec.lastCorner}
@@ -292,27 +303,6 @@ export default function TrackMapScreen() {
       </ScrollView>
     </View>
   );
-}
-
-// ===== Helpers =====
-
-/** Tempo (ms) no ponto s da matched lap. Versão simplificada da lib analysis. */
-function interpolateT(
-  points: Array<{ s: number; tMs: number }>,
-  s: number
-): number | null {
-  if (points.length < 2) return null;
-  if (s <= points[0].s) return points[0].tMs;
-  if (s >= points[points.length - 1].s) return points[points.length - 1].tMs;
-  for (let i = 1; i < points.length; i++) {
-    if (points[i].s >= s) {
-      const a = points[i - 1];
-      const b = points[i];
-      const ratio = b.s === a.s ? 0 : (s - a.s) / (b.s - a.s);
-      return a.tMs + ratio * (b.tMs - a.tMs);
-    }
-  }
-  return points[points.length - 1].tMs;
 }
 
 // ===== SVG do mapa da pista =====

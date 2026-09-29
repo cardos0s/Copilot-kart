@@ -711,8 +711,13 @@ Saídas do `validation.md` de 29/09 (FAIL).
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste estático: o arquivo importa `sectorSplits` e não tem mais o cálculo próprio de setores.
-- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+- [x] Teste estático: o arquivo importa `sectorSplits` e não tem mais o cálculo próprio de setores.
+- [x] Gate: `npm test && npm run typecheck`, só com a baseline: 134 testes, 0 falhas; typecheck com os 8 erros da baseline.
+
+**Notas da execução:**
+- Como na sessão (T11), os setores são medidos sobre os pontos da volta como foram salvos, só com o reparo de timestamp, e a régua é `referenceFromLayout(layout.samples)`. O traçado limpo continua desenhando o mapa, as curvas e a velocidade mínima por curva.
+- Um setor `null` (volta antiga sem fronteira que não alcança a linha) aparece como "—" e fica fora do selo de PB. O `interpolateT` local saiu.
+- O teste estático está em `test/trackMapScreen.test.ts`.
 
 **Tests**: unit
 **Gate**: build
