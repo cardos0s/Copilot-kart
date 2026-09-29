@@ -10,7 +10,7 @@
  * Puro: nada nativo, testado em Node.
  */
 import type { LapRecord } from './analysis';
-import { matchLapToReference } from './analysis';
+import { matchLapToReference, repairDegenerateTimestamps } from './analysis';
 import { buildReferenceLap, type GpsSample, type ReferenceLap } from './geometry';
 import { lineFromLayout } from './startLine';
 
@@ -33,6 +33,16 @@ export function referenceFromLayout(samples: GpsSample[]): ReferenceLap | null {
 export function referenceFromLap(lap: { samples: GpsSample[] }): ReferenceLap {
   const o = lap.samples[0];
   return buildReferenceLap(lap.samples, { lat: o.lat, lng: o.lng });
+}
+
+/**
+ * Os pontos sobre os quais os setores de uma volta salva são medidos: os
+ * salvos, só com o reparo de timestamp, sem `cleanSamples`. É a preparação da
+ * sessão e da comparação; o ao vivo mede sobre os mesmos pontos, antes de
+ * salvar.
+ */
+export function sectorLapSamples(lap: Pick<LapRecord, 'samples' | 'durationMs' | 'startedAt'>): GpsSample[] {
+  return repairDegenerateTimestamps(lap.samples, lap.durationMs, lap.startedAt).samples;
 }
 
 /**

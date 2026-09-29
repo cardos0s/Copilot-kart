@@ -768,11 +768,18 @@ Saídas do `validation.md` de 29/09 (FAIL).
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: pista de 37.699 ms a 10 Hz com uma fix de precisão de 15 m deslocada 5 m perto de 1/3, e outra perto de 2/3. Os S1/S2/S3 de `compareLaps` diferem no máximo 20 ms dos de `sectorSplits` sobre os pontos salvos.
-- [ ] Teste: o mesmo a 5 Hz, com duas fixes deslocadas 8 m, ≤ 20 ms.
-- [ ] `app/lap-compare.tsx` passa os pontos salvos para os setores, e os testes estáticos continuam passando.
-- [ ] Roteiro de UAT: passo 6, "entrar no box por mais de 180 s e voltar: o delta e os setores da volta seguinte começam do zero".
-- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+- [x] Teste: pista de 37.699 ms a 10 Hz com uma fix de precisão de 15 m deslocada 5 m perto de 1/3, e outra perto de 2/3. Os S1/S2/S3 de `compareLaps` diferem no máximo 20 ms dos de `sectorSplits` sobre os pontos salvos.
+- [x] Teste: o mesmo a 5 Hz, com duas fixes deslocadas 8 m, ≤ 20 ms.
+- [x] `app/lap-compare.tsx` passa os pontos salvos para os setores, e os testes estáticos continuam passando.
+- [x] Roteiro de UAT: passo 6, "entrar no box por mais de 180 s e voltar: o delta e os setores da volta seguinte começam do zero".
+- [x] Gate: `npm test && npm run typecheck`, só com a baseline: 137 testes, 0 falhas; typecheck com os 8 erros da baseline.
+
+**Notas da execução:**
+- A preparação dos pontos dos setores ficou num lugar só: `sectorLapSamples` (`src/lib/sectors.ts`), os pontos salvos com o reparo de timestamp e sem `cleanSamples`. A sessão (`app/session/[id].tsx`) troca a chamada inline por ela, sem mudar o comportamento; a comparação a usa dentro de `compareLaps`.
+- `compareLaps` ganhou o 5º parâmetro `saved: { a, b }`, as voltas como foram salvas. Sem ele, os setores saem de `lapA` e `lapB`, então os testes da T21 não mudaram. O traço do delta e o mapa seguem com os pontos limpos.
+- Antes da correção, os testes novos falhavam com 77 ms (10 Hz) e 138 ms (5 Hz) no S1 da volta A. Depois, a diferença entre comparação e sessão é 0 ms nas duas taxas.
+- O teste estático está em `test/lapCompareScreen.test.ts`.
+- O mapa detalhado (`app/track-map.tsx`, T24) ainda repete a mesma preparação inline; trocar por `sectorLapSamples` fica fora da T26.
 
 **Tests**: unit
 **Gate**: build
@@ -794,6 +801,7 @@ A execução é sequencial, uma tarefa por vez, na ordem dos números.
 3. Gravar numa pista **sem traçado**: a análise mostra S1/S2/S3 pela melhor volta, e o cockpit fica sem setores.
 4. Passar pela linha na contramão (box): não fecha volta.
 5. A home e a sessão mostram o pico, e "—" quando não há ponto bom.
+6. Entrar no box por mais de 180 s e voltar: o delta e os setores da volta seguinte começam do zero.
 
 ---
 

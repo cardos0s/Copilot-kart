@@ -29,7 +29,7 @@ import {
   repairDegenerateTimestamps,
 } from '../../src/lib/analysis';
 import { buildReferenceLap, type GpsSample } from '../../src/lib/geometry';
-import { referenceFromLap, referenceFromLayout, sectorSplits, type SectorSplits } from '../../src/lib/sectors';
+import { referenceFromLap, referenceFromLayout, sectorLapSamples, sectorSplits, type SectorSplits } from '../../src/lib/sectors';
 import { Corner, describeSector, detectCorners } from '../../src/lib/corners';
 import { CornerMetric, analyzeCorners } from '../../src/lib/cornerAnalysis';
 import {
@@ -264,7 +264,7 @@ function SessionScreenInner() {
 
       const savedSamples: Record<string, GpsSample[]> = {};
       for (const l of lapsRaw) {
-        savedSamples[l.id] = repairDegenerateTimestamps(l.samples, l.durationMs, l.startedAt).samples;
+        savedSamples[l.id] = sectorLapSamples(l);
       }
 
       setSession(ses);

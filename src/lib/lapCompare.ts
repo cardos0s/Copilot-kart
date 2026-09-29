@@ -20,7 +20,7 @@ import {
 } from './analysis';
 import { ReferenceLap } from './geometry';
 import { Corner, describeSector } from './corners';
-import { referenceFromLap, sectorSplits } from './sectors';
+import { referenceFromLap, sectorLapSamples, sectorSplits } from './sectors';
 
 export type LapTrace = {
   /** Pares (s, tempo) interpolados em N pontos uniformes pra plotar. */
@@ -129,23 +129,27 @@ function buildLapTrace(
  * Compara 2 voltas contra uma referência comum. As 2 voltas DEVEM ser da
  * mesma pista (mesmo layout) — caso contrário a comparação não faz sentido.
  *
- * S1/S2/S3 saem de `sectorSplits` sobre os pontos das duas voltas, a mesma
- * régua da sessão e do ao vivo (TMP-07, AD-006). A régua é o traçado (`ref`);
- * sem traçado (`null`), é a volta B, a referência da comparação.
+ * S1/S2/S3 saem de `sectorSplits` sobre os pontos salvos das duas voltas
+ * (`saved`), preparados como na sessão (`sectorLapSamples`): a mesma régua e
+ * os mesmos pontos da sessão e do ao vivo (TMP-07, AD-006). Sem `saved`, são
+ * os pontos de `lapA` e `lapB`. O traço do delta e o mapa usam `lapA` e `lapB`.
+ * A régua é o traçado (`ref`); sem traçado (`null`), é a volta B, a
+ * referência da comparação.
  */
 export function compareLaps(
   lapA: LapRecord,
   lapB: LapRecord,
   ref: ReferenceLap | null,
-  corners: Corner[]
+  corners: Corner[],
+  saved: { a: LapRecord; b: LapRecord } = { a: lapA, b: lapB }
 ): CompareResult {
   const ruler = ref ?? referenceFromLap(lapB);
   const matchedA = matchLapToReference(lapA, ruler);
   const matchedB = matchLapToReference(lapB, ruler);
   const trackLengthM = ruler.totalLength;
 
-  const splitsA = sectorSplits(lapA.samples, ruler);
-  const splitsB = sectorSplits(lapB.samples, ruler);
+  const splitsA = sectorSplits(sectorLapSamples(saved.a), ruler);
+  const splitsB = sectorSplits(sectorLapSamples(saved.b), ruler);
   const sectors: CompareSectorRow[] = (['s1Ms', 's2Ms', 's3Ms'] as const).map((k, g) => {
     const aMs = splitsA[k];
     const bMs = splitsB[k];

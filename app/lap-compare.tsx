@@ -75,19 +75,21 @@ export default function LapCompareScreen() {
           getLapsForSession(sessionA),
           getLapsForSession(sessionB),
         ]);
-        const findLap = (laps: LapRecord[], id: string) => {
-          const raw = laps.find((l) => l.id === id);
-          if (!raw) return null;
+        // As voltas como foram salvas: os setores saem delas, como na sessão
+        // (TMP-07). O traço do delta e o mapa usam os pontos limpos.
+        const savedA = lapsA.find((l) => l.id === lapA);
+        const savedB = lapsB.find((l) => l.id === lapB);
+        if (!savedA || !savedB) {
+          setState({ kind: 'error', message: 'Volta não encontrada.' });
+          return;
+        }
+        const forTrace = (raw: LapRecord): LapRecord => {
           const cleaned = cleanSamples(raw.samples, 10);
           const { samples } = repairDegenerateTimestamps(cleaned, raw.durationMs, raw.startedAt);
           return { ...raw, samples };
         };
-        const lapARec = findLap(lapsA, lapA);
-        const lapBRec = findLap(lapsB, lapB);
-        if (!lapARec || !lapBRec) {
-          setState({ kind: 'error', message: 'Volta não encontrada.' });
-          return;
-        }
+        const lapARec = forTrace(savedA);
+        const lapBRec = forTrace(savedB);
 
         // Layout: usa o layoutId da sessão A; se não tiver, default da pista
         let layout = sA.layoutId ? await getLayout(sA.layoutId) : null;
@@ -106,7 +108,7 @@ export default function LapCompareScreen() {
         });
         const corners = detectCorners(refLap);
 
-        const result = compareLaps(lapARec, lapBRec, refLap, corners);
+        const result = compareLaps(lapARec, lapBRec, refLap, corners, { a: savedA, b: savedB });
         const labelA = labelForLap(lapsA, lapARec);
         const labelB = labelForLap(lapsB, lapBRec);
         setState({ kind: 'ok', result, lapA: lapARec, lapB: lapBRec, lapALabel: labelA, lapBLabel: labelB });
