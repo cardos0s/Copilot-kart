@@ -298,9 +298,14 @@ export function analyzeSession(laps: LapRecord[]) {
   return { referenceLapId: best.id, referenceLap: refLap, laps: analyses };
 }
 
-/** Filtro simples pra remover amostras com accuracy ruim antes de analisar. */
+/**
+ * Filtro simples pra remover amostras com accuracy ruim antes de analisar.
+ * Os pontos de fronteira da volta (`synthetic`, AD-006) ficam sempre: são o
+ * início e o fim da volta, e a precisão deles é só a herdada do par
+ * interpolado.
+ */
 export function cleanSamples(samples: GpsSample[], maxAccuracyM: number = 10): GpsSample[] {
-  return samples.filter((s) => s.accuracy <= maxAccuracyM);
+  return samples.filter((s) => s.synthetic === true || s.accuracy <= maxAccuracyM);
 }
 
 /**

@@ -530,9 +530,9 @@ T18 -> T19
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: numa volta cujos pontos de fronteira herdaram precisão de 25 m, `cleanSamples(10)` mantém o primeiro e o último ponto (os sintéticos) e remove os pontos crus acima de 10 m.
-- [ ] Teste: com essa volta limpa, `sectorSplits` continua fechando `s1 + s2 + s3 === durationMs` (± 1 ms).
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste: numa volta cujos pontos de fronteira herdaram precisão de 25 m, `cleanSamples(10)` mantém o primeiro e o último ponto (os sintéticos) e remove os pontos crus acima de 10 m.
+- [x] Teste: com essa volta limpa, `sectorSplits` continua fechando `s1 + s2 + s3 === durationMs` (± 1 ms).
+- [x] Gate: `npm test`, contagem registrada: 118 testes, 0 falhas.
 
 **Tests**: unit
 **Gate**: quick
