@@ -199,12 +199,12 @@ T11, T12, T13, T14 e T15 não dependem de nenhuma tarefa da fase. Todas as da fa
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: numa volta sintética com fronteiras, S1, S2 e S3 correspondem aos terços do comprimento do traçado (em velocidade constante, cada um é D/3 ± 20 ms).
-- [ ] Teste: `s1 + s2 + s3 === durationMs` (± 1 ms).
-- [ ] Teste: numa volta em curso que ainda não chegou a 2/3, `s2Ms` e `s3Ms` são `null` e `s1Ms` é número.
-- [ ] Teste: a mesma volta, calculada como "em curso" no fechamento e como "fechada", dá os mesmos S1/S2/S3 (diferença ≤ 20 ms).
-- [ ] Teste: sem traçado, `referenceFromLap(melhorVolta)` é usado e os terços saem do comprimento dessa volta.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste: numa volta sintética com fronteiras, S1, S2 e S3 correspondem aos terços do comprimento do traçado (em velocidade constante, cada um é D/3 ± 20 ms).
+- [x] Teste: `s1 + s2 + s3 === durationMs` (± 1 ms).
+- [x] Teste: numa volta em curso que ainda não chegou a 2/3, `s2Ms` e `s3Ms` são `null` e `s1Ms` é número.
+- [x] Teste: a mesma volta, calculada como "em curso" no fechamento e como "fechada", dá os mesmos S1/S2/S3 (diferença ≤ 20 ms).
+- [x] Teste: sem traçado, `referenceFromLap(melhorVolta)` é usado e os terços saem do comprimento dessa volta.
+- [x] Gate: `npm test`, contagem registrada: 90 testes, 0 falhas.
 
 **Tests**: unit
 **Gate**: quick
