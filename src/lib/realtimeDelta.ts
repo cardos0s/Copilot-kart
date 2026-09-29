@@ -26,8 +26,8 @@
  * seja O(janela) em vez de O(n). A pista é contínua — o piloto não
  * teletransporta — então a busca local converge rápido.
  *
- * Reset() é chamado quando uma volta nova começa (cruzou a linha) pra
- * limpar o hint e voltar a buscar do começo.
+ * resetLap() é chamado quando uma volta nova começa (cruzou a linha) pra
+ * pôr o hint no início do traçado.
  */
 
 import {
@@ -120,9 +120,13 @@ export class DeltaTracker {
     this.lastS = null;
   }
 
-  /** Sinaliza que uma volta nova começou — reseta o hint pra buscar do começo. */
+  /**
+   * Sinaliza que uma volta nova começou. O hint vai para o segmento 0: a linha
+   * aparece nas duas pontas da polilinha, e sem hint o 1º ponto da volta podia
+   * casar no fim do traçado (TMP-10).
+   */
   resetLap(): void {
-    this.hintIdx = undefined;
+    this.hintIdx = 0;
     this.lastS = null;
   }
 

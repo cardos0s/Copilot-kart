@@ -186,7 +186,7 @@ Um app de telemetria cujo milésimo é inventado não deveria ir para a loja.
 | TMP-07 | P1: Setores (AC 1, 2, 3) | Design | Implementing |
 | TMP-08 | P1: Setores (AC 4, publicação) | Design | Pending |
 | TMP-09 | P1: Setores (AC 5, sem traçado) | Design | Implementing |
-| TMP-10 | P1: Setores (AC 6, delta no início da volta) | Design | Pending |
+| TMP-10 | P1: Setores (AC 6, delta no início da volta) | Design | Implementing |
 | TMP-11 | P2: Pico de velocidade | Design | Pending |
 | TMP-12 | P2: Insights (AC 1, 2) | Design | Pending |
 | TMP-13 | P2: Insights (AC 3, mesmo traçado) | Design | Pending |

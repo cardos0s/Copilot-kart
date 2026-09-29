@@ -225,8 +225,8 @@ T11, T12, T13, T14 e T15 não dependem de nenhuma tarefa da fase. Todas as da fa
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: depois de `resetLap()`, o primeiro ponto em cima da linha (que também coincide com o fim da polilinha) casa com `sCurrent < 5 % do comprimento`.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste: depois de `resetLap()`, o primeiro ponto em cima da linha (que também coincide com o fim da polilinha) casa com `sCurrent < 5 % do comprimento`.
+- [x] Gate: `npm test`, contagem registrada: 91 testes, 0 falhas.
 
 **Tests**: unit
 **Gate**: quick
