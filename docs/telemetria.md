@@ -31,29 +31,38 @@ trajetória 2D numa função **tempo em função da distância percorrida**,
 
 ## 1. Aquisição
 
-`src/hooks/useLapRecorder.ts`
+`src/hooks/useLapRecorder.ts`, `src/recording/locationTask.ts` e
+`src/recording/locationHandler.ts`
 
 **GPS.** `Location.Accuracy.BestForNavigation`, `timeInterval: 100` ms e
-`distanceInterval: 0` — pedimos ~10 Hz e nenhuma filtragem por distância,
-porque kart parado no grid ainda precisa aparecer. Roda como *background
-task*, então a tela pode apagar sem perder a volta.
+`distanceInterval: 0`. Pedimos ~10 Hz e nenhuma filtragem por distância,
+porque kart parado no grid ainda precisa aparecer. Os 10 Hz só valem no
+Android: no iOS o `timeInterval` é ignorado e o CoreLocation decide a taxa.
+Roda como *background task*, então a tela pode apagar sem perder a volta.
 
 **Descarte na entrada.** Toda fix com `accuracy > 30 m` é jogada fora antes
-mesmo de entrar no buffer. Não é filtro de análise, é filtro de porta: uma
-fix de 100 m de erro não tem uso nenhum.
+mesmo de entrar no buffer (`MAX_ACCURACY_M`, em `locationHandler.ts`). Não é
+filtro de análise, é filtro de porta: uma fix de 100 m de erro não tem uso
+nenhum.
 
-**Timestamp.** Aqui mora uma defesa que quase ninguém vê. Algumas builds
-Expo/Android entregam `loc.timestamp` sem parte de sub-segundo (ou zerado).
-Quando isso acontece, o app **fabrica** o tempo: `agora − (n−1−i) × 100 ms`,
-espalhando o lote retroativamente a 10 Hz. Sem isso, um lote de cinco fixes
-viraria cinco samples no mesmo milissegundo.
+**Timestamp.** Algumas builds Expo/Android entregam `loc.timestamp` sem parte
+de sub-segundo (ou zerado). O handler guarda um relógio por gravação,
+`clock: { trustsRaw, lastT }`, zerado a cada gravação:
 
-> Consequência: em aparelho com esse defeito, o *instante* de cada ponto é
-> uma estimativa. A posição e a velocidade continuam corretas.
+- o primeiro fix com sub-segundo liga `trustsRaw`, que vale até o fim da
+  gravação. Daí em diante o timestamp do GPS é usado mesmo quando cai
+  exatamente num segundo cheio (`.000`);
+- sem `trustsRaw`, o app **fabrica** o tempo: `agora − (n−1−i) × 100 ms`,
+  espalhando o lote retroativamente a 10 Hz;
+- todo `t` entregue é `max(t, lastT + 1)`: estritamente crescente dentro da
+  gravação.
 
-**IMU.** Acelerômetro e giroscópio a **50 Hz** (`20 ms`), pareados por
-timestamp com os samples de GPS. São ~2500 amostras por volta de 50 s,
-contra ~500 do GPS.
+> Consequência: em aparelho que só entrega timestamp quantizado, o *instante*
+> de cada ponto é uma estimativa. A posição e a velocidade continuam corretas.
+
+**IMU.** Acelerômetro e giroscópio a **50 Hz** (`20 ms`). São ~2500 amostras
+por volta de 50 s, contra ~500 do GPS. A IMU não entra em nenhum tempo
+mostrado.
 
 **Drenagem.** Um `setInterval` de **500 ms** esvazia o buffer global para o
 estado do React e roda a detecção de voltas de novo, inteira. É o que faz o
@@ -63,11 +72,11 @@ contador de voltas subir durante a sessão.
 
 ## 2. Detecção de voltas
 
-`src/lib/lapDetector.ts` — função pura, mesma entrada sempre dá a mesma
-saída. É usada tanto ao vivo quanto na hora de salvar, então não existe
-divergência entre o que você viu na pista e o que ficou gravado.
-
-**Não existe linha de chegada cadastrada.** O app deduz.
+`src/lib/lapDetector.ts` e `src/lib/startLine.ts`. Função pura: a mesma
+entrada sempre dá a mesma saída. O ao vivo (hook), o "Encerrar" e a
+recuperação de gravação interrompida chamam a mesma função com a **mesma
+linha**, então não existe divergência entre o que você viu na pista e o que
+ficou gravado.
 
 ### Fase 1 — "entrou em ritmo"
 
@@ -76,40 +85,76 @@ Procura o primeiro sample com velocidade `≥ 5 m/s` (18 km/h) que se
 
 O limiar duplo é proposital: GPS parado oscila e cospe 6 m/s por um
 instante. Exigir confirmação sustentada separa ruído de arrancada. O índice
-retornado é o **primeiro** sample do período, não o último — a linha nasce
-onde o ritmo começou, não onde foi confirmado.
+retornado é o **primeiro** sample do período, não o último.
 
 ### Fase 2 — a linha
 
-O ponto onde o ritmo começou vira a linha de largada/chegada. Na prática é
-a saída do box.
+A linha de chegada é um **ponto, um rumo e um segmento** perpendicular a esse
+rumo, com **15 m** para cada lado do ponto.
+
+- **Com traçado gravado**, a linha é o primeiro ponto do traçado, com o rumo
+  até o primeiro ponto do traçado a 5 m ou mais (`lineFromLayout`). É a mesma
+  linha em todas as sessões daquele traçado. O traçado com menos de 5 pontos
+  ou sem comprimento conta como sem traçado.
+- **Sem traçado**, a linha é inferida no ponto onde o ritmo começou, com o
+  rumo do movimento a partir dele (`lineFromMotion`). Na prática é a saída do
+  box.
+
+A linha da gravação vai para a meta do diário (`RecordingMeta.line`). Um
+diário antigo, sem ela, recupera com a linha inferida.
 
 ### Fase 3 — fechar a volta
 
-A cada sample, fecha volta se **as quatro** condições valerem:
+A volta fecha no instante em que a trajetória **atravessa o segmento da
+linha no sentido dela** (`crossing`). No referencial da linha, `u` é a
+distância ao longo do rumo e `v` a lateral. Há cruzamento quando:
 
 | Condição | Valor | Por quê |
 |---|---|---|
-| distância até a linha | `< 15 m` | raio de cruzamento |
+| sentido | `u_a < 0 ≤ u_b` | o piloto na contramão (box, trecho paralelo) não fecha volta |
+| largura | `|v| ≤ 15 m` no ponto de corte | passar ao lado da linha não é cruzar |
+| buraco | `t_b − t_a ≤ 2 s` | sem ponto de um dos lados, o instante seria chute |
+
+E o cruzamento só fecha volta se, desde o cruzamento anterior:
+
+| Condição | Valor | Por quê |
+|---|---|---|
 | distância percorrida | `≥ 300 m` | quem sai 16 m e volta não deu volta |
 | tempo decorrido | `≥ 25 s` | descarta fechamento espúrio |
-| não acabou de cruzar | flag | evita contar o mesmo cruzamento várias vezes |
+| trava de saída | afastou-se mais de **30 m** (2 × 15 m) do ponto da linha | kart parado na linha, com jitter, não fecha volta |
 
-A trava do "acabou de cruzar" só libera quando o piloto se afasta mais de
-**30 m** (dois raios) da linha.
+Cruzamento que não fecha volta é ignorado e não reinicia a contagem. Volta
+acima de **180 s** é descartada (pit-in, parada, sinal perdido), mas a
+próxima conta a partir daquele cruzamento.
 
-Volta acima de **180 s** é descartada — pit-in, parada, sinal perdido — mas
-o ponteiro é reposicionado, então a próxima volta conta a partir dali.
+**A primeira volta.** Sem traçado, o ponto de ritmo é o primeiro cruzamento
+(`f = 0`), e a 1ª volta segue a mesma regra das outras. Com traçado, o trecho
+antes do primeiro cruzamento da linha não é volta: quem começa a gravar já
+andando só tem a 1ª volta a partir da linha.
 
 ### O tempo da volta é interpolado
 
-Esse detalhe vale ouro. A **10 Hz**, o instante do cruzamento cai em algum
-lugar entre dois samples, e usar o mais próximo faria todo tempo de volta
-"grudar" em múltiplos de ~100 ms (43.000, 43.600 e nunca 43.412).
+O instante do cruzamento sai da interpolação linear entre os dois pontos do
+GPS que ficam um de cada lado da linha: `f = −u_a / (u_b − u_a)` e
+`t = t_a + f · (t_b − t_a)`. Posição e velocidade no cruzamento saem do mesmo
+`f`. Como o corte é geométrico, o instante não depende da taxa do GPS: em
+pista sintética a 5 e a 10 Hz, o erro contra a duração real fica em até
+20 ms, inclusive na 1ª volta.
 
-O detector projeta a linha sobre os segmentos vizinhos ao cruzamento e
-**interpola o instante exato**, com peso `f` dentro do segmento. É de onde
-vem o milésimo dos tempos que você lê no app.
+### A volta começa e termina na linha
+
+`sliceLaps` (`src/recording/finishSession.ts`) monta cada volta como
+`[cruzamento de abertura, pontos crus entre os dois cruzamentos, cruzamento
+de fechamento]`. Os dois pontos das pontas são **sintéticos**
+(`synthetic: true`), ficam exatamente na linha e têm o instante interpolado.
+`durationMs = round(último.t − primeiro.t)`, e o fim da volta N é o mesmo
+ponto que o início da volta N+1. A IMU é recortada pela mesma janela de
+tempo.
+
+Toda régua de tempo (volta, setores, delta) deriva desses pontos (AD-006).
+Quem contar pontos ou exportar a trajetória precisa saber que há dois pontos
+por volta que o GPS não entregou. As voltas gravadas antes disso não têm os
+pontos de fronteira e não foram recalculadas.
 
 ---
 
@@ -125,7 +170,9 @@ em metros a partir de uma origem — com precisão sub-métrica em raios de até
 **Map matching**: cada sample da volta analisada é projetado sobre o
 segmento mais próximo da referência, virando um par `(s, t)`. Para não
 varrer a polilinha inteira a cada ponto, a busca usa uma janela de **±30
-segmentos** ao redor de onde o ponto anterior caiu.
+segmentos** ao redor de onde o ponto anterior caiu. Se o melhor casamento
+nessa janela fica a mais de **20 m**, a busca é refeita na polilinha inteira
+(o piloto rodou ou saiu da dica).
 
 ### Duas correções que o código carrega
 
@@ -147,13 +194,41 @@ monotônico, o código soma o comprimento total ao detectar a queda.
 
 ## 4. Setores
 
-`analyzeLap()` em `src/lib/analysis.ts`
+### S1, S2 e S3
 
-A pista é dividida em **20 mini-setores de distância igual** — não de tempo
-igual, e não por curva.
+`sectorSplits` em `src/lib/sectors.ts` é a **única** régua de S1/S2/S3. O
+ao vivo, a publicação para a equipe e a análise da sessão chamam essa função
+sobre os mesmos pontos da volta.
 
-Para cada setor, o tempo sai de **interpolação linear** de `t(s)` nos dois
-extremos, na volta atual e na referência. `delta = atual − referência`,
+- S1, S2 e S3 são os **terços exatos do comprimento do traçado**, a partir da
+  linha de chegada.
+- O instante em que a volta passa por `L/3` e `2L/3` sai do map matching e da
+  interpolação entre os dois pontos em volta de cada limite. Não é o instante
+  do poll.
+- Numa volta fechada, o fim é o ponto de fronteira na linha, e
+  `S1 + S2 + S3 = durationMs` (± 1 ms de arredondamento).
+- Numa volta em curso, o setor ainda não alcançado fica `null` ("—").
+
+**Qual traçado.** Com traçado gravado, a régua é o traçado
+(`referenceFromLayout`). Sem traçado, a análise usa a melhor volta da sessão
+(`referenceFromLap`), e o ao vivo fica sem setores.
+
+**No cockpit** (`useLapRecorder.ts`), a cada poll a volta em curso (do
+cruzamento que a abriu até o ponto atual) passa pelo `sectorSplits`. Quando
+a volta fecha, a volta recortada pelo `sliceLaps` passa pelo mesmo
+`sectorSplits`, e é esse resultado que vai para a equipe.
+
+**Na análise da sessão** (`app/session/[id].tsx`), cada volta é medida sobre
+os pontos como foram salvos, que são os mesmos que o ao vivo mediu.
+
+### Os 20 mini-setores
+
+`analyzeLap()` em `src/lib/analysis.ts` divide a pista em **20 mini-setores
+de distância igual**. Eles são a régua interna do delta por trecho e da cor
+do mapa; não são os S1/S2/S3 da tela.
+
+Para cada mini-setor, o tempo sai de **interpolação linear** de `t(s)` nos
+dois extremos, na volta atual e na referência. `delta = atual − referência`,
 positivo significa perdeu tempo.
 
 **Setor inválido** — e isso importa mais do que parece:
@@ -163,12 +238,10 @@ valid = curMs > 0 && refMs > 0 && curMs <= refMs * 5
 ```
 
 Tempo zero significa que a interpolação não achou o piloto ali. Mais de 5×
-a referência significa pit-in ou GPS perdido. Setor inválido entra com
+a referência significa pit-in ou GPS perdido. (O comentário do tipo `Sector`
+em `analysis.ts` ainda diz 3×; o código usa 5×.) Setor inválido entra com
 `delta = 0` e é **excluído** da escolha de melhor e pior setor — senão um
 buraco de dados venceria a estatística.
-
-**Os S1/S2/S3 que você vê na tela** são os 20 mini-setores agrupados em
-terços. A divisão em 20 é a régua interna; a de 3 é a leitura.
 
 ---
 
@@ -182,14 +255,17 @@ aconteceu nelas)
 1. **Suaviza as posições** antes de qualquer conta. Jitter de ~1 m em
    samples espaçados 2–4 m vira zigue-zague que domina a curvatura — sem
    isso, reta vira curva. O raio é adaptativo: `max(3, espaçamento médio × 2)`,
-   então pista gravada com menos Hz suaviza mais.
+   então pista gravada com menos Hz suaviza mais. É a única parte adaptativa.
 2. **Heading por segmento** e **heading de corda (±4 m)**. A corda é a régua
    estável; o segmento isolado oscila alguns graus mesmo suavizado.
-3. **Taxa de curvatura** em rad/m, suavizada numa janela de 6 m.
-4. **Limiar de 0,04 rad/m** (≈ 2,3°/m) marca curva, com comprimento mínimo
-   de **8 m**.
+3. **Taxa de curvatura** em rad/m, com a intensidade medida numa janela fixa
+   de **±6 m**.
+4. **Limiar de 0,04 rad/m** (≈ 2,3°/m) marca o início da curva, e ela segue
+   enquanto a intensidade fica acima de **metade** do limiar (histerese de
+   0,5×). Comprimento mínimo de **8 m**.
 5. A intensidade **com sinal** separa S e chicane: quando o sentido de
-   rotação inverte, são duas curvas, não uma.
+   rotação inverte, são duas curvas, não uma. Um trecho que varre menos de
+   **30°** é absorvido pelo vizinho mais forte: oscilação de GPS não é curva.
 
 ### Medir a curva
 
@@ -220,15 +296,22 @@ invalida a curva.
 do GPS, que no iPhone é medida por efeito Doppler na portadora — mais
 precisa que derivar posição por tempo.
 
-**O pico é o máximo bruto**, sem filtro nem percentil:
+**O pico é o percentil 99** (nearest-rank) da velocidade dos pontos com
+precisão de até **10 m**:
 
 ```ts
-for (const s of samples) if (s.speed > max) max = s.speed;
+const speeds = samples.filter((s) => s.accuracy <= 10).map((s) => s.speed).sort((a, b) => a - b);
+return speeds.length ? speeds[Math.ceil(0.99 * speeds.length) - 1] : null;
 ```
 
-> Limitação real: uma única fix ruim que passou pelo filtro de 30 m infla o
-> "velocidade máxima" da volta inteira. Usar percentil 99 em vez do máximo
-> seria mais honesto, e é uma mudança de uma linha.
+Uma fix ruim isolada, em ~500 pontos por volta, não chega ao p99: numa volta
+a ~80 km/h com um único ponto a 150 km/h, o pico fica abaixo de 81 km/h. Sem
+nenhum ponto de até 10 m, o pico é `null` e a interface mostra "—".
+
+O mesmo cálculo vale na tela de sessão (inclusive o marcador de pico no
+mapa), na home, no prompt do coach (que recebe `null` quando não há dado) e
+na escala de cor do "Sua volta". Fica de fora `peakSpeedInSectorMs`, que é
+o máximo dentro de um trecho do mapa de setor.
 
 ---
 
@@ -248,6 +331,9 @@ Roda sobre o giroscópio, nos três eixos separadamente:
 A histerese (90 para entrar, 30 para sair) evita fragmentar um trompo em
 vários eventos. Abaixo de 400 ms é correção fina de volante, não rodada.
 
+Sem IMU, há um detector de trompo pelo GPS no mesmo arquivo: numa janela de
+**2 s**, a velocidade cai mais de **50%** e o rumo muda mais de **120°**.
+
 ---
 
 ## 8. Delta ao vivo
@@ -259,9 +345,16 @@ pergunta: *"neste ponto da pista, estou mais rápido que minha referência?"*
 
 Pré-computa `t(s)` da referência uma vez e, a cada sample, faz o map
 matching para achar o `s` atual e compara o tempo decorrido contra o tempo
-que a referência levava para chegar ali. É o mesmo pipeline da análise — o
-que garante que o delta que você vê na pista e o que aparece depois falam
-a mesma língua.
+que a referência levava para chegar ali. É o mesmo pipeline da análise.
+
+**Início da volta.** A linha aparece nas duas pontas da polilinha (`s ≈ 0` e
+`s ≈ L`). Quando uma volta nova começa, `resetLap()` põe a dica do map
+matching no segmento 0, e o primeiro ponto da volta casa perto de `s = 0`,
+nunca no fim do traçado.
+
+**Quando o delta some.** O delta vira `null` (o HUD mostra só o cronômetro)
+quando o ponto fica a mais de **40 m** do traçado ou quando o valor passa de
+**±30 s**.
 
 ---
 
@@ -269,13 +362,19 @@ a mesma língua.
 
 **Insights** (`src/lib/lapInsight.ts`) — a pergunta muda de "esta volta" para
 "o que se repete". Roda a análise de curvas de todas as voltas daquela pista
-contra a melhor e tira a **média por curva**, com três regras:
+contra a melhor e tira a **média por curva**, com estas regras:
 
 - **Ganho não abate perda.** Uma volta excepcional numa curva não desfaz o
   custo médio dela.
-- **Só a mesma pista.** Misturar kartódromos compararia curvas que não se
-  comparam.
-- **Teto de 12 sessões / 60 voltas.** O casamento é O(n) por volta.
+- **Só o mesmo traçado da mesma pista** (`lapsForInsight`). Misturar
+  kartódromos ou traçados compararia curvas que não se comparam.
+- **Média só com as voltas válidas.** Uma volta sem tempo válido numa curva
+  não entra no denominador daquela curva.
+- **Mesmas defesas da análise.** Cada volta passa por `cleanSamples(10)` e
+  `repairDegenerateTimestamps()` antes de entrar.
+- **Teto de 12 sessões / 60 voltas.** O casamento é O(n) por volta. As 12
+  sessões ficam em `app/(tabs)/insights.tsx`; as 60 voltas, em
+  `lapInsight.ts`.
 
 **Pilot DNA** (`src/lib/pilotDna.ts`) — mesma máquina, recorte diferente:
 classifica curvas por ângulo (grampo, média, rápida) e procura traços que se
@@ -285,17 +384,22 @@ repetem entre sessões.
 
 ## 10. Defesas contra dado ruim
 
-O app tem quatro camadas, e vale saber que existem:
+O app tem estas camadas:
 
 1. **Porta de entrada** — `accuracy > 30 m` nem vira sample.
-2. **`cleanSamples(10)`** — antes de analisar, descarta o que passa de 10 m.
-   Usado na análise de sessão, comparação de voltas, mapa, insights, DNA e
-   contexto do coach.
-3. **`repairDegenerateTimestamps()`** — se o intervalo de tempo da volta é
+2. **Relógio do GPS** — timestamp estritamente crescente, e o do GPS é usado
+   quando o aparelho já mostrou sub-segundo (§1).
+3. **`cleanSamples(10)`** — antes de analisar, descarta o que passa de 10 m.
+   Usado na análise de sessão (curvas, mini-setores, mapa), comparação de
+   voltas, mapa da pista, insights, DNA e contexto do coach. Os S1/S2/S3 da
+   sessão são medidos sobre os pontos salvos, sem esse filtro, para bater com
+   o ao vivo.
+4. **`repairDegenerateTimestamps()`** — se o intervalo de tempo da volta é
    menor que metade da duração conhecida, reescreve os timestamps
    distribuídos uniformemente. Devolve `repaired: true`, e é isso que
    acende o aviso *"tempos por setor aproximados"* na tela de sessão.
-4. **Validade por setor e por curva** — o `× 5` descrito acima.
+5. **Validade por setor e por curva** — o `× 5` descrito acima.
+6. **Pico p99** — uma fix ruim isolada não vira a velocidade máxima (§6).
 
 > O reparo de timestamp **não recupera** onde o tempo foi perdido dentro da
 > volta: essa informação morreu na gravação. Ele salva o delta total, o pico
@@ -309,10 +413,10 @@ Ser explícito aqui é o que separa telemetria de enfeite.
 
 - **Não há sensor no kart.** Nada de RPM, temperatura, acelerador ou freio.
   Tudo é inferido de posição, velocidade e inércia do celular.
-- **A linha de chegada é inventada** a cada sessão, no ponto onde o piloto
-  entrou em ritmo. Duas sessões na mesma pista podem ter linhas alguns
-  metros diferentes — os tempos de volta continuam corretos entre si, mas a
-  comparação **entre sessões** carrega esse deslocamento.
+- **Sem traçado gravado, a linha de chegada é inferida** a cada sessão, no
+  ponto onde o piloto entrou em ritmo. Duas sessões assim podem ter linhas
+  alguns metros diferentes, e a comparação **entre sessões** carrega esse
+  deslocamento. Com traçado, a linha é a do traçado (§2).
 - **Setor é distância, não tempo.** Um setor de 40 m numa reta e outro de
   40 m num grampo não são comparáveis em dificuldade.
 - **A altimetria é ignorada.** Todo o cálculo é 2D; subida e descida não
@@ -320,7 +424,9 @@ Ser explícito aqui é o que separa telemetria de enfeite.
 - **A largura da pista não existe** no modelo. Traçado é uma linha, então
   "abriu demais na entrada" é medido por ângulo, nunca por metros de
   distância da zebra.
-- **O pico de velocidade é o máximo bruto** — ver seção 6.
+- **As sessões gravadas antes das regras novas** ficam com os tempos que
+  foram salvos: as voltas delas não têm os pontos de fronteira e não foram
+  recalculadas.
 
 ---
 
@@ -328,37 +434,52 @@ Ser explícito aqui é o que separa telemetria de enfeite.
 
 | Constante | Valor | Arquivo |
 |---|---|---|
-| taxa GPS pedida | 100 ms (10 Hz) | `useLapRecorder.ts` |
-| descarte na entrada | accuracy > 30 m | `useLapRecorder.ts` |
-| taxa IMU | 20 ms (50 Hz) | `useLapRecorder.ts` |
-| drenagem do buffer | 500 ms | `useLapRecorder.ts` |
-| entra em ritmo | 5 m/s, sustentado 3 m/s × 3 | `lapDetector.ts` |
-| raio da linha | 15 m | `lapDetector.ts` |
-| distância mínima de volta | 300 m | `lapDetector.ts` |
-| duração mínima / máxima | 25 s / 180 s | `lapDetector.ts` |
-| janela do map matching | ±30 segmentos | `geometry.ts` |
-| tolerância da correção de linha | 25 m | `analysis.ts` |
-| mini-setores | 20 | `analysis.ts` |
-| setor/curva inválidos | > 5× a referência | `analysis.ts`, `cornerAnalysis.ts` |
-| limpeza pré-análise | accuracy > 10 m | `analysis.ts` |
-| limiar de curva | 0,04 rad/m (≈ 2,3°/m) | `corners.ts` |
-| comprimento mínimo de curva | 8 m | `corners.ts` |
-| janela de suavização | 6 m (adaptativa) | `corners.ts` |
-| corda do azimute | ±4 m | `corners.ts` |
-| trompo: entra / sai | 90°/s / 30°/s | `spinDetector.ts` |
-| trompo: duração mínima | 400 ms | `spinDetector.ts` |
-| janela dos insights | 12 sessões / 60 voltas | `lapInsight.ts` |
+| taxa GPS pedida | 100 ms (10 Hz, só no Android) | `src/hooks/useLapRecorder.ts` |
+| descarte na entrada | accuracy > 30 m | `src/recording/locationHandler.ts` |
+| espalhamento do timestamp fabricado | 100 ms | `src/recording/locationHandler.ts` |
+| taxa IMU | 20 ms (50 Hz) | `src/hooks/useLapRecorder.ts` |
+| drenagem do buffer | 500 ms | `src/hooks/useLapRecorder.ts` |
+| entra em ritmo | 5 m/s, sustentado 3 m/s × 3 | `src/lib/lapDetector.ts` |
+| meia-largura da linha | 15 m | `src/lib/lapDetector.ts` |
+| trava de saída da linha | 30 m (2 × 15 m) | `src/lib/lapDetector.ts` |
+| distância mínima de volta | 300 m | `src/lib/lapDetector.ts` |
+| duração mínima / máxima | 25 s / 180 s | `src/lib/lapDetector.ts` |
+| corda do rumo da linha | 5 m | `src/lib/startLine.ts` |
+| buraco máximo no cruzamento | 2 s | `src/lib/startLine.ts` |
+| setores S1/S2/S3 | terços do comprimento do traçado | `src/lib/sectors.ts` |
+| janela do map matching | ±30 segmentos | `src/lib/geometry.ts` |
+| busca global do map matching | > 20 m | `src/lib/geometry.ts` |
+| tolerância da correção de linha | 25 m | `src/lib/analysis.ts` |
+| mini-setores | 20 | `src/lib/analysis.ts` |
+| setor/curva inválidos | > 5× a referência | `src/lib/analysis.ts`, `src/lib/cornerAnalysis.ts` |
+| limpeza pré-análise | accuracy > 10 m | `src/lib/analysis.ts` (`cleanSamples`) |
+| pico de velocidade | p99, pontos de até 10 m | `src/lib/speed.ts` |
+| delta ao vivo some | > 40 m do traçado ou \|delta\| > 30 s | `src/lib/realtimeDelta.ts` |
+| limiar de curva | 0,04 rad/m (≈ 2,3°/m), histerese 0,5× | `src/lib/corners.ts` |
+| comprimento mínimo de curva | 8 m | `src/lib/corners.ts` |
+| varrido mínimo de curva | 30° | `src/lib/corners.ts` |
+| janela de intensidade | ±6 m (fixa) | `src/lib/corners.ts` |
+| suavização de posição | max(3 m, espaçamento × 2) | `src/lib/corners.ts` |
+| corda do azimute | ±4 m | `src/lib/corners.ts` |
+| trompo: entra / sai | 90°/s / 30°/s | `src/lib/spinDetector.ts` |
+| trompo: duração mínima | 400 ms | `src/lib/spinDetector.ts` |
+| trompo pelo GPS | 2 s, queda > 50%, rumo > 120° | `src/lib/spinDetector.ts` |
+| janela dos insights: sessões | 12 | `app/(tabs)/insights.tsx` |
+| janela dos insights: voltas | 60 | `src/lib/lapInsight.ts` |
 
 ---
 
-## 13. Inconsistência conhecida
+## 13. Inconsistências conhecidas
 
-`src/lib/lapInsight.ts` — o módulo da tela de insights — é o **único
-consumidor que não chama `cleanSamples()` nem
-`repairDegenerateTimestamps()`** antes de analisar. Ele só exige 20 samples
-por volta.
+A que esta seção descrevia foi corrigida: o `buildLapInsight`
+(`src/lib/lapInsight.ts`) agora aplica `cleanSamples(10)` e
+`repairDegenerateTimestamps()` a cada volta, como a análise da sessão (§9).
 
-Na prática: numa volta gravada com timestamps degenerados, a tela de sessão
-mostra o aviso de "tempos aproximados" e o insights simplesmente inclui a
-volta na média sem avisar nada. Corrigir é aplicar as duas funções na
-entrada do `buildLapInsight`, como todos os outros fazem.
+Ainda analisam pontos sem `cleanSamples()`:
+
+- o replay 3D (`app/replay/[id].tsx`);
+- os S1/S2/S3 da sessão, de propósito (§4 e §10).
+
+O `cleanSamples(10)` tira o ponto de fronteira de uma volta quando um dos
+dois pontos em volta do cruzamento tem precisão pior que 10 m. Nesse caso, a
+volta limpa deixa de começar ou terminar na linha.

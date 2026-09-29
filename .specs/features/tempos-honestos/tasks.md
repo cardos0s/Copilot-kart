@@ -476,8 +476,10 @@ T11, T12, T13, T14, T15 e T17 não dependem de nenhuma tarefa da fase. Todas as 
 - Skill: NONE
 
 **Done when**:
-- [ ] Cada constante do §12 aponta para o arquivo em que está hoje.
-- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+- [x] Cada constante do §12 aponta para o arquivo em que está hoje.
+- [x] Gate: `npm test && npm run typecheck`, só com a baseline: 115 testes, 0 falhas; typecheck com os 8 erros da baseline.
+
+**Nota da execução:** além das seções pedidas, o §1 ganhou o relógio `trustsRaw` e a ressalva dos 10 Hz só no Android; o §3, a busca global acima de 20 m; o §5, a janela fixa de ±6 m, a histerese de 0,5× e o varrido mínimo de 30°; o §7, o trompo pelo GPS; e o §11 deixou de dizer que a linha é sempre inventada. O §6 já cita a escala do "Sua volta", que a T17 faz em seguida.
 
 **Tests**: none
 **Gate**: build
