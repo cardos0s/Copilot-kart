@@ -585,10 +585,15 @@ T19 -> T20
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: duas voltas, depois uma parada de 200 s passando pela linha, depois a volta seguinte. `openCross.t` é o cruzamento depois da parada, e `liveLapClock` conta a partir dele.
-- [ ] Teste: numa sessão sem box, `openCross` é igual ao `endCross` da última volta fechada, e antes da 1ª volta é o 1º cruzamento (ou `null` com traçado antes de cruzar).
-- [ ] Teste estático: o `currentLapSamples` do hook usa `openCross`.
-- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+- [x] Teste: duas voltas, depois uma parada de 200 s passando pela linha, depois a volta seguinte. `openCross.t` é o cruzamento depois da parada, e `liveLapClock` conta a partir dele.
+- [x] Teste: numa sessão sem box, `openCross` é igual ao `endCross` da última volta fechada, e antes da 1ª volta é o 1º cruzamento (ou `null` com traçado antes de cruzar).
+- [x] Teste estático: o `currentLapSamples` do hook usa `openCross`.
+- [x] Gate: `npm test && npm run typecheck`, só com a baseline: 126 testes, 0 falhas; typecheck com os 8 erros da baseline.
+
+**Notas da execução:**
+- `openCross` é `CrossPoint & { idx }`, em que `idx` é o 1º ponto cru depois do cruzamento (o `startIdx` que a volta terá). O hook usa o `idx` para recortar os pontos da volta em curso. Sem box, depois de uma volta fechada, `openCross` é `{ ...endCross, idx: endIdx }` dela.
+- `liveLapClock` manteve a assinatura da T19 `(detection, all, nowSampleT, line)`, porque o teste estático da T19 exige a chamada `liveLapClock(detection, all, …)`. Agora só lê `detection.openCross`; `all` e `line` ficaram sem uso.
+- `currentLapSamples(all, openCross)` substituiu a busca pelo 1º cruzamento e o `endCross` da última volta, e o `crossing` saiu dos imports do hook.
 
 **Tests**: unit
 **Gate**: build

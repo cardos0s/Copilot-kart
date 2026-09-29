@@ -4,10 +4,10 @@ import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { DEMO_LAP } from '../data/demoLap';
 import { Accelerometer, Gyroscope } from 'expo-sensors';
 import { GpsSample, ImuSample, LatLng, ReferenceLap } from '../lib/geometry';
-import { detectLaps, DetectedLap } from '../lib/lapDetector';
+import { detectLaps, DetectedLap, type OpenCross } from '../lib/lapDetector';
 import { DeltaTracker } from '../lib/realtimeDelta';
 import { referenceFromLayout, sectorSplits } from '../lib/sectors';
-import { crossing, lineFromLayout, type CrossPoint, type StartLine } from '../lib/startLine';
+import { lineFromLayout, type CrossPoint, type StartLine } from '../lib/startLine';
 import { sliceLaps, type RecordedLap } from '../recording/finishSession';
 import { deltaReferenceLap, liveLapClock } from '../recording/liveLapClock';
 import type { RecordingMetaInput } from '../recording/journal';
@@ -97,35 +97,15 @@ function crossSample(cross: CrossPoint, accuracy: number): GpsSample {
 
 /**
  * Pontos da volta em curso, do jeito que o `sliceLaps` vai recortá-la quando
- * fechar: o cruzamento que a abriu (ponto sintético) e os pontos crus depois
- * dele. Com voltas fechadas, ela abre no fim da última. Antes da primeira, no
- * primeiro cruzamento da linha, como no `detectLaps`. `null` se ainda não abriu.
+ * fechar: o cruzamento que a abriu (`openCross` do `detectLaps`, ponto
+ * sintético) e os pontos crus depois dele. Depois de um box, é o cruzamento
+ * depois da parada, e não o fim da última volta fechada. `null` se a volta
+ * ainda não abriu.
  */
-function currentLapSamples(
-  all: GpsSample[],
-  laps: DetectedLap[],
-  movingStartIdx: number,
-  line: StartLine
-): GpsSample[] | null {
-  let cross: CrossPoint | null = null;
-  let idx = -1;
-  if (laps.length > 0) {
-    const lastLap = laps[laps.length - 1];
-    cross = lastLap.endCross;
-    idx = lastLap.endIdx;
-  } else if (movingStartIdx >= 0) {
-    for (let i = Math.max(1, movingStartIdx); i < all.length; i++) {
-      const c = crossing(all[i - 1], all[i], line);
-      if (c) {
-        cross = c;
-        idx = i;
-        break;
-      }
-    }
-  }
-  if (!cross) return null;
-  const t0 = cross.t;
-  return [crossSample(cross, all[idx].accuracy), ...all.slice(idx).filter((p) => p.t > t0)];
+function currentLapSamples(all: GpsSample[], openCross: OpenCross | null): GpsSample[] | null {
+  if (!openCross) return null;
+  const t0 = openCross.t;
+  return [crossSample(openCross, all[openCross.idx].accuracy), ...all.slice(openCross.idx).filter((p) => p.t > t0)];
 }
 
 export type RecorderState = 'idle' | 'requesting' | 'recording' | 'stopped';
@@ -632,7 +612,7 @@ export function useLapRecorder(options?: LapRecorderOptions) {
       let currentSectorElapsedMs: number | null = null;
       let currentSectors: SectorTimes = { s1Ms: null, s2Ms: null, s3Ms: null };
       if (last && line && sectorRef) {
-        const lapSamples = currentLapSamples(all, detection.laps, detection.movingStartIdx, line);
+        const lapSamples = currentLapSamples(all, detection.openCross);
         if (lapSamples) {
           const splits = sectorSplits(lapSamples, sectorRef);
           currentSectors = { s1Ms: splits.s1Ms, s2Ms: splits.s2Ms, s3Ms: null };

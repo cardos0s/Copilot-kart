@@ -11,7 +11,7 @@
  */
 import type { GpsSample } from '../lib/geometry';
 import type { DetectLapsResult } from '../lib/lapDetector';
-import { crossing, type StartLine } from '../lib/startLine';
+import type { StartLine } from '../lib/startLine';
 import { sliceLaps } from './finishSession';
 
 export type LiveLapClock = {
@@ -22,37 +22,24 @@ export type LiveLapClock = {
 };
 
 /**
- * Início da volta em curso: o `endCross.t` da última volta fechada ou, antes
- * da primeira, o 1º cruzamento da linha, pela mesma regra do `detectLaps`.
- * Sem traçado, esse cruzamento é o ponto em que o ritmo começou (f = 0). Com
- * traçado (`line`) e nenhum cruzamento ainda, devolve `null`: o cronômetro
- * não corre.
+ * Início da volta em curso: o `openCross` do `detectLaps`, o cruzamento que a
+ * abriu. Normalmente é o `endCross.t` da última volta fechada; depois de um
+ * box (volta descartada por passar de 180 s), é o cruzamento depois da parada.
+ * Antes da 1ª volta, é o 1º cruzamento da linha (sem traçado, o ponto em que
+ * o ritmo começou). Com traçado e nenhum cruzamento ainda, devolve `null`: o
+ * cronômetro não corre.
  *
- * `line` é a mesma linha passada ao `detectLaps` (`null` sem traçado).
+ * `all` e `line` ficam na assinatura da T19, mas o início vem só de
+ * `detection.openCross`, pela mesma regra que fecha as voltas.
  */
 export function liveLapClock(
-  detection: Pick<DetectLapsResult, 'laps' | 'movingStartIdx'>,
-  all: GpsSample[],
+  detection: Pick<DetectLapsResult, 'openCross'>,
+  _all: GpsSample[],
   nowSampleT: number,
-  line: StartLine | null
+  _line: StartLine | null
 ): LiveLapClock | null {
-  let lapStartT: number | null = null;
-  if (detection.laps.length > 0) {
-    lapStartT = detection.laps[detection.laps.length - 1].endCross.t;
-  } else if (detection.movingStartIdx >= 0) {
-    if (!line) {
-      lapStartT = all[detection.movingStartIdx].t;
-    } else {
-      for (let i = Math.max(1, detection.movingStartIdx); i < all.length; i++) {
-        const c = crossing(all[i - 1], all[i], line);
-        if (c) {
-          lapStartT = c.t;
-          break;
-        }
-      }
-    }
-  }
-  if (lapStartT === null) return null;
+  if (!detection.openCross) return null;
+  const lapStartT = detection.openCross.t;
   return { lapStartT, elapsedMs: nowSampleT - lapStartT };
 }
 

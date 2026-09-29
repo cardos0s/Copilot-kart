@@ -74,6 +74,9 @@ export type DetectedLap = {
   startedAt: number;
 };
 
+/** Cruzamento que abriu a volta em curso; `idx` é o 1º ponto cru depois dele (o `startIdx` que a volta terá). */
+export type OpenCross = CrossPoint & { idx: number };
+
 export type DetectLapsResult = {
   /** Índice do primeiro sample "em ritmo". -1 se piloto nunca saiu do paddock. */
   movingStartIdx: number;
@@ -81,6 +84,14 @@ export type DetectLapsResult = {
   startFinishLine: StartLine | null;
   /** Voltas fechadas, em ordem cronológica. */
   laps: DetectedLap[];
+  /**
+   * Cruzamento que abriu a volta em curso. É o `endCross` da última volta
+   * fechada, a menos que um cruzamento depois dela tenha sido descartado por
+   * passar de maxLapDuration (box): aí é esse cruzamento. Antes da 1ª volta,
+   * é o 1º cruzamento (o ponto de ritmo, sem traçado). `null` se a volta
+   * ainda não abriu (com traçado, antes de cruzar a linha).
+   */
+  openCross: OpenCross | null;
 };
 
 /**
@@ -128,12 +139,12 @@ export function detectLaps(
   const opts: Required<DetectLapsOptions> = { ...DEFAULTS, ...rest };
 
   if (samples.length < 10) {
-    return { movingStartIdx: -1, startFinishLine: null, laps: [] };
+    return { movingStartIdx: -1, startFinishLine: null, laps: [], openCross: null };
   }
 
   const movingStartIdx = findRitmoStart(samples, opts);
   if (movingStartIdx < 0) {
-    return { movingStartIdx: -1, startFinishLine: null, laps: [] };
+    return { movingStartIdx: -1, startFinishLine: null, laps: [], openCross: null };
   }
 
   const line = layoutLine ?? lineFromMotion(samples, movingStartIdx);
@@ -197,5 +208,10 @@ export function detectLaps(
     leftLine = false;
   }
 
-  return { movingStartIdx, startFinishLine: line, laps };
+  return {
+    movingStartIdx,
+    startFinishLine: line,
+    laps,
+    openCross: open ? { ...open.cross, idx: open.idx } : null,
+  };
 }

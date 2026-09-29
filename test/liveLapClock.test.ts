@@ -13,7 +13,7 @@ import { detectLaps } from '../src/lib/lapDetector';
 import { lineFromLayout, type StartLine } from '../src/lib/startLine';
 import { sliceLaps } from '../src/recording/finishSession';
 import { deltaReferenceLap, liveLapClock } from '../src/recording/liveLapClock';
-import { generateTimedLaps } from './helpers/syntheticTrack';
+import { generateTimedLaps, sampleTrack } from './helpers/syntheticTrack';
 
 const D = 37_699;
 
@@ -112,4 +112,63 @@ test('useLapRecorder: usa liveLapClock e deltaReferenceLap, e não calcula mais 
   assert.ok(/liveLapClock\(detection,\s*all,/.test(src), 'o poll chama liveLapClock');
   assert.ok(/deltaReferenceLap\(all,\s*line,/.test(src), 'a referência do tracker vem de deltaReferenceLap');
   assert.equal(/endIdx\s*\+\s*1/.test(src), false);
+});
+
+/**
+ * Duas voltas com traçado, depois o box: para 200 s no meio da pista e volta
+ * passando pela linha. A passagem depois da parada fica a mais de 180 s da
+ * anterior, então a volta do box é descartada e a contagem reabre ali.
+ */
+function boxSession() {
+  const line = layoutLine();
+  const T0 = 1_700_000_000_000;
+  const dt = 100;
+  const speed = 20;
+  // Do meio da pista (0,5) até 3,4: passa pela linha em 1, 2 e 3.
+  const moving1 = sampleTrack((t) => 0.5 + (t - T0) / D, T0, T0 + 2.9 * D, 10, speed);
+  const tStop = moving1[moving1.length - 1].t + dt;
+  const stopped = sampleTrack(() => 3.4, tStop, tStop + 200_000, 10, 0);
+  const tGo = stopped[stopped.length - 1].t + dt;
+  // Sai do box, passa pela linha em 4 e fecha mais uma volta em 5.
+  const moving2 = sampleTrack((t) => 3.4 + (t - tGo) / D, tGo, tGo + 1.9 * D, 10, speed);
+  const samples = [...moving1, ...stopped, ...moving2];
+  const crossBeforeBox = T0 + 2.5 * D;
+  const crossAfterBox = tGo + 0.6 * D;
+  return { line, samples, tStop, tGo, crossBeforeBox, crossAfterBox, full: detectLaps(samples, { line }) };
+}
+
+test('Depois de um box de 200 s passando pela linha, openCross é o cruzamento depois da parada, e liveLapClock conta a partir dele', () => {
+  const { line, samples, tGo, crossBeforeBox, crossAfterBox, full } = boxSession();
+  // Regra dos 180 s: a volta do box é descartada e a contagem reabre no
+  // cruzamento depois da parada.
+  assert.equal(full.laps.length, 3, `voltas: ${full.laps.map((l) => l.durationMs).join(', ')}`);
+  assert.ok(Math.abs(full.laps[1].endCross.t - crossBeforeBox) <= 20);
+  assert.ok(Math.abs(full.laps[2].startCross.t - crossAfterBox) <= 20);
+  assert.ok(Math.abs(full.laps[2].durationMs - D) <= 20);
+
+  // Na volta depois do box, antes de ela fechar.
+  const afterBoxIdx = samples.findIndex((s) => s.t > crossAfterBox);
+  for (const lastIdx of [afterBoxIdx, afterBoxIdx + 1, afterBoxIdx + 150]) {
+    const { all, detection, now } = pollAt(samples, lastIdx, line);
+    assert.equal(detection.laps.length, 2, `ponto ${lastIdx}`);
+    const open = detection.openCross;
+    assert.ok(open);
+    assert.equal(open.t, full.laps[2].startCross.t);
+    assert.equal(open.idx, full.laps[2].startIdx);
+    assert.ok(open.t > tGo, 'o cruzamento é o de depois da parada');
+    assert.notEqual(open.t, detection.laps[1].endCross.t);
+
+    const clock = liveLapClock(detection, all, now, line);
+    assert.ok(clock);
+    assert.equal(clock.lapStartT, open.t);
+    assert.equal(clock.elapsedMs, now - open.t);
+    assert.ok(clock.elapsedMs < D, `cronômetro com ${clock.elapsedMs} ms, e não desde antes do box`);
+  }
+});
+
+test('useLapRecorder: currentLapSamples (setores ao vivo) usa openCross, e não o endCross da última volta fechada', () => {
+  const src = readFileSync(join(__dirname, '..', 'src', 'hooks', 'useLapRecorder.ts'), 'utf8');
+  assert.ok(/function currentLapSamples\(\s*all: GpsSample\[\],\s*openCross: OpenCross \| null\s*\)/.test(src));
+  assert.ok(/currentLapSamples\(all,\s*detection\.openCross\)/.test(src), 'o poll passa detection.openCross');
+  assert.equal(/\.endCross\b/.test(src), false, 'o hook não abre a volta pelo endCross');
 });

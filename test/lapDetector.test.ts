@@ -324,3 +324,44 @@ test('Kart parado 60 s em cima da linha, com jitter de ±3 m que cruza para a fr
   assert.ok(Math.abs(laps[2].endCross.t - tCross4) <= TOL_MS);
   assertLapsWithin([laps[2].durationMs], D, 'volta depois da parada');
 });
+
+test('openCross numa sessão sem box: antes da 1ª volta é o 1º cruzamento (null com traçado antes de cruzar); depois, o endCross da última volta fechada', () => {
+  const line = layoutLine();
+  const { samples, crossingsT } = generateTimedLaps({ lapDurationMs: D, sampleRateHz: 10, startPhase: 0.5, laps: 4 });
+  const full = detectLaps(samples, { line });
+  assert.equal(full.laps.length, 3);
+  const at = (lastIdx: number) => detectLaps(samples.slice(0, lastIdx + 1), { line });
+
+  // Com traçado, andando e antes de cruzar a linha: a volta não abriu.
+  const before = samples.findIndex((s) => s.t >= crossingsT[0]) - 1;
+  const pre = at(before);
+  assert.ok(pre.movingStartIdx >= 0);
+  assert.equal(pre.openCross, null);
+
+  // Depois do 1º cruzamento e antes de fechar a 1ª volta: é o 1º cruzamento.
+  const first = full.laps[0];
+  const mid = at(first.startIdx + 100);
+  assert.equal(mid.laps.length, 0);
+  assert.deepEqual(mid.openCross, { ...first.startCross, idx: first.startIdx });
+  assert.ok(Math.abs(mid.openCross!.t - crossingsT[0]) <= TOL_MS);
+
+  // Depois de cada volta fechada: o endCross dela.
+  for (const [n, lap] of full.laps.entries()) {
+    const r = at(lap.endIdx + 30);
+    assert.equal(r.laps.length, n + 1);
+    assert.deepEqual(r.openCross, { ...lap.endCross, idx: lap.endIdx });
+    assert.deepEqual(r.openCross, { ...r.laps[n].endCross, idx: r.laps[n].endIdx });
+  }
+
+  // Sem traçado, antes da 1ª volta, é o ponto em que o ritmo começou (f = 0).
+  const noLayout = generateTimedLaps({ lapDurationMs: D, sampleRateHz: 10, laps: 2, warmupS: 3 }).samples;
+  const nl = detectLaps(noLayout);
+  const nlMid = detectLaps(noLayout.slice(0, nl.movingStartIdx + 100));
+  assert.equal(nlMid.laps.length, 0);
+  const p = noLayout[nl.movingStartIdx];
+  assert.deepEqual(nlMid.openCross, { t: p.t, lat: p.lat, lng: p.lng, speed: p.speed, idx: nl.movingStartIdx });
+  assert.deepEqual(nlMid.openCross, { ...nl.laps[0].startCross, idx: nl.laps[0].startIdx });
+
+  // Paddock: nada abriu.
+  assert.equal(detectLaps(noLayout.slice(0, 20)).openCross, null);
+});
