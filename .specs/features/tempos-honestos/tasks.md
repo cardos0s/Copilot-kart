@@ -380,8 +380,13 @@ T11, T12, T13, T14, T15 e T17 não dependem de nenhuma tarefa da fase. Todas as 
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste estático: o arquivo não define `groupThirds`, importa `sectorSplits` e não calcula mais o pico por laço de máximo bruto.
-- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+- [x] Teste estático: o arquivo não define `groupThirds`, importa `sectorSplits` e não calcula mais o pico por laço de máximo bruto.
+- [x] Gate: `npm test && npm run typecheck`, só com a baseline: 111 testes, 0 falhas; typecheck com os 8 erros da baseline.
+
+**Notas da execução:**
+- S1/S2/S3 são medidos sobre os pontos da volta como foram salvos (só com o reparo de timestamp das sessões antigas), e não sobre os pontos já filtrados por `cleanSamples(10)`. São os mesmos pontos que o ao vivo mediu, e o filtro podia tirar o ponto de fronteira de uma volta.
+- A régua é o traçado carregado pela tela (`getLayout(ses.layoutId)` e, sem ele, o traçado padrão da pista, que é o mesmo que a gravação usa) e, sem traçado, a melhor volta. A referência da comparação passa pela mesma régua.
+- As props `corners` e `totalLength` de `ComparePanel` e `SectorsPanel`, que só serviam ao `groupThirds`, saíram.
 
 **Tests**: unit
 **Gate**: build

@@ -28,7 +28,8 @@ import {
   matchLapToReference,
   repairDegenerateTimestamps,
 } from '../../src/lib/analysis';
-import { buildReferenceLap } from '../../src/lib/geometry';
+import { buildReferenceLap, type GpsSample } from '../../src/lib/geometry';
+import { referenceFromLap, referenceFromLayout, sectorSplits, type SectorSplits } from '../../src/lib/sectors';
 import { Corner, describeSector, detectCorners } from '../../src/lib/corners';
 import { CornerMetric, analyzeCorners } from '../../src/lib/cornerAnalysis';
 import {
@@ -40,7 +41,7 @@ import {
   fmtDeltaS,
 } from '../../src/components/analysis/parts';
 import { formatLapPlain } from '../../src/lib/format';
-import { msToKmh, peakSpeedInSectorMs, peakSpeedMs } from '../../src/lib/speed';
+import { msToKmh, peakSpeedInSectorMs, peakSpeedKmh, peakSpeedMs } from '../../src/lib/speed';
 import { consumePendingCelebration } from '../../src/lib/celebrationQueue';
 import {
   Achievement,
@@ -136,6 +137,9 @@ function SessionScreenInner() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [session, setSession] = useState<Session | null>(null);
   const [laps, setLaps] = useState<LapRecord[]>([]);
+  // Pontos de cada volta como foram salvos (sem o filtro de precisão), para
+  // S1/S2/S3: são os mesmos pontos que o ao vivo mediu (TMP-07 AC 3).
+  const [sectorSamples, setSectorSamples] = useState<Record<string, GpsSample[]>>({});
   const [reference, setReference] = useState<TrackLayout | null>(null);
   const [selectedLapId, setSelectedLapId] = useState<string | null>(null);
   const [mode, setMode] = useState<ViewMode>('comparar');
@@ -258,8 +262,14 @@ function SessionScreenInner() {
         }
       }
 
+      const savedSamples: Record<string, GpsSample[]> = {};
+      for (const l of lapsRaw) {
+        savedSamples[l.id] = repairDegenerateTimestamps(l.samples, l.durationMs, l.startedAt).samples;
+      }
+
       setSession(ses);
       setLaps(cleanedLaps);
+      setSectorSamples(savedSamples);
       setReference(ref);
       setApproxTimestamps(anyRepaired);
       setLoading(false);
@@ -289,6 +299,7 @@ function SessionScreenInner() {
         matchedCurrent: any;
         analysis: any;
         sectors: any[];
+        thirds: SectorThird[];
         maxAbsDelta: number;
       };
 
@@ -342,6 +353,18 @@ function SessionScreenInner() {
         matchedCurrent,
         isSelectedReference ? null : matchedReferenceProper
       );
+      // S1/S2/S3: a régua única (sectorSplits), contra o traçado da sessão ou,
+      // sem ele, contra a melhor volta (TMP-07, TMP-09).
+      const bestSamples = sectorSamples[sessionBest.id] ?? sessionBest.samples;
+      const sectorRef =
+        (useExternalRef ? referenceFromLayout(reference!.samples) : null) ??
+        referenceFromLap({ samples: bestSamples });
+      const thirds = sectorThirds(
+        sectorSplits(sectorSamples[selected.id] ?? selected.samples, sectorRef),
+        sectorSplits(useExternalRef ? reference!.samples : bestSamples, sectorRef),
+        corners,
+        refLap.totalLength
+      );
       return {
         kind: 'ok',
         sessionBest,
@@ -357,6 +380,7 @@ function SessionScreenInner() {
         matchedCurrent,
         analysis,
         sectors,
+        thirds,
         maxAbsDelta,
       };
     } catch (err: any) {
@@ -366,7 +390,7 @@ function SessionScreenInner() {
         error: err instanceof Error ? err : new Error(String(err)),
       };
     }
-  }, [session, laps, reference, selectedLapId]);
+  }, [session, laps, sectorSamples, reference, selectedLapId]);
 
   // === Daqui pra baixo: early returns. Todos os hooks já rodaram. ===
 
@@ -439,6 +463,7 @@ function SessionScreenInner() {
     isSelectedReference,
     matchedCurrent,
     sectors,
+    thirds,
     maxAbsDelta,
     analysis,
   } = computed;
@@ -553,7 +578,7 @@ function SessionScreenInner() {
             const isSel = lap.id === selected.id;
             const isRef = !useExternalRef && lap.id === sessionBest.id;
             const delta = lap.durationMs - refDurationMs;
-            const peakKmh = msToKmh(peakSpeedMs(lap.samples) ?? 0);
+            const peakKmh = peakSpeedKmh(lap.samples);
             return (
               <Pressable
                 key={lap.id}
@@ -606,25 +631,23 @@ function SessionScreenInner() {
         {mode === 'comparar' && (
           <ComparePanel
             sectors={sectors}
-            corners={corners}
+            thirds={thirds}
             cornerMetrics={cornerMetrics}
             refDurationMs={refDurationMs}
             selectedDurationMs={selected.durationMs}
             isSelectedReference={isSelectedReference}
-            refPeakKmh={msToKmh(peakSpeedMs(refSamples) ?? 0)}
-            selectedPeakKmh={msToKmh(peakSpeedMs(selected.samples) ?? 0)}
+            refPeakKmh={peakSpeedKmh(refSamples)}
+            selectedPeakKmh={peakSpeedKmh(selected.samples)}
             bestLabel={useExternalRef ? 'REF' : `V${lapIndex(laps, sessionBest)}`}
             currentLabel={`V${lapIndex(laps, selected)}`}
             currentIndex={lapIndex(laps, selected)}
-            totalLength={refLap.totalLength}
           />
         )}
 
         {mode === 'setores' && (
           <SectorsPanel
             sectors={sectors}
-            corners={corners}
-            totalLength={refLap.totalLength}
+            thirds={thirds}
             currentIndex={lapIndex(laps, selected)}
             selectedDurationMs={selected.durationMs}
             refDurationMs={refDurationMs}
@@ -748,23 +771,21 @@ export default function SessionScreen() {
   );
 }
 
+type SectorThird = { refMs: number | null; curMs: number | null; deltaMs: number | null; corners: number[] };
+
 /**
- * Agrupa os mini-setores em S1/S2/S3 (terços da pista) e diz quais curvas
- * caem em cada terço. Setor inválido não entra na soma: currentMs=0 viraria
- * um "ganhou tempo" que não aconteceu.
+ * S1/S2/S3 da volta e da referência, pela régua única (`sectorSplits`), e as
+ * curvas que caem em cada terço. Setor que a régua não mediu fica null ("—").
  */
-function groupThirds(
-  sectors: any[],
+function sectorThirds(
+  cur: SectorSplits,
+  ref: SectorSplits,
   corners: Corner[],
   totalLength: number
-): Array<{ refMs: number; curMs: number | null; deltaMs: number | null; corners: number[] }> {
-  const third = Math.ceil(sectors.length / 3);
+): SectorThird[] {
+  const curArr = [cur.s1Ms, cur.s2Ms, cur.s3Ms];
+  const refArr = [ref.s1Ms, ref.s2Ms, ref.s3Ms];
   return [0, 1, 2].map((g) => {
-    const slice = sectors.slice(g * third, (g + 1) * third);
-    const refSum = slice.reduce((a: number, sec: any) => a + (sec.referenceMs ?? 0), 0);
-    const valid = slice.filter((sec: any) => sec.valid !== false);
-    const curSum = valid.length ? valid.reduce((a: number, sec: any) => a + (sec.currentMs ?? 0), 0) : null;
-
     // Quais curvas ficam neste terço, pela posição do ápice ao longo da volta.
     const from = totalLength * (g / 3);
     const to = totalLength * ((g + 1) / 3);
@@ -773,10 +794,12 @@ function groupThirds(
       .filter((c) => c.s >= from && c.s < to)
       .map((c) => c.i);
 
+    const curMs = curArr[g];
+    const refMs = refArr[g];
     return {
-      refMs: refSum,
-      curMs: curSum,
-      deltaMs: curSum != null ? curSum - refSum : null,
+      refMs,
+      curMs,
+      deltaMs: curMs != null && refMs != null ? curMs - refMs : null,
       corners: inside,
     };
   });
@@ -957,7 +980,7 @@ function TrackMapPanel({
 
 function ComparePanel({
   sectors,
-  corners,
+  thirds,
   cornerMetrics,
   refDurationMs,
   selectedDurationMs,
@@ -967,20 +990,18 @@ function ComparePanel({
   bestLabel,
   currentLabel,
   currentIndex,
-  totalLength,
 }: {
   sectors: any[];
-  corners: Corner[];
+  thirds: SectorThird[];
   cornerMetrics: CornerMetric[];
   refDurationMs: number;
   selectedDurationMs: number;
   isSelectedReference: boolean;
-  refPeakKmh: number;
-  selectedPeakKmh: number;
+  refPeakKmh: number | null;
+  selectedPeakKmh: number | null;
   bestLabel: string;
   currentLabel: string;
   currentIndex: number;
-  totalLength: number;
 }) {
   if (isSelectedReference) {
     return (
@@ -994,7 +1015,7 @@ function ComparePanel({
   }
   if (sectors.length === 0) return null;
 
-  const groups = groupThirds(sectors, corners, totalLength);
+  const groups = thirds;
   const maxAbs = Math.max(...groups.map((g) => Math.abs(g.deltaMs ?? 0)), 1);
 
   // Onde está o tempo: o pior terço e, dentro dele, a pior curva. É o mesmo
@@ -1025,15 +1046,13 @@ function ComparePanel({
           <Text style={[s.twoUpValue, { color: colors.blueSoft }]}>
             {formatLapPlain(refDurationMs)}
           </Text>
-          {refPeakKmh > 0 && <Text style={s.twoUpHint}>{refPeakKmh.toFixed(0)} km/h máx</Text>}
+          <Text style={s.twoUpHint}>{refPeakKmh !== null ? refPeakKmh.toFixed(0) : '—'} km/h máx</Text>
         </View>
         <View style={s.twoUpRule} />
         <View style={{ flex: 1 }}>
           <Text style={s.twoUpLabel}>{currentLabel}</Text>
           <Text style={s.twoUpValue}>{formatLapPlain(selectedDurationMs)}</Text>
-          {selectedPeakKmh > 0 && (
-            <Text style={s.twoUpHint}>{selectedPeakKmh.toFixed(0)} km/h máx</Text>
-          )}
+          <Text style={s.twoUpHint}>{selectedPeakKmh !== null ? selectedPeakKmh.toFixed(0) : '—'} km/h máx</Text>
         </View>
       </View>
 
@@ -1080,8 +1099,7 @@ function ComparePanel({
 
 function SectorsPanel({
   sectors,
-  corners,
-  totalLength,
+  thirds,
   currentIndex,
   selectedDurationMs,
   refDurationMs,
@@ -1089,8 +1107,7 @@ function SectorsPanel({
   onSectorTap,
 }: {
   sectors: any[];
-  corners: Corner[];
-  totalLength: number;
+  thirds: SectorThird[];
   currentIndex: number;
   selectedDurationMs: number;
   refDurationMs: number;
@@ -1099,7 +1116,7 @@ function SectorsPanel({
 }) {
   if (sectors.length === 0) return null;
 
-  const groups = groupThirds(sectors, corners, totalLength);
+  const groups = thirds;
   const maxAbs = Math.max(...groups.map((g) => Math.abs(g.deltaMs ?? 0)), 1);
   const worstIdx = groups.reduce(
     (best, g, i) => ((g.deltaMs ?? -Infinity) > (groups[best].deltaMs ?? -Infinity) ? i : best),
@@ -1310,16 +1327,11 @@ function MapPanel({
   const eventMarkers = useMemo<EventMarker[]>(() => {
     const out: EventMarker[] = [];
 
-    // Peak speed
-    let peakIdx = 0;
-    let peakSpeed = 0;
-    for (let i = 0; i < selected.samples.length; i++) {
-      if (selected.samples[i].speed > peakSpeed) {
-        peakSpeed = selected.samples[i].speed;
-        peakIdx = i;
-      }
-    }
-    if (peakSpeed > 0 && selected.samples[peakIdx]) {
+    // Peak speed: o mesmo pico da volta (p99 dos pontos bons, TMP-11), no
+    // ponto que tem essa velocidade. Sem ponto bom, sem marcador.
+    const peak = peakSpeedMs(selected.samples);
+    const peakIdx = peak === null ? -1 : selected.samples.findIndex((p) => p.speed === peak);
+    if (peakIdx >= 0) {
       out.push({
         point: { lat: selected.samples[peakIdx].lat, lng: selected.samples[peakIdx].lng },
         color: colors.accentCyan,
