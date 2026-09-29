@@ -553,12 +553,17 @@ T18 -> T19
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: com traçado e gravação começando andando, antes do 1º cruzamento o relógio é `null` (o cronômetro não corre).
-- [ ] Teste: depois do 1º cruzamento, `elapsed = t_amostra − startCross.t` exatamente.
-- [ ] Teste: depois de fechar uma volta, o relógio recomeça em `endCross.t` dessa volta, e não no ponto cru seguinte.
-- [ ] Teste: a referência do delta montada para uma volta fechada começa e termina em pontos `synthetic`.
-- [ ] Teste estático: o hook usa `liveLapClock` e não calcula mais o início da volta por `endIdx + 1`.
-- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+- [x] Teste: com traçado e gravação começando andando, antes do 1º cruzamento o relógio é `null` (o cronômetro não corre).
+- [x] Teste: depois do 1º cruzamento, `elapsed = t_amostra − startCross.t` exatamente.
+- [x] Teste: depois de fechar uma volta, o relógio recomeça em `endCross.t` dessa volta, e não no ponto cru seguinte.
+- [x] Teste: a referência do delta montada para uma volta fechada começa e termina em pontos `synthetic`.
+- [x] Teste estático: o hook usa `liveLapClock` e não calcula mais o início da volta por `endIdx + 1`.
+- [x] Gate: `npm test && npm run typecheck`, só com a baseline: 123 testes, 0 falhas; typecheck com os 8 erros da baseline.
+
+**Notas da execução:**
+- `liveLapClock` recebe também a `line` passada ao `detectLaps` (`null` sem traçado), para saber se a 1ª volta abre no ponto de ritmo (sem traçado) ou no 1º cruzamento (com traçado). Devolve `{ lapStartT, elapsedMs }`.
+- A referência do delta sai de `deltaReferenceLap(all, line, lapIdx)`, no mesmo arquivo, que é a volta do `sliceLaps`.
+- O resto do hook (PB, overlay, setores pelo `sectorSplits`, diário, autosave) não mudou.
 
 **Tests**: unit
 **Gate**: build

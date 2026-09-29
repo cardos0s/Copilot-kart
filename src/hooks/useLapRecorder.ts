@@ -9,6 +9,7 @@ import { DeltaTracker } from '../lib/realtimeDelta';
 import { referenceFromLayout, sectorSplits } from '../lib/sectors';
 import { crossing, lineFromLayout, type CrossPoint, type StartLine } from '../lib/startLine';
 import { sliceLaps, type RecordedLap } from '../recording/finishSession';
+import { deltaReferenceLap, liveLapClock } from '../recording/liveLapClock';
 import type { RecordingMetaInput } from '../recording/journal';
 import {
   BG_TASK,
@@ -601,28 +602,20 @@ export function useLapRecorder(options?: LapRecorderOptions) {
         refLapIdx >= 0 &&
         (loaded === null || loaded.mode !== mode || loaded.lapIdx !== refLapIdx)
       ) {
-        const refLap = detection.laps[refLapIdx];
-        const refSamples = all.slice(refLap.startIdx, refLap.endIdx + 1);
-        tracker.setReference(refSamples, refLap.durationMs);
+        // A volta com os pontos de fronteira na linha (AD-006), como o
+        // sliceLaps a salva: o t = 0 da referência é o cruzamento.
+        const refLap = deltaReferenceLap(all, line, refLapIdx);
+        if (refLap) tracker.setReference(refLap.samples, refLap.durationMs);
         trackerLoadedFromRef.current = { mode, lapIdx: refLapIdx };
       } else if (refLapIdx < 0 && tracker.hasReference()) {
         tracker.clear();
         trackerLoadedFromRef.current = null;
       }
 
-      // Calcula elapsed da volta ATUAL (em curso).
-      // tStartCurrentLap = primeiro sample após a última volta fechada,
-      //                    ou movingStartIdx se ainda não fechou nenhuma.
-      let currentLapElapsedMs: number | null = null;
-      if (last && detection.movingStartIdx >= 0) {
-        const startIdx =
-          detection.laps.length > 0
-            ? detection.laps[detection.laps.length - 1].endIdx + 1
-            : detection.movingStartIdx;
-        if (startIdx < all.length) {
-          currentLapElapsedMs = last.t - all[startIdx].t;
-        }
-      }
+      // Elapsed da volta ATUAL (em curso), a partir do cruzamento da linha
+      // que a abriu. Com traçado, antes do 1º cruzamento o cronômetro não corre.
+      const clock = last ? liveLapClock(detection, all, last.t, line) : null;
+      const currentLapElapsedMs: number | null = clock ? clock.elapsedMs : null;
 
       // Computa delta no último sample.
       let liveDeltaMs: number | null = null;
