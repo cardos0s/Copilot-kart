@@ -190,7 +190,7 @@ Um app de telemetria cujo milésimo é inventado não deveria ir para a loja.
 | TMP-11 | P2: Pico de velocidade | Design | Implementing |
 | TMP-12 | P2: Insights (AC 1, 2) | Design | Implementing |
 | TMP-13 | P2: Insights (AC 3, mesmo traçado) | Design | Implementing |
-| TMP-14 | P3: Timestamp no segundo cheio | Design | Pending |
+| TMP-14 | P3: Timestamp no segundo cheio | Design | Implementing |
 
 **Coverage:** 14 total, 0 mapped to tasks, 14 unmapped ⚠️ (Tasks ainda não existe)
 

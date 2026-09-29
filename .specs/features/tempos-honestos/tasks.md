@@ -296,11 +296,11 @@ T11, T12, T13, T14 e T15 não dependem de nenhuma tarefa da fase. Todas as da fa
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: um lote com t = …49.900, …50.000, …50.100 mantém os três timestamps originais.
-- [ ] Teste: um aparelho que só entrega timestamps quantizados mantém o comportamento atual (horário de chegada espalhado a 100 ms).
-- [ ] Teste: os timestamps emitidos são estritamente crescentes entre lotes, inclusive quando um lote traz um `t` repetido.
-- [ ] Os testes existentes de `locationHandler` continuam passando.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste: um lote com t = …49.900, …50.000, …50.100 mantém os três timestamps originais.
+- [x] Teste: um aparelho que só entrega timestamps quantizados mantém o comportamento atual (horário de chegada espalhado a 100 ms).
+- [x] Teste: os timestamps emitidos são estritamente crescentes entre lotes, inclusive quando um lote traz um `t` repetido.
+- [x] Os testes existentes de `locationHandler` continuam passando.
+- [x] Gate: `npm test`, contagem registrada: 102 testes, 0 falhas. Build do fim da fase (`npm test && npm run typecheck`): só os 8 erros da baseline.
 
 **Tests**: unit
 **Gate**: quick

@@ -19,6 +19,7 @@ if (!buf.imu) buf.imu = [];
 
 let journal: LocationTaskDeps['journal'] = null;
 let uiActive = false;
+const clock: LocationTaskDeps['clock'] = { trustsRaw: false, lastT: 0 };
 
 /** O hook de gravação liga o diário aqui ao começar e desliga ao terminar. */
 export function setLocationTaskJournal(j: LocationTaskDeps['journal']): void {
@@ -32,6 +33,11 @@ export function setLocationTaskJournal(j: LocationTaskDeps['journal']): void {
  */
 export function setLocationTaskUiActive(v: boolean): void {
   uiActive = v;
+  // Toda gravação começa aqui: o relógio do GPS é zerado.
+  if (v) {
+    clock.trustsRaw = false;
+    clock.lastT = 0;
+  }
 }
 
 async function stopLocationUpdates(): Promise<void> {
@@ -57,5 +63,6 @@ TaskManager.defineTask(BG_TASK, async ({ data, error }) => {
     uiActive,
     stopLocationUpdates,
     now: Date.now,
+    clock,
   });
 });

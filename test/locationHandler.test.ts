@@ -54,6 +54,7 @@ async function setup(active: boolean, uiActive = false) {
       calls.stop++;
     },
     now: () => NOW,
+    clock: { trustsRaw: false, lastT: 0 },
   };
   return { store, journal, id, buf, calls, deps };
 }
@@ -149,4 +150,57 @@ test('handleLocations: timestamp sub-segundo é usado; quantizado ou zero vira n
     quant.deps,
   );
   assert.deepEqual(quant.buf.samples.map((s) => s.t), [NOW - 200, NOW - 100, NOW]);
+});
+
+// ---------------------------------------------------------------------------
+// TMP-14: timestamp do GPS confiável mesmo quando cai no segundo cheio.
+// ---------------------------------------------------------------------------
+
+test('handleLocations: lote com t = …49.900, …50.000, …50.100 mantém os três timestamps originais', async () => {
+  const { buf, deps } = await setup(true);
+  await handleLocations(
+    [loc(1_700_000_049_900, 4), loc(1_700_000_050_000, 4), loc(1_700_000_050_100, 4)],
+    deps,
+  );
+  assert.deepEqual(buf.samples.map((s) => s.t), [1_700_000_049_900, 1_700_000_050_000, 1_700_000_050_100]);
+
+  // O fix no segundo cheio abrindo o lote também fica com o seu timestamp.
+  const first = await setup(true);
+  await handleLocations([loc(1_700_000_050_000, 4), loc(1_700_000_050_100, 4)], first.deps);
+  assert.deepEqual(first.buf.samples.map((s) => s.t), [1_700_000_050_000, 1_700_000_050_100]);
+
+  // Depois de visto o sub-segundo, um lote só com segundo cheio também confia no cru.
+  await handleLocations([loc(1_700_000_051_000, 4)], first.deps);
+  assert.deepEqual(first.buf.samples.map((s) => s.t), [1_700_000_050_000, 1_700_000_050_100, 1_700_000_051_000]);
+});
+
+test('handleLocations: aparelho que só entrega timestamp quantizado continua com o horário de chegada espalhado a 100 ms', async () => {
+  const { buf, deps } = await setup(true);
+  let now = NOW;
+  const withNow = { ...deps, now: () => now };
+  await handleLocations([loc(1_700_000_049_000, 4), loc(1_700_000_050_000, 4), loc(0, 4)], withNow);
+  now = NOW + 1_000;
+  await handleLocations([loc(1_700_000_050_000, 4), loc(1_700_000_051_000, 4)], withNow);
+  assert.deepEqual(buf.samples.map((s) => s.t), [NOW - 200, NOW - 100, NOW, NOW + 900, NOW + 1_000]);
+  assert.equal(deps.clock.trustsRaw, false);
+});
+
+test('handleLocations: os timestamps emitidos são estritamente crescentes entre lotes, mesmo com t repetido', async () => {
+  // Relógio confiável: o lote seguinte repete o último t.
+  const raw = await setup(true);
+  await handleLocations([loc(1_700_000_049_900, 4), loc(1_700_000_050_000, 4)], raw.deps);
+  await handleLocations([loc(1_700_000_050_000, 4), loc(1_700_000_050_100, 4)], raw.deps);
+  const tr = raw.buf.samples.map((s) => s.t);
+  assert.deepEqual(tr, [1_700_000_049_900, 1_700_000_050_000, 1_700_000_050_001, 1_700_000_050_100]);
+
+  // Horário de chegada: dois lotes que chegam no mesmo instante.
+  const arr = await setup(true);
+  await handleLocations([loc(1_700_000_049_000, 4), loc(1_700_000_050_000, 4)], arr.deps);
+  await handleLocations([loc(1_700_000_050_000, 4), loc(1_700_000_051_000, 4)], arr.deps);
+  const ta = arr.buf.samples.map((s) => s.t);
+  assert.deepEqual(ta, [NOW - 100, NOW, NOW + 1, NOW + 2]);
+
+  for (const ts of [tr, ta]) {
+    for (let i = 1; i < ts.length; i++) assert.ok(ts[i] > ts[i - 1], `t[${i}] = ${ts[i]} não passa de ${ts[i - 1]}`);
+  }
 });
