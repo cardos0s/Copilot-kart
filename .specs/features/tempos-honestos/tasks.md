@@ -80,6 +80,15 @@ T18 -> T19
 T19 -> T20
 ```
 
+### Phase 4: Correções do Verificador (iteração 1)
+
+```
+T21
+T22 -> T23
+```
+
+T24 e T25 não dependem de nenhuma tarefa da fase.
+
 ---
 
 ## Task Breakdown
@@ -598,6 +607,123 @@ T19 -> T20
 **Tests**: unit
 **Gate**: build
 **Commit**: `fix(tempos): volta depois do box conta do cruzamento certo`
+
+---
+
+### Phase 4: Correções do Verificador (iteração 1)
+
+Saídas do `validation.md` de 29/09 (FAIL).
+
+#### T21: "Comparar voltas" pela régua única
+
+**What**: `compareLaps` calcula S1/S2/S3 com `sectorSplits` sobre os pontos salvos das duas voltas, e a soma 7/7/6 sai. A régua é o traçado da sessão; sem traçado, a volta de referência da comparação.
+**Where**: `src/lib/lapCompare.ts`
+**Depends on**: None
+**Reuses**: `sectorSplits`, `referenceFromLayout`, `referenceFromLap`
+**Requirement**: TMP-07 (AC 1, 3), AD-006
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Teste: na pista sintética de 37.699 ms, os S1/S2/S3 de `compareLaps` para uma volta são iguais aos de `sectorSplits` para a mesma volta (± 1 ms) e somam a duração.
+- [ ] Teste: nenhum setor sai negativo.
+- [ ] Gate: `npm test`, contagem registrada.
+
+**Tests**: unit
+**Gate**: quick
+**Commit**: `fix(comparação): setores da comparação pela régua única`
+
+---
+
+#### T22: Delta reinicia em toda abertura de volta
+
+**What**: Criar a função pura `lapOpened(prevOpenCross, openCross): boolean`. O hook chama `tracker.resetLap()` sempre que ela é verdadeira, o que inclui a volta aberta depois de uma volta descartada por passar de 180 s, e não só quando uma volta fecha.
+**Where**: `src/recording/liveLapClock.ts`
+**Depends on**: None
+**Reuses**: `openCross` (T20), `DeltaTracker.resetLap` (T5)
+**Requirement**: TMP-10 (AC 6)
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Teste: numa sequência de 2 voltas, box de 200 s e volta nova, `lapOpened` é verdadeira na abertura depois do box.
+- [ ] Teste: repetindo os polls do hook nessa sequência com um `DeltaTracker`, o 1º poll depois da abertura casa com `sNormalized < 0,05` (e não 1,0).
+- [ ] Teste estático: o hook chama `resetLap` sob `lapOpened`.
+- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+
+**Tests**: unit
+**Gate**: build
+**Commit**: `fix(tempos): delta reinicia também na volta depois do box`
+
+---
+
+#### T23: Cockpit e painel não mostram volta antes do 1º cruzamento
+
+**What**: Em `app/recording.tsx`, onde hoje aparece `currentLapElapsedMs ?? elapsedMs` (`:322`, `:599`), o cronômetro da volta mostra "—" enquanto não houver volta aberta, e a publicação manda `lapElapsedMs: null`.
+**Where**: `app/recording.tsx`
+**Depends on**: T22
+**Reuses**: nada
+**Requirement**: TMP-05 (AC 3)
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Teste estático: o arquivo não contém `currentLapElapsedMs ?? info.elapsedMs` nem `currentLapElapsedMs ?? elapsedMs`.
+- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+
+**Tests**: unit
+**Gate**: build
+**Commit**: `fix(gravação): cronômetro da volta só corre depois do 1º cruzamento`
+
+---
+
+#### T24: Mapa detalhado pela régua única
+
+**What**: `app/track-map.tsx` calcula os setores com `sectorSplits`, e a régua própria (`:112-121`) sai. A tela vai voltar à navegação em `produto-limpo` (decisão de 24/09).
+**Where**: `app/track-map.tsx`
+**Depends on**: None
+**Reuses**: `sectorSplits`
+**Requirement**: TMP-07 (AC 1), AD-006
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Teste estático: o arquivo importa `sectorSplits` e não tem mais o cálculo próprio de setores.
+- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+
+**Tests**: unit
+**Gate**: build
+**Commit**: `fix(mapa): setores do mapa detalhado pela régua única`
+
+---
+
+#### T25: GPX de bancada: todas as voltas fora dos múltiplos de 100 ms
+
+**What**: O teste do GPX de bancada troca `some` por `every`: **todas** as voltas precisam ter `durationMs % 100 !== 0`. Isso deixa o teste mais rigoroso e fecha a lacuna de precisão que o Verificador apontou.
+**Where**: `test/lapDetector.test.ts`
+**Depends on**: None
+**Reuses**: o teste atual
+**Requirement**: Success Criteria (GPX sem tempos em 00)
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] O teste afirma `every`, e as 3 voltas passam.
+- [ ] Gate: `npm test`, contagem registrada.
+
+**Tests**: unit
+**Gate**: quick
+**Commit**: `test(tempos): todas as voltas do GPX de bancada fora dos múltiplos de 100 ms`
 
 ---
 

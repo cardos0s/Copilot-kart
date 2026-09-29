@@ -32,6 +32,18 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: REC-10 AC 3 (rodada 1) (app)
 - last seen: 2026-09-25T00:10:06Z
 
+### L-004 - Ao unificar uma régua, procurar todo cálculo equivalente (somas por fatia, terços, split) no repo, não só as chamadas da função antiga pelo nome.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `src/lib` · harmful: 0
+- features: tempos-honestos
+- evidence: src/lib/lapCompare.ts:146-166, app/track-map.tsx:112-121 (TMP-07) (src/lib)
+- last seen: 2026-09-29T14:58:29Z
+
+### L-005 - Estado por volta (delta, setores, cronômetro) reinicia em toda abertura de volta, inclusive a que segue uma volta descartada, não só quando uma volta fecha.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `src/hooks` · harmful: 0
+- features: tempos-honestos
+- evidence: src/hooks/useLapRecorder.ts:515 (TMP-10) (src/hooks)
+- last seen: 2026-09-29T14:58:30Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.
