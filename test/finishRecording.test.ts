@@ -5,7 +5,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import type { GpsSample } from '../src/lib/geometry';
+import { haversine, type GpsSample } from '../src/lib/geometry';
+import { detectLaps } from '../src/lib/lapDetector';
+import { lineFromLayout } from '../src/lib/startLine';
 import { sliceLaps, type RecordedSessionRow } from '../src/recording/finishSession';
 import {
   finishRecording,
@@ -15,7 +17,7 @@ import {
 import { RecordingJournal } from '../src/recording/journal';
 import { fakeJournalStore, persistedGps } from './helpers/fakeJournalStore';
 import { fakeSessionRepo } from './helpers/fakeSessionRepo';
-import { generateLapSamples } from './helpers/syntheticTrack';
+import { generateLapSamples, generateTimedLaps } from './helpers/syntheticTrack';
 
 const T0 = 1_700_000_000_000;
 
@@ -132,4 +134,49 @@ test('finishRecording: sucesso → saved com as voltas, journal.end depois do co
   assert.equal(r.store.chunks.size, 0);
   assert.equal(r.postSaveCalls[0].session.id, id);
   assert.deepEqual(r.postSaveCalls[0].lapIds, r.repo.laps.map((l) => l.id));
+});
+
+test('finishRecording: com meta.line no diário, salva voltas que começam no cruzamento da linha do traçado', async () => {
+  // Traçado salvo (melhor volta com pontos de fronteira) e uma corrida que
+  // começa andando na metade da pista: a linha inferida ficaria a 240 m.
+  const layout = generateTimedLaps({ lapDurationMs: 37_699, sampleRateHz: 10, laps: 2, warmupS: 3, t0: T0 }).samples;
+  const line = lineFromLayout(sliceLaps(layout, [])[0].samples);
+  assert.ok(line);
+  const samples = generateTimedLaps({ lapDurationMs: 37_699, sampleRateHz: 10, startPhase: 0.5, laps: 4, t0: T0 }).samples;
+
+  const store = fakeJournalStore();
+  const journal = new RecordingJournal(store, () => T0);
+  const recordingId = await journal.begin({
+    mode: 'race',
+    trackId: 'track_1',
+    trackName: 'Kartódromo',
+    layoutId: 'layout_1',
+    layoutName: null,
+    kartSetupId: 'setup_1',
+    line,
+  });
+  journal.appendGps(samples);
+  await journal.flush();
+  // A linha que o "Encerrar" usa é a da meta gravada no diário.
+  const metaLine = JSON.parse(store.active!.metaJson).line;
+  assert.deepEqual(metaLine, line);
+
+  const repo = fakeSessionRepo();
+  const out = await finishRecording(
+    // O que o `stop()` do hook devolve: as voltas recortadas com a linha da meta.
+    { allSamples: samples, laps: sliceLaps(samples, [], metaLine) },
+    { recordingId, trackName: 'Kartódromo', trackId: 'track_1', layoutId: 'layout_1', kartSetupId: 'setup_1', mode: 'race', startedAt: T0 },
+    { journal, repo, postSave: async () => {} },
+  );
+
+  assert.equal(out.kind, 'saved');
+  const detected = detectLaps(samples, { line }).laps;
+  assert.equal(repo.laps.length, 3);
+  assert.equal(repo.laps.length, detected.length);
+  for (const [i, l] of repo.laps.entries()) {
+    const first = l.samples[0];
+    assert.equal(first.synthetic, true);
+    assert.equal(first.t, detected[i].startCross.t);
+    assert.ok(haversine(first, line) < 1, `volta ${i + 1} começa a ${haversine(first, line)} m da linha`);
+  }
 });

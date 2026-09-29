@@ -323,10 +323,10 @@ T11, T12, T13, T14, T15 e T17 não dependem de nenhuma tarefa da fase. Todas as 
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: um diário com `meta.line` recupera voltas com o mesmo tempo (± 1 ms) que o `detectLaps` com essa linha sobre os mesmos pontos.
-- [ ] Teste: `finishRecording` com `meta.line` salva voltas com `startCross` na linha do traçado.
-- [ ] Teste: um diário sem `line` (formato antigo) continua legível e recupera com a linha inferida.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste: um diário com `meta.line` recupera voltas com o mesmo tempo (± 1 ms) que o `detectLaps` com essa linha sobre os mesmos pontos.
+- [x] Teste: `finishRecording` com `meta.line` salva voltas com `startCross` na linha do traçado. **Nota:** o `finishRecording` recebe as voltas já recortadas pelo `stop()` do hook e não chama `sliceLaps`. A linha chega ao "Encerrar" pelo `stop()` (T10), e o `finishRecording` não mudou. O teste grava a meta com `line` no diário e confere que as voltas salvas começam no cruzamento dessa linha.
+- [x] Teste: um diário sem `line` (formato antigo) continua legível e recupera com a linha inferida.
+- [x] Gate: `npm test`, contagem registrada: 105 testes, 0 falhas.
 
 **Tests**: unit
 **Gate**: quick

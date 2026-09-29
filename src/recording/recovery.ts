@@ -61,7 +61,7 @@ export function summarize(
     mode: parsed.meta.mode,
     trackName: parsed.meta.trackName,
     startedAt: parsed.meta.startedAt,
-    laps: detectLaps(parsed.gps).laps.length,
+    laps: detectLaps(parsed.gps, { line: parsed.meta.line ?? null }).laps.length,
   };
 }
 
@@ -88,7 +88,8 @@ export async function recover(recordingId: string, deps: RecoveryDeps): Promise<
   if (parsed === 'unreadable') throw new Error('Não consegui ler a gravação interrompida');
 
   const { meta } = parsed;
-  const laps = sliceLaps(parsed.gps, parsed.imu);
+  // A mesma linha da gravação (TMP-06); sem ela (diário antigo), a inferida.
+  const laps = sliceLaps(parsed.gps, parsed.imu, meta.line ?? null);
   if (laps.length === 0) throw new Error('Nenhuma volta completa para recuperar');
 
   let result: RecoverResult;

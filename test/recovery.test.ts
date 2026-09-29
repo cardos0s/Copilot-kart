@@ -5,15 +5,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import type { GpsSample } from '../src/lib/geometry';
+import { haversine, type GpsSample } from '../src/lib/geometry';
 import { detectLaps } from '../src/lib/lapDetector';
+import { lineFromLayout } from '../src/lib/startLine';
 import type { TrackLayout } from '../src/storage/db';
 import { sliceLaps, type LayoutRepo } from '../src/recording/finishSession';
 import { RecordingJournal, type RecordingMetaInput } from '../src/recording/journal';
 import { discard, recover, summarize, type RecoveryDeps } from '../src/recording/recovery';
 import { fakeJournalStore, persistedGps, type FakeJournalStore } from './helpers/fakeJournalStore';
 import { fakeSessionRepo, type FakeSessionRepo } from './helpers/fakeSessionRepo';
-import { generateLapSamples } from './helpers/syntheticTrack';
+import { generateLapSamples, generateTimedLaps } from './helpers/syntheticTrack';
 
 const T0 = 1_700_000_000_000;
 
@@ -220,4 +221,61 @@ test('recover: buraco de 200 s sem pontos no meio segue a regra do detectLaps e 
   assert.equal(sessions.laps.filter((l) => l.startedAt < gapFrom).length, 2);
   assert.equal(sessions.laps.filter((l) => l.startedAt > gapTo).length, 1);
   assert.equal(store.active, null);
+});
+
+// --- TMP-06: a recuperação usa a mesma linha da gravação ---
+
+/** Traçado como o app o salva: a melhor volta, com os pontos de fronteira (AD-006). */
+function layoutLine() {
+  const { samples } = generateTimedLaps({ lapDurationMs: 37_699, sampleRateHz: 10, laps: 2, warmupS: 3, t0: T0 });
+  const line = lineFromLayout(sliceLaps(samples, [])[0].samples);
+  assert.ok(line);
+  return line;
+}
+
+/** Corrida que começa já andando, na metade da pista: a linha inferida cai do outro lado. */
+function midTrackRace() {
+  return generateTimedLaps({ lapDurationMs: 37_699, sampleRateHz: 10, startPhase: 0.5, laps: 4, t0: T0 }).samples;
+}
+
+test('recover: diário com meta.line recupera as voltas do detectLaps com essa linha (± 1 ms)', async () => {
+  const line = layoutLine();
+  const samples = midTrackRace();
+  const { store, id } = await journalFromSamples({ ...RACE, line }, samples);
+
+  const s = summarize(store.active!, await store.readChunks(id));
+  const withLine = detectLaps(samples, { line }).laps;
+  assert.equal(s !== 'unreadable' && s.laps, withLine.length);
+
+  const { d, sessions } = deps(store);
+  await recover(id, d);
+
+  assert.equal(sessions.laps.length, withLine.length);
+  assert.equal(sessions.laps.length, 3);
+  for (const [i, l] of sessions.laps.entries()) {
+    assert.ok(Math.abs(l.durationMs - withLine[i].durationMs) <= 1, `volta ${i + 1}: ${l.durationMs} × ${withLine[i].durationMs}`);
+    assert.ok(Math.abs(l.startedAt - withLine[i].startedAt) <= 1, `volta ${i + 1}: início ${l.startedAt} × ${withLine[i].startedAt}`);
+    // A volta começa na linha do traçado, não na inferida (240 m dali).
+    assert.ok(haversine(l.samples[0], line) < 1, `volta ${i + 1} começa a ${haversine(l.samples[0], line)} m da linha`);
+  }
+  // Sem a linha, o mesmo diário daria outras voltas: o teste distingue.
+  assert.notEqual(detectLaps(samples).laps.length, withLine.length);
+});
+
+test('recover: diário antigo sem line continua legível e recupera com a linha inferida', async () => {
+  const samples = midTrackRace();
+  const { store, id } = await journalFromSamples(RACE, samples);
+  assert.equal('line' in JSON.parse(store.active!.metaJson), false);
+
+  const s = summarize(store.active!, await store.readChunks(id));
+  assert.notEqual(s, 'unreadable');
+  const inferred = detectLaps(samples).laps;
+  assert.equal(s !== 'unreadable' && s.laps, inferred.length);
+
+  const { d, sessions } = deps(store);
+  await recover(id, d);
+  assert.deepEqual(
+    sessions.laps.map((l) => [l.startedAt, l.durationMs]),
+    inferred.map((l) => [l.startedAt, l.durationMs]),
+  );
 });

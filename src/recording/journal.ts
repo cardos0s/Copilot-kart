@@ -8,6 +8,7 @@
  * próxima tentativa e `failed` liga o aviso do HUD.
  */
 import type { GpsSample, ImuSample } from '../lib/geometry';
+import type { StartLine } from '../lib/startLine';
 
 export const FLUSH_INTERVAL_MS = 5000;
 
@@ -22,6 +23,11 @@ export type RecordingMeta = {
   layoutId: string | null; // race
   layoutName: string | null; // reference
   kartSetupId: string | null;
+  /**
+   * Linha de chegada do traçado (race com traçado). Opcional e sem mudar a
+   * `version`: um diário antigo sem ela usa a linha inferida.
+   */
+  line?: StartLine | null;
 };
 
 export type RecordingMetaInput = Omit<RecordingMeta, 'version' | 'recordingId' | 'startedAt'>;
