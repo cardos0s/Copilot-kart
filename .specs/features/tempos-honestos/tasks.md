@@ -73,6 +73,12 @@ T9 -> T10
 
 T11, T12, T13, T14, T15 e T17 não dependem de nenhuma tarefa da fase. Todas as da fase dependem da fase 1.
 
+### Phase 3: Correções achadas pelo lote 2 (AD-006)
+
+```
+T18 -> T19
+```
+
 ---
 
 ## Task Breakdown
@@ -506,6 +512,57 @@ T11, T12, T13, T14, T15 e T17 não dependem de nenhuma tarefa da fase. Todas as 
 **Tests**: unit
 **Gate**: quick
 **Commit**: `fix(insights): escala de velocidade sem fix ruim`
+
+---
+
+### Phase 3: Correções achadas pelo lote 2 (AD-006)
+
+#### T18: `cleanSamples` preserva as fronteiras da volta
+
+**What**: `cleanSamples` nunca remove pontos `synthetic: true`, qualquer que seja a precisão herdada. É o que o design e a AD-006 prometem. Hoje, uma fix ruim ao lado do cruzamento tira a fronteira da volta nas curvas, nos mini-setores, no mapa, no `lapInsight`, no lap-compare e no DNA.
+**Where**: `src/lib/analysis.ts`
+**Depends on**: None
+**Reuses**: `cleanSamples`
+**Requirement**: AD-006; TMP-07 (AC 3), TMP-12 (AC 1)
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Teste: numa volta cujos pontos de fronteira herdaram precisão de 25 m, `cleanSamples(10)` mantém o primeiro e o último ponto (os sintéticos) e remove os pontos crus acima de 10 m.
+- [ ] Teste: com essa volta limpa, `sectorSplits` continua fechando `s1 + s2 + s3 === durationMs` (± 1 ms).
+- [ ] Gate: `npm test`, contagem registrada.
+
+**Tests**: unit
+**Gate**: quick
+**Commit**: `fix(tempos): limpeza de pontos preserva as fronteiras da volta`
+
+---
+
+#### T19: Cronômetro e delta ao vivo a partir do cruzamento
+
+**What**: Extrair do hook a função pura `liveLapClock(detection, all, nowSampleT)`. Ela devolve o instante de início da volta em curso, que é o `endCross.t` da última volta fechada ou, na 1ª volta, o `startCross` do 1º cruzamento. Sem nenhum cruzamento com traçado, devolve `null`. O `currentLapElapsedMs` e o delta passam a contar a partir desse instante. A referência do `DeltaTracker` passa a ser a volta com fronteiras (via `sliceLaps`), e não os pontos crus `startIdx..endIdx`. O hook usa a função.
+**Where**: `src/recording/liveLapClock.ts`
+**Depends on**: T18
+**Reuses**: `detectLaps`, `sliceLaps`, `DeltaTracker`
+**Requirement**: AD-006; TMP-05 (AC 3), TMP-10
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Teste: com traçado e gravação começando andando, antes do 1º cruzamento o relógio é `null` (o cronômetro não corre).
+- [ ] Teste: depois do 1º cruzamento, `elapsed = t_amostra − startCross.t` exatamente.
+- [ ] Teste: depois de fechar uma volta, o relógio recomeça em `endCross.t` dessa volta, e não no ponto cru seguinte.
+- [ ] Teste: a referência do delta montada para uma volta fechada começa e termina em pontos `synthetic`.
+- [ ] Teste estático: o hook usa `liveLapClock` e não calcula mais o início da volta por `endIdx + 1`.
+- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+
+**Tests**: unit
+**Gate**: build
+**Commit**: `fix(tempos): cronômetro e delta ao vivo contam do cruzamento da linha`
 
 ---
 
