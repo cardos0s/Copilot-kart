@@ -451,9 +451,11 @@ T11, T12, T13, T14, T15 e T17 não dependem de nenhuma tarefa da fase. Todas as 
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: numa volta sem nenhum ponto de até 10 m, a IA recebe `peakKmh: null`.
-- [ ] Teste: numa volta com um ponto isolado a 150 km/h, a IA recebe menos de 81 km/h.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste: numa volta sem nenhum ponto de até 10 m, a IA recebe `peakKmh: null`.
+- [x] Teste: numa volta com um ponto isolado a 150 km/h, a IA recebe menos de 81 km/h.
+- [x] Gate: `npm test`, contagem registrada: 115 testes, 0 falhas.
+
+**Nota da execução:** o tipo `QuickInsightInput.peakKmh` em `src/lib/aiAnalysis.ts` passou de `number` opcional para `number | null` opcional, para aceitar o `null`. O prompt já pulava a linha do pico quando ele é `null`, e não mudou.
 
 **Tests**: unit
 **Gate**: quick

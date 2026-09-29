@@ -218,7 +218,7 @@ export type QuickInsightInput = {
   /** Quantas voltas a sessão teve. */
   lapCount: number;
   /** Pico de velocidade km/h. */
-  peakKmh?: number;
+  peakKmh?: number | null;
   /** Nome do piloto (opcional, pra IA usar). */
   pilotName?: string | null;
 };

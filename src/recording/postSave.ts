@@ -139,7 +139,9 @@ export async function runPostSaveEffects(
       const xpGained = result.xpGained;
       background = (async () => {
         try {
-          const peakKmh = msToKmh(peakSpeedMs(best.samples) ?? 0);
+          // Pico p99; sem nenhum ponto de até 10 m, null ("sem dado" no prompt).
+          const peakMs = peakSpeedMs(best.samples);
+          const peakKmh = peakMs === null ? null : msToKmh(peakMs);
           const profileForInsight = await deps.getProfile().catch(() => null);
           const aiInsight = await deps.requestQuickInsight({
             trackName: session.trackName,

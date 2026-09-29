@@ -157,3 +157,39 @@ test('runPostSaveEffects: erro na gamificação é engolido e a função retorna
   assert.equal(called('requestQuickInsight').length, 0);
   assert.equal(called('publishLeaderboardEntry').length, 0);
 });
+
+// --- TMP-11 AC 3: o prompt do coach recebe o pico honesto ---
+
+/** Volta com `n` pontos a `kmh`, com a precisão dada. */
+function lapAt(id: string, durationMs: number, kmh: number, accuracy: number, n = 500): LapRecord {
+  const samples = Array.from({ length: n }, (_, i) => ({
+    t: i * 100,
+    lat: -14.86 + i * 1e-6,
+    lng: -40.84,
+    speed: kmh / 3.6,
+    accuracy,
+  }));
+  return { id, sessionId: 'session_rec_1', samples, startedAt: 0, durationMs };
+}
+
+test('runPostSaveEffects: volta sem nenhum ponto de até 10 m manda peakKmh: null ao coach', async () => {
+  const { deps, called } = fakeDeps();
+  const laps = [lapAt('session_rec_1_lap_1', 54_000, 80, 12), lapAt('session_rec_1_lap_2', 55_000, 80, 4)];
+  const { background } = await runPostSaveEffects(SESSION, laps, { fromRecovery: false }, deps);
+  await background;
+  const insight = called('requestQuickInsight')[0].args[0] as any;
+  assert.equal(insight.bestLapMs, 54_000);
+  assert.equal(insight.peakKmh, null);
+});
+
+test('runPostSaveEffects: um ponto isolado a 150 km/h não passa para o coach (pico < 81 km/h)', async () => {
+  const { deps, called } = fakeDeps();
+  const best = lapAt('session_rec_1_lap_1', 54_000, 80, 4);
+  best.samples[250] = { ...best.samples[250], speed: 150 / 3.6 };
+  const { background } = await runPostSaveEffects(SESSION, [best], { fromRecovery: false }, deps);
+  await background;
+  const insight = called('requestQuickInsight')[0].args[0] as any;
+  assert.equal(typeof insight.peakKmh, 'number');
+  assert.ok(insight.peakKmh < 81, `pico ${insight.peakKmh} km/h`);
+  assert.ok(insight.peakKmh > 79, `pico ${insight.peakKmh} km/h`);
+});
