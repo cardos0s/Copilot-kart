@@ -738,8 +738,8 @@ Saídas do `validation.md` de 29/09 (FAIL).
 - Skill: NONE
 
 **Done when**:
-- [ ] O teste afirma `every`, e as 3 voltas passam.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] O teste afirma `every`, e as 3 voltas passam.
+- [x] Gate: `npm test`, contagem registrada: 134 testes, 0 falhas (a contagem não muda: o teste é o mesmo, mais rigoroso). Build do fim da fase (`npm test && npm run typecheck`): só os 8 erros da baseline.
 
 **Tests**: unit
 **Gate**: quick

@@ -253,7 +253,7 @@ test('GPX de bancada: 3 voltas, e os tempos deixam de ser múltiplos de 100 ms',
   const { laps } = detectLaps(samples);
   assert.equal(laps.length, 3);
   assert.ok(
-    laps.some((l) => l.durationMs % 100 !== 0),
+    laps.every((l) => l.durationMs % 100 !== 0),
     `tempos: ${laps.map((l) => l.durationMs).join(', ')}`,
   );
 });
