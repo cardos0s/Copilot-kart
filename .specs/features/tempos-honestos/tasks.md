@@ -429,8 +429,8 @@ T11, T12, T13, T14, T15 e T17 não dependem de nenhuma tarefa da fase. Todas as 
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste estático: a tela chama `lapsForInsight`, e o filtro só por `trackId` saiu.
-- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+- [x] Teste estático: a tela chama `lapsForInsight`, e o filtro só por `trackId` saiu.
+- [x] Gate: `npm test && npm run typecheck`, só com a baseline: 113 testes, 0 falhas; typecheck com os 8 erros da baseline.
 
 **Tests**: unit
 **Gate**: build

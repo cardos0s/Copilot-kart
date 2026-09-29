@@ -28,7 +28,7 @@ import {
 } from '../../src/storage/db';
 import { refreshAiEnabled } from '../../src/lib/aiAnalysis';
 import { findTrackById } from '../../src/data/tracks';
-import { buildLapInsight, LapInsight, speedPaint } from '../../src/lib/lapInsight';
+import { buildLapInsight, LapInsight, lapsForInsight, speedPaint } from '../../src/lib/lapInsight';
 import { formatLapPlain } from '../../src/lib/format';
 import { PaintedLap } from '../../src/components/analysis/parts';
 import { tabBarSpace } from '../../src/components/ui';
@@ -64,11 +64,10 @@ export default function Insights() {
       const track = anchor.trackId ? findTrackById(anchor.trackId) : null;
       setTrackName(track?.shortName ?? anchor.trackName);
 
-      // Só voltas da MESMA pista: misturar kartódromos faria a média de curva
-      // comparar coisas que não se comparam.
-      const sameTrack = sessions
-        .filter((x) => (anchor.trackId ? x.trackId === anchor.trackId : x.trackName === anchor.trackName))
-        .slice(0, SESSION_WINDOW);
+      // Só voltas do MESMO traçado da mesma pista (TMP-13): misturar
+      // kartódromos ou traçados faria a média de curva comparar coisas que
+      // não se comparam.
+      const sameTrack = lapsForInsight(sessions, anchor).slice(0, SESSION_WINDOW);
 
       const laps = (await Promise.all(sameTrack.map((x) => getLapsForSession(x.id)))).flat();
       setInsight(buildLapInsight(laps));
