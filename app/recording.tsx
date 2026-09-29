@@ -317,9 +317,9 @@ export default function Recording() {
             accuracy: s.accuracy,
             lapNumber: info.lapsCompleted,
             // Tempo da volta ATUAL (reseta a cada cruzamento da linha),
-            // NÃO o total da sessão. Antes mandava info.elapsedMs (total)
-            // e o painel mostrava "VOLTA 8:35" crescendo sem parar.
-            lapElapsedMs: info.currentLapElapsedMs ?? info.elapsedMs,
+            // NÃO o total da sessão. Antes do 1º cruzamento não há volta
+            // aberta, e o `publishSample` manda null (TMP-05 AC 3).
+            lapElapsedMs: info.currentLapElapsedMs ?? undefined,
             bestLapMs: info.bestLapMs ?? null,
             // Delta MyChron AO VIVO no ponto atual da pista (vem do tracker
             // do hook). Antes mandava um valor estático (melhor − referência
@@ -595,8 +595,8 @@ export default function Recording() {
     setReferenceMode(info.referenceMode === 'best' ? 'previous' : 'best');
   };
   // Tempo da volta atual em curso. Vem do hook (não do elapsedMs total).
-  // Fallback pro elapsed total quando ainda não fechou primeira volta.
-  const currentLapMs = info.currentLapElapsedMs ?? info.elapsedMs;
+  // null antes do 1º cruzamento da linha: o cronômetro mostra "—".
+  const currentLapMs = info.currentLapElapsedMs;
 
   // HUD font sizes — pensado pra cockpit, layout 50/50 velocímetro + crono.
   //   - hudFontSize: ~140px landscape / ~96px portrait. Bem grande, mas
@@ -735,7 +735,7 @@ export default function Recording() {
             numberOfLines={1}
             adjustsFontSizeToFit
           >
-            {fmtLap(currentLapMs)}
+            {currentLapMs !== null ? fmtLap(currentLapMs) : '—'}
           </Text>
         </View>
       </View>

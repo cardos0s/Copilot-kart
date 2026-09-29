@@ -684,8 +684,13 @@ Saídas do `validation.md` de 29/09 (FAIL).
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste estático: o arquivo não contém `currentLapElapsedMs ?? info.elapsedMs` nem `currentLapElapsedMs ?? elapsedMs`.
-- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+- [x] Teste estático: o arquivo não contém `currentLapElapsedMs ?? info.elapsedMs` nem `currentLapElapsedMs ?? elapsedMs`.
+- [x] Gate: `npm test && npm run typecheck`, só com a baseline: 133 testes, 0 falhas; typecheck com os 8 erros da baseline.
+
+**Notas da execução:**
+- A publicação manda `lapElapsedMs: info.currentLapElapsedMs ?? undefined`. O tipo `LiveSample.lapElapsedMs` (`src/lib/liveSession.ts:24`) é `number` opcional, e o `publishSample` grava `lap_elapsed_ms: sample.lapElapsedMs ?? null`, então a equipe recebe `null`. Mudar o tipo para aceitar `null` mexeria fora da tela.
+- O mesmo teste estático confere o "—" no cockpit e a expressão da publicação.
+- Fora do escopo: o `web-spectator` mostra `lapElapsedMs ?? 0` (`web-spectator/app/live/[code]/page.tsx:52`), então o painel exibe 0 antes do 1º cruzamento, e não "—".
 
 **Tests**: unit
 **Gate**: build
