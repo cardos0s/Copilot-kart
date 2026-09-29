@@ -9,7 +9,7 @@ import { DeltaTracker } from '../lib/realtimeDelta';
 import { referenceFromLayout, sectorSplits } from '../lib/sectors';
 import { lineFromLayout, type CrossPoint, type StartLine } from '../lib/startLine';
 import { sliceLaps, type RecordedLap } from '../recording/finishSession';
-import { deltaReferenceLap, liveLapClock } from '../recording/liveLapClock';
+import { deltaReferenceLap, lapOpened, liveLapClock } from '../recording/liveLapClock';
 import type { RecordingMetaInput } from '../recording/journal';
 import {
   BG_TASK,
@@ -305,6 +305,9 @@ export function useLapRecorder(options?: LapRecorderOptions) {
   const trackerLoadedFromRef = useRef<{ mode: ReferenceMode; lapIdx: number } | null>(null);
   // Conta de voltas no último poll — pra detectar "fechou nova volta".
   const lastLapCountInPollRef = useRef<number>(0);
+  // Cruzamento que abria a volta em curso no último poll — pra detectar
+  // "abriu volta nova", inclusive depois de um box sem volta fechada.
+  const lastOpenCrossRef = useRef<OpenCross | null>(null);
   // Quando bateu PB, registra timestamp pra UI flashar 4s.
   const newBestUntilRef = useRef<number>(0);
   // Snapshot da última volta fechada + janela de exposição. A UI tem 1s
@@ -351,6 +354,7 @@ export function useLapRecorder(options?: LapRecorderOptions) {
     deltaTrackerRef.current.clear();
     trackerLoadedFromRef.current = null;
     lastLapCountInPollRef.current = 0;
+    lastOpenCrossRef.current = null;
     newBestUntilRef.current = 0;
     closedLapDataRef.current = null;
     closedLapClearAtRef.current = 0;
@@ -506,14 +510,20 @@ export function useLapRecorder(options?: LapRecorderOptions) {
       // (que pode ser igual à best quando bateu PB agora).
       const refLapIdx = mode === 'best' ? bestLapIdx : previousLapIdx;
 
-      // Volta nova fechou desde o último poll? Trata 3 coisas:
-      //   1. Reseta o lap state do tracker (s volta a zero conceitualmente)
-      //   2. Se bateu PB, marca flash de "NEW BEST!" por 4s
-      //   3. Marca tracker como "precisa recarregar referência" — porque a
+      // Volta nova abriu desde o último poll (fechou uma volta ou, depois de
+      // um box, a anterior foi descartada por passar de 180 s): o hint do
+      // tracker volta ao início do traçado (TMP-10).
+      if (lapOpened(lastOpenCrossRef.current, detection.openCross)) {
+        tracker.resetLap();
+      }
+      lastOpenCrossRef.current = detection.openCross;
+
+      // Volta nova fechou desde o último poll? Trata 2 coisas:
+      //   1. Se bateu PB, marca flash de "NEW BEST!" por 4s
+      //   2. Marca tracker como "precisa recarregar referência" — porque a
       //      melhor mudou (e/ou a "anterior" mudou)
       const closedNewLap = detection.laps.length > lastLapCountInPollRef.current;
       if (closedNewLap) {
-        tracker.resetLap();
         const last = detection.laps[detection.laps.length - 1];
         // Voltas que existiam ANTES desta fechar — base pra calcular delta
         // contra a referência "antiga" (a que estava ativa enquanto piloto

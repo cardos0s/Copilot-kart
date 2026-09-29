@@ -12,7 +12,8 @@ import type { GpsSample } from '../src/lib/geometry';
 import { detectLaps } from '../src/lib/lapDetector';
 import { lineFromLayout, type StartLine } from '../src/lib/startLine';
 import { sliceLaps } from '../src/recording/finishSession';
-import { deltaReferenceLap, liveLapClock } from '../src/recording/liveLapClock';
+import { DeltaTracker } from '../src/lib/realtimeDelta';
+import { deltaReferenceLap, lapOpened, liveLapClock } from '../src/recording/liveLapClock';
 import { generateTimedLaps, sampleTrack } from './helpers/syntheticTrack';
 
 const D = 37_699;
@@ -171,4 +172,82 @@ test('useLapRecorder: currentLapSamples (setores ao vivo) usa openCross, e não 
   assert.ok(/function currentLapSamples\(\s*all: GpsSample\[\],\s*openCross: OpenCross \| null\s*\)/.test(src));
   assert.ok(/currentLapSamples\(all,\s*detection\.openCross\)/.test(src), 'o poll passa detection.openCross');
   assert.equal(/\.endCross\b/.test(src), false, 'o hook não abre a volta pelo endCross');
+});
+
+/**
+ * Repete os polls do hook (a cada 500 ms, 5 pontos a 10 Hz) com um
+ * `DeltaTracker`: `resetLap()` sob `lapOpened`, a referência pela melhor volta
+ * (`deltaReferenceLap`) recarregada quando ela muda, e o delta no último ponto
+ * com o relógio de `liveLapClock`.
+ */
+function runPolls(samples: GpsSample[], line: StartLine) {
+  const tracker = new DeltaTracker();
+  let prevOpen: ReturnType<typeof detectLaps>['openCross'] = null;
+  let loadedIdx = -1;
+  const polls = [];
+  for (let lastIdx = 4; lastIdx < samples.length; lastIdx += 5) {
+    const { all, detection, now } = pollAt(samples, lastIdx, line);
+    const opened = lapOpened(prevOpen, detection.openCross);
+    prevOpen = detection.openCross;
+    if (opened) tracker.resetLap();
+
+    let bestIdx = -1;
+    detection.laps.forEach((l, i) => {
+      if (bestIdx < 0 || l.durationMs < detection.laps[bestIdx].durationMs) bestIdx = i;
+    });
+    if (bestIdx >= 0 && bestIdx !== loadedIdx) {
+      const ref = deltaReferenceLap(all, line, bestIdx);
+      assert.ok(ref);
+      tracker.setReference(ref.samples, ref.durationMs);
+      loadedIdx = bestIdx;
+    }
+
+    const clock = liveLapClock(detection, all, now, line);
+    const reading = clock && tracker.hasReference() ? tracker.compute(all[all.length - 1], clock.elapsedMs) : null;
+    polls.push({ lastIdx, laps: detection.laps.length, openT: detection.openCross?.t ?? null, opened, reading });
+  }
+  return polls;
+}
+
+test('lapOpened: verdadeira só quando o openCross muda, inclusive na abertura depois do box', () => {
+  const a = { t: 1_000 };
+  assert.equal(lapOpened(null, null), false);
+  assert.equal(lapOpened(null, a), true);
+  assert.equal(lapOpened(a, { t: 1_000 }), false);
+  assert.equal(lapOpened(a, { t: 2_000 }), true);
+
+  const { line, samples, tGo, full } = boxSession();
+  const polls = runPolls(samples, line);
+  const afterBox = full.laps[2].startCross.t;
+  const i = polls.findIndex((p) => p.openT === afterBox);
+  assert.ok(i > 0);
+  // É a abertura que o "volta fechou" não vê: nenhuma volta fecha nesse poll.
+  assert.equal(polls[i].laps, 2);
+  assert.equal(polls[i - 1].laps, 2);
+  assert.equal(polls[i].opened, true, 'lapOpened na abertura depois do box');
+  // Durante o box, o openCross não muda e lapOpened fica falsa.
+  const boxPolls = polls.filter((p) => samples[p.lastIdx].t > tGo - 190_000 && samples[p.lastIdx].t < tGo);
+  assert.ok(boxPolls.length > 100);
+  assert.ok(boxPolls.every((p) => !p.opened));
+  // Aberturas: o 1º cruzamento, o fim das voltas 1 e 2, o cruzamento depois
+  // do box e o fim da volta 3.
+  assert.equal(polls.filter((p) => p.opened).length, 5);
+});
+
+test('DeltaTracker nos polls do hook: o 1º poll depois da abertura pós-box casa no início do traçado (sNormalized < 0,05)', () => {
+  const { line, samples, full } = boxSession();
+  const polls = runPolls(samples, line);
+  const afterBox = full.laps[2].startCross.t;
+  const first = polls.find((p) => p.openT === afterBox);
+  assert.ok(first && first.reading);
+  const { sNormalized, sCurrent } = first.reading;
+  assert.ok(sNormalized !== null, 'o ponto casou no traçado');
+  assert.ok(sNormalized < 0.05, `s = ${sCurrent} m (${(sNormalized * 100).toFixed(1)} % da volta)`);
+});
+
+test('useLapRecorder: chama tracker.resetLap() sob lapOpened, e só ali', () => {
+  const src = readFileSync(join(__dirname, '..', 'src', 'hooks', 'useLapRecorder.ts'), 'utf8');
+  assert.ok(/import\s*\{[^}]*\blapOpened\b[^}]*\}\s*from\s*'\.\.\/recording\/liveLapClock'/.test(src));
+  assert.ok(/if\s*\(\s*lapOpened\([^)]*detection\.openCross\s*\)\s*\)\s*\{?\s*tracker\.resetLap\(\)/.test(src), 'resetLap sob lapOpened');
+  assert.equal(src.match(/\.resetLap\(\)/g)?.length, 1, 'nenhum outro resetLap fora do lapOpened');
 });

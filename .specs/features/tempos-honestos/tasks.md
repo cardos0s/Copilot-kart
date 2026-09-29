@@ -655,10 +655,15 @@ Saídas do `validation.md` de 29/09 (FAIL).
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: numa sequência de 2 voltas, box de 200 s e volta nova, `lapOpened` é verdadeira na abertura depois do box.
-- [ ] Teste: repetindo os polls do hook nessa sequência com um `DeltaTracker`, o 1º poll depois da abertura casa com `sNormalized < 0,05` (e não 1,0).
-- [ ] Teste estático: o hook chama `resetLap` sob `lapOpened`.
-- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+- [x] Teste: numa sequência de 2 voltas, box de 200 s e volta nova, `lapOpened` é verdadeira na abertura depois do box.
+- [x] Teste: repetindo os polls do hook nessa sequência com um `DeltaTracker`, o 1º poll depois da abertura casa com `sNormalized < 0,05` (e não 1,0).
+- [x] Teste estático: o hook chama `resetLap` sob `lapOpened`.
+- [x] Gate: `npm test && npm run typecheck`, só com a baseline: 132 testes, 0 falhas; typecheck com os 8 erros da baseline.
+
+**Notas da execução:**
+- `lapOpened` é verdadeira quando o `openCross` passa a existir ou muda de `t`. O hook guarda o do poll anterior em `lastOpenCrossRef`, zerado no `start()`.
+- O `resetLap()` saiu do bloco "volta fechou" e ficou só sob `lapOpened`, que também é verdadeira quando uma volta fecha. O resto do bloco (PB, overlay, setores, recarga da referência) não mudou.
+- Os testes estão em `test/liveLapClock.test.ts`, que já tinha o cenário do box. Sem o reset, a sonda repete o valor do Verificador: s = 751,8 m (100 % da volta).
 
 **Tests**: unit
 **Gate**: build

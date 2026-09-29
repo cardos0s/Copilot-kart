@@ -11,7 +11,7 @@
  */
 import type { GpsSample } from '../lib/geometry';
 import type { DetectLapsResult } from '../lib/lapDetector';
-import type { StartLine } from '../lib/startLine';
+import type { CrossPoint, StartLine } from '../lib/startLine';
 import { sliceLaps } from './finishSession';
 
 export type LiveLapClock = {
@@ -41,6 +41,20 @@ export function liveLapClock(
   if (!detection.openCross) return null;
   const lapStartT = detection.openCross.t;
   return { lapStartT, elapsedMs: nowSampleT - lapStartT };
+}
+
+/**
+ * Uma volta nova abriu desde o poll anterior: o `openCross` mudou. Vale quando
+ * uma volta fecha e também quando a anterior foi descartada por passar de
+ * 180 s (box), caso em que nenhuma volta fecha. O hook chama
+ * `DeltaTracker.resetLap()` sempre que isto é verdadeiro (TMP-10 AC 6).
+ */
+export function lapOpened(
+  prevOpenCross: Pick<CrossPoint, 't'> | null,
+  openCross: Pick<CrossPoint, 't'> | null
+): boolean {
+  if (!openCross) return false;
+  return !prevOpenCross || prevOpenCross.t !== openCross.t;
 }
 
 /**
