@@ -89,6 +89,12 @@ T22 -> T23
 
 T24 e T25 não dependem de nenhuma tarefa da fase.
 
+### Phase 5: Correções do Verificador (iteração 2)
+
+```
+T26
+```
+
 ---
 
 ## Task Breakdown
@@ -744,6 +750,33 @@ Saídas do `validation.md` de 29/09 (FAIL).
 **Tests**: unit
 **Gate**: quick
 **Commit**: `test(tempos): todas as voltas do GPX de bancada fora dos múltiplos de 100 ms`
+
+---
+
+### Phase 5: Correções do Verificador (iteração 2)
+
+#### T26: "Comparar voltas" mede os setores sobre os pontos salvos
+
+**What**: Os S1/S2/S3 de `compareLaps` saem dos pontos **salvos** das duas voltas, só com `repairDegenerateTimestamps`, como fazem a sessão e o ao vivo, e não dos pontos filtrados por `cleanSamples(10)`. O restante da comparação (delta ponto a ponto, mapa) pode seguir usando os pontos limpos. Entra também no Roteiro de UAT o passo do box de mais de 180 s.
+**Where**: `src/lib/lapCompare.ts`
+**Depends on**: None
+**Reuses**: `sectorSplits`, `repairDegenerateTimestamps`
+**Requirement**: TMP-07 (AC 3), AD-006
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Teste: pista de 37.699 ms a 10 Hz com uma fix de precisão de 15 m deslocada 5 m perto de 1/3, e outra perto de 2/3. Os S1/S2/S3 de `compareLaps` diferem no máximo 20 ms dos de `sectorSplits` sobre os pontos salvos.
+- [ ] Teste: o mesmo a 5 Hz, com duas fixes deslocadas 8 m, ≤ 20 ms.
+- [ ] `app/lap-compare.tsx` passa os pontos salvos para os setores, e os testes estáticos continuam passando.
+- [ ] Roteiro de UAT: passo 6, "entrar no box por mais de 180 s e voltar: o delta e os setores da volta seguinte começam do zero".
+- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+
+**Tests**: unit
+**Gate**: build
+**Commit**: `fix(comparação): setores sobre os pontos salvos, como na sessão`
 
 ---
 

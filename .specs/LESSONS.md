@@ -44,6 +44,12 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: src/hooks/useLapRecorder.ts:515 (TMP-10) (src/hooks)
 - last seen: 2026-09-29T14:58:30Z
 
+### L-006 - Ao corrigir um consumidor para a régua única, igualar também os pontos de entrada (mesmo filtro/reparo que a sessão e o ao vivo), com teste de fix ruim perto dos limites.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `app` · harmful: 0
+- features: tempos-honestos
+- evidence: app/lap-compare.tsx:81-83 (TMP-07 AC 3, rodada 2) (app)
+- last seen: 2026-09-29T15:17:03Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.
