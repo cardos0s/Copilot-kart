@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 7,
+  "next_id": 8,
   "lessons": [
     {
       "id": "L-001",
@@ -112,6 +112,24 @@
       ],
       "created": "2026-09-29T15:17:03Z",
       "last_seen": "2026-09-29T15:17:03Z"
+    },
+    {
+      "id": "L-007",
+      "key": "surviving_mutant::quando uma tela ganha guarda estatica da origem dos pontos a tela irma que usa os mesmos pontos precisa da mesma guarda",
+      "text": "Quando uma tela ganha guarda estática da origem dos pontos, a tela irmã que usa os mesmos pontos precisa da mesma guarda.",
+      "signal": "surviving_mutant",
+      "scope": "test",
+      "status": "candidate",
+      "features": [
+        "tempos-honestos"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "app/session/[id].tsx:267 (M04, rodada 3) (test)"
+      ],
+      "created": "2026-09-29T15:33:22Z",
+      "last_seen": "2026-09-29T15:33:22Z"
     }
   ]
 }

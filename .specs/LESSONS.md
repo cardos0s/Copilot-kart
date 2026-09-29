@@ -50,6 +50,12 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: app/lap-compare.tsx:81-83 (TMP-07 AC 3, rodada 2) (app)
 - last seen: 2026-09-29T15:17:03Z
 
+### L-007 - Quando uma tela ganha guarda estática da origem dos pontos, a tela irmã que usa os mesmos pontos precisa da mesma guarda.
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `test` · harmful: 0
+- features: tempos-honestos
+- evidence: app/session/[id].tsx:267 (M04, rodada 3) (test)
+- last seen: 2026-09-29T15:33:22Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

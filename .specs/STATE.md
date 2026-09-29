@@ -52,11 +52,13 @@
 
 ## Handoff
 
-- **Feature**: `.specs/features/tempos-honestos/`, 2ª de 7. A 1ª (`gravacao-sem-perda`) teve PASS do Verificador; falta a UAT no aparelho.
-- **Phase / Task**: `tasks.md` escrito (T1–T15, 2 fases) e validado, aguardando aprovação. Design aprovado em 27/09 e AD-006 registrada.
-- **Completed**: spec e design.
+- **Feature**: `.specs/features/tempos-honestos/` (2ª de 7). A `gravacao-sem-perda` teve PASS; a UAT no aparelho está pendente.
+- **Phase / Task**: Execute concluído (T1–T8, T16, T9–T15, T17–T26, 137 testes). O Verificador deu **FAIL na rodada 3**, que era o limite, e o caso foi escalado para a Julia em 29/09.
+- **Completed**: todas as tasks de `tasks.md`; lições L-004 a L-007.
 - **In-progress**: nada.
-- **Next step**: aprovadas as tasks, executar em 2 lotes de sub-agentes (fase 1: T1–T8; fase 2: T9–T15) e depois o Verificador.
-- **Blockers**: nenhum.
-- **Uncommitted files**: `.specs/` (tasks, STATE e status do design) e `CockPit-Guia-do-Testador.pdf`.
-- **Branch**: `feat/tempos-honestos`.
+- **Next step**: a Julia decide:
+  - se autoriza a correção do M04 (só teste: guarda da origem dos pontos em `sessionScreen`/`trackMapScreen`) e uma 4ª verificação;
+  - qual traçado vale depois de "ATUALIZAR REFERÊNCIA" (`app/recording.tsx:915-925`).
+- **Blockers**: essas duas decisões.
+- **Uncommitted files**: `CockPit-Guia-do-Testador.pdf`.
+- **Branch**: `feat/tempos-honestos`, só local.
