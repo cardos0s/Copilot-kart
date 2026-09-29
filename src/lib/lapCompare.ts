@@ -14,13 +14,13 @@
  */
 
 import {
-  analyzeLap,
   LapRecord,
   matchLapToReference,
   Sector,
 } from './analysis';
 import { ReferenceLap } from './geometry';
 import { Corner, describeSector } from './corners';
+import { referenceFromLap, sectorSplits } from './sectors';
 
 export type LapTrace = {
   /** Pares (s, tempo) interpolados em N pontos uniformes pra plotar. */
@@ -128,39 +128,35 @@ function buildLapTrace(
 /**
  * Compara 2 voltas contra uma referência comum. As 2 voltas DEVEM ser da
  * mesma pista (mesmo layout) — caso contrário a comparação não faz sentido.
+ *
+ * S1/S2/S3 saem de `sectorSplits` sobre os pontos das duas voltas, a mesma
+ * régua da sessão e do ao vivo (TMP-07, AD-006). A régua é o traçado (`ref`);
+ * sem traçado (`null`), é a volta B, a referência da comparação.
  */
 export function compareLaps(
   lapA: LapRecord,
   lapB: LapRecord,
-  ref: ReferenceLap,
+  ref: ReferenceLap | null,
   corners: Corner[]
 ): CompareResult {
-  const matchedA = matchLapToReference(lapA, ref);
-  const matchedB = matchLapToReference(lapB, ref);
-  const trackLengthM = ref.totalLength;
+  const ruler = ref ?? referenceFromLap(lapB);
+  const matchedA = matchLapToReference(lapA, ruler);
+  const matchedB = matchLapToReference(lapB, ruler);
+  const trackLengthM = ruler.totalLength;
 
-  // Análise por mini-setores pra extrair S1/S2/S3 com labels inteligentes
-  const analysisA = analyzeLap(matchedA, matchedB, 20);
-  const sectorsAll: Sector[] = analysisA.sectors;
-
-  const third = Math.ceil(sectorsAll.length / 3);
-  const sectors: CompareSectorRow[] = [0, 1, 2].map((g) => {
-    const slice = sectorsAll.slice(g * third, (g + 1) * third);
-    const validSlice = slice.filter((sec) => sec.valid !== false);
-    const aSum = slice.reduce((sum, sec) => sum + (sec.currentMs ?? 0), 0);
-    const bSum = slice.reduce((sum, sec) => sum + (sec.referenceMs ?? 0), 0);
-    // Label inteligente: pega o describeSector do primeiro mini-setor do grupo
-    const repr = slice[Math.floor(slice.length / 2)] ?? slice[0];
-    const label = repr ? describeSector(repr, corners) : `Setor ${g + 1}`;
-    if (validSlice.length === 0) {
-      return { index: g, label, aMs: null, bMs: bSum, deltaMs: null };
-    }
+  const splitsA = sectorSplits(lapA.samples, ruler);
+  const splitsB = sectorSplits(lapB.samples, ruler);
+  const sectors: CompareSectorRow[] = (['s1Ms', 's2Ms', 's3Ms'] as const).map((k, g) => {
+    const aMs = splitsA[k];
+    const bMs = splitsB[k];
+    // Label inteligente pelo terço do traçado que o setor cobre.
+    const third = { index: g, sStart: (g * trackLengthM) / 3, sEnd: ((g + 1) * trackLengthM) / 3 } as Sector;
     return {
       index: g,
-      label,
-      aMs: aSum,
-      bMs: bSum,
-      deltaMs: aSum - bSum,
+      label: describeSector(third, corners),
+      aMs,
+      bMs,
+      deltaMs: aMs !== null && bMs !== null ? aMs - bMs : null,
     };
   });
 

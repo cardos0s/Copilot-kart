@@ -627,9 +627,14 @@ Saídas do `validation.md` de 29/09 (FAIL).
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: na pista sintética de 37.699 ms, os S1/S2/S3 de `compareLaps` para uma volta são iguais aos de `sectorSplits` para a mesma volta (± 1 ms) e somam a duração.
-- [ ] Teste: nenhum setor sai negativo.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste: na pista sintética de 37.699 ms, os S1/S2/S3 de `compareLaps` para uma volta são iguais aos de `sectorSplits` para a mesma volta (± 1 ms) e somam a duração.
+- [x] Teste: nenhum setor sai negativo.
+- [x] Gate: `npm test`, contagem registrada: 129 testes, 0 falhas.
+
+**Notas da execução:**
+- `compareLaps` aceita `ref: ReferenceLap | null`. Com `null`, a régua é `referenceFromLap(lapB)`, a volta de referência da comparação, e um 3º teste confere isso. A tela ainda recusa comparar sem traçado ("Sem referência de pista pra comparar."); mudar isso fica fora da T21.
+- O rótulo de cada setor sai do terço do traçado (`describeSector` sobre `[k·L/3, (k+1)·L/3]`), e não mais do mini-setor do meio do grupo 7/7/6. O `analyzeLap` saiu do arquivo.
+- A tela (`app/lap-compare.tsx`) não mudou: o formato de retorno é o mesmo. Ela passa os pontos já filtrados por `cleanSamples(10)`, que preserva as fronteiras (T18), então a soma dos setores continua fechando com a duração.
 
 **Tests**: unit
 **Gate**: quick
