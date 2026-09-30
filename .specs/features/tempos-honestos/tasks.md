@@ -95,6 +95,15 @@ T24 e T25 não dependem de nenhuma tarefa da fase.
 T26
 ```
 
+### Phase 6: Decisões de 30/09 (depois da rodada 3)
+
+```
+T27
+T28
+```
+
+As duas não dependem uma da outra.
+
 ---
 
 ## Task Breakdown
@@ -784,6 +793,56 @@ Saídas do `validation.md` de 29/09 (FAIL).
 **Tests**: unit
 **Gate**: build
 **Commit**: `fix(comparação): setores sobre os pontos salvos, como na sessão`
+
+---
+
+### Phase 6: Decisões de 30/09 (depois da rodada 3)
+
+#### T27: Guarda da origem dos pontos na sessão e no mapa detalhado
+
+**What**: `test/sessionScreen.test.ts` passa a conferir que os pontos dos setores da sessão vêm de `sectorLapSamples(l)` e que `sectorSplits` recebe esses pontos, sem `cleanSamples`. `test/trackMapScreen.test.ts` recebe a mesma guarda, e o mapa detalhado passa a usar `sectorLapSamples` no lugar da preparação inline. O mutante M04 da rodada 3 sobreviveu por falta dessa guarda. A Julia autorizou em 30/09.
+**Where**: `test/sessionScreen.test.ts`
+**Depends on**: None
+**Reuses**: `test/lapCompareScreen.test.ts` (padrão da guarda)
+**Requirement**: TMP-07 (AC 3), AD-006
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Com o M04 aplicado num scratch (`sectorLapSamples({ ...l, samples: cleanSamples(l.samples, 10) })` em `app/session/[id].tsx`), o teste novo falha. Sem ele, passa.
+- [ ] O mesmo vale para a guarda do mapa detalhado.
+- [ ] `app/track-map.tsx` usa `sectorLapSamples`.
+- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+
+**Tests**: unit
+**Gate**: build
+**Commit**: `test(tempos): sessão e mapa detalhado presos à mesma origem de pontos`
+
+---
+
+#### T28: "ATUALIZAR REFERÊNCIA" cria um traçado novo
+
+**What**: Criar a função pura `nextReferenceLayout(reference, best, sessionId, now)`. Ela devolve um traçado com id novo, os pontos da melhor volta com as fronteiras, o nome `"<nome anterior> · dd/mm"` e `isDefault: true`. Em `app/recording.tsx` (`~915-925`), o botão grava esse traçado novo e chama `setDefaultLayout`, em vez de sobrescrever o traçado atual.
+**Where**: `src/lib/referenceLayout.ts`
+**Depends on**: None
+**Reuses**: `saveLayout`, `setDefaultLayout`, `polylineLength`
+**Requirement**: Assumption de 30/09 na spec; AD-006
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Teste: `nextReferenceLayout` devolve um id diferente do anterior, o mesmo `trackId`, o nome com a data, `isDefault: true`, e pontos que começam e terminam em `synthetic`.
+- [ ] Teste: o traçado anterior não é alterado (o objeto de entrada fica igual).
+- [ ] Teste estático: `app/recording.tsx` não chama mais `saveLayout({ ...reference` e chama `setDefaultLayout`.
+- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+
+**Tests**: unit
+**Gate**: build
+**Commit**: `feat(gravação): atualizar a referência cria um traçado novo`
 
 ---
 

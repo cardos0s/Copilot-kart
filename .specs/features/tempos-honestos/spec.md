@@ -53,6 +53,7 @@ Um app de telemetria cujo milésimo é inventado não deveria ir para a loja.
 | Pico de velocidade | Percentil 99 da velocidade dos pontos com precisão de até 10 m | É a correção de uma linha que o `telemetria.md` §6 já propõe. Um ponto fora da curva em ~500 por volta não chega ao p99 | y |
 | Sessão que começa já andando, com traçado | A primeira volta começa no primeiro cruzamento da linha, e o trecho antes dele não é volta | Com a linha fixa, o trecho até o primeiro cruzamento é parcial | y |
 
+| "ATUALIZAR REFERÊNCIA" depois de uma volta mais rápida que o traçado | Cria um traçado **novo**, que vira o padrão da pista. O nome é o do anterior mais a data. As sessões antigas continuam presas ao traçado com que foram gravadas | Decidido pela Julia em 30/09, depois da rodada 3 do Verificador: sobrescrever o traçado mudava de 75 a 139 ms os setores já vistos na pista | y |
 **Open questions:** none. As decisões da Julia estão marcadas `y`. As outras, padrões meus, foram aprovadas pela Julia em 25/09 junto com a spec.
 
 ---
