@@ -52,14 +52,19 @@
 
 ## Handoff
 
-- **Feature**: `.specs/features/tempos-honestos/` (2ª de 7). A `gravacao-sem-perda` teve PASS e a UAT no aparelho está pendente.
-- **Phase / Task**: Phase 6. T27 concluída (`1989599`, 139 testes, M04 morto). A T28 ainda não começou.
-- **Completed**: T1–T27 (exceto a T28); lições L-001 a L-007.
+- **Feature**: `tempos-honestos` (2ª de 7) concluída, com o Verificador **PASS na rodada 5** (03/10). Antes dele houve 4 rodadas de FAIL, escaladas para a Julia depois da 3ª. A `gravacao-sem-perda` também teve PASS. A UAT no aparelho das duas está pendente.
+- **Phase / Task**: as duas features estão fechadas. A próxima é `conta-e-backup` (Specify).
+- **Completed**: gravacao-sem-perda T1–T27; tempos-honestos T1–T32; lições L-001 a L-008, todas candidatas.
 - **In-progress**: nada.
 - **Next step**:
-  1. A T28: "ATUALIZAR REFERÊNCIA" passa a criar um traçado novo (decisão da Julia em 30/09).
-  2. A 4ª rodada do Verificador, autorizada pela Julia.
-  3. O push dos dois ramos. O push foi bloqueado pelo modo automático em 03/10, então a Julia roda por conta própria.
-- **Blockers**: nenhum para a T28. O push depende da Julia.
+  1. A Julia sobe a branch (`git push`) e roda a UAT das duas features num dev build por EAS.
+  2. Especificar a `conta-e-backup`.
+- **Observações não bloqueantes**, todas no `validation.md` da rodada 5:
+  - a inserção de uma 2ª `setDefaultLayoutOn` passa na suíte;
+  - a meta do diário fica sem `layoutId` se a gravação começar antes do traçado carregar;
+  - o painel web e "Lendas" mostram 0 em vez de "—" (vai para `nuvem-segura`/`produto-limpo`);
+  - o nome do traçado troca a data;
+  - pendência D1 da gravacao-sem-perda.
+- **Blockers**: nenhum.
 - **Uncommitted files**: `CockPit-Guia-do-Testador.pdf`.
-- **Branch**: `feat/tempos-honestos`, que contém `feat/gravacao-sem-perda`. Os dois estão só no local.
+- **Branch**: `feat/tempos-honestos`. Os commits depois de `3bc4232` estão só no local.

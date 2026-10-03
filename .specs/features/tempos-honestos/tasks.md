@@ -15,7 +15,7 @@ Regras do repo que valem aqui:
 ---
 
 **Design**: `.specs/features/tempos-honestos/design.md`
-**Status**: Approved (27/09)
+**Status**: Done (Verificador PASS na rodada 5, 03/10; UAT no aparelho pendente)
 
 ---
 

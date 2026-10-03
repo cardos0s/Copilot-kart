@@ -180,22 +180,22 @@ Um app de telemetria cujo milésimo é inventado não deveria ir para a loja.
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| TMP-01 | P1: Milésimo real (AC 1, 2, 3) | Design | Implementing |
-| TMP-02 | P1: Milésimo real (AC 4, primeira volta) | Design | Implementing |
-| TMP-03 | P1: Milésimo real (AC 5, 6, 7, validade e sentido) | Design | Implementing |
-| TMP-04 | P1: Linha do traçado (AC 1, 2) | Design | Implementing |
-| TMP-05 | P1: Linha do traçado (AC 3, começa andando) | Design | Implementing |
-| TMP-06 | P1: Linha do traçado (AC 4, mesma linha no ao vivo, no Encerrar e na recuperação) | Design | Implementing |
-| TMP-07 | P1: Setores (AC 1, 2, 3) | Design | Implementing |
-| TMP-08 | P1: Setores (AC 4, publicação) | Design | Implementing |
-| TMP-09 | P1: Setores (AC 5, sem traçado) | Design | Implementing |
-| TMP-10 | P1: Setores (AC 6, delta no início da volta) | Design | Implementing |
-| TMP-11 | P2: Pico de velocidade | Design | Implementing |
-| TMP-12 | P2: Insights (AC 1, 2) | Design | Implementing |
-| TMP-13 | P2: Insights (AC 3, mesmo traçado) | Design | Implementing |
-| TMP-14 | P3: Timestamp no segundo cheio | Design | Implementing |
+| TMP-01 | P1: Milésimo real (AC 1, 2, 3) | Design | Verified |
+| TMP-02 | P1: Milésimo real (AC 4, primeira volta) | Design | Verified |
+| TMP-03 | P1: Milésimo real (AC 5, 6, 7, validade e sentido) | Design | Verified |
+| TMP-04 | P1: Linha do traçado (AC 1, 2) | Design | Verified |
+| TMP-05 | P1: Linha do traçado (AC 3, começa andando) | Design | Verified |
+| TMP-06 | P1: Linha do traçado (AC 4, mesma linha no ao vivo, no Encerrar e na recuperação) | Design | Verified |
+| TMP-07 | P1: Setores (AC 1, 2, 3) | Design | Verified |
+| TMP-08 | P1: Setores (AC 4, publicação) | Design | Verified |
+| TMP-09 | P1: Setores (AC 5, sem traçado) | Design | Verified |
+| TMP-10 | P1: Setores (AC 6, delta no início da volta) | Design | Verified |
+| TMP-11 | P2: Pico de velocidade | Design | Verified |
+| TMP-12 | P2: Insights (AC 1, 2) | Design | Verified |
+| TMP-13 | P2: Insights (AC 3, mesmo traçado) | Design | Verified |
+| TMP-14 | P3: Timestamp no segundo cheio | Design | Verified |
 
-**Coverage:** 14 total, 0 mapped to tasks, 14 unmapped ⚠️ (Tasks ainda não existe)
+**Coverage:** 14 total, 14 mapeados em tasks (T1–T32), 0 sem tarefa. O Verificador aprovou na rodada 5 (03/10): 149 testes, 28/28 mutações mortas. A UAT no aparelho continua pendente (passos 1 a 7 do roteiro em `tasks.md`).
 
 ---
 
