@@ -23,7 +23,7 @@ import {
   repairDegenerateTimestamps,
 } from '../src/lib/analysis';
 import { buildReferenceLap, ReferenceLap } from '../src/lib/geometry';
-import { referenceFromLayout, sectorSplits } from '../src/lib/sectors';
+import { referenceFromLayout, sectorLapSamples, sectorSplits } from '../src/lib/sectors';
 import { Corner, detectCorners } from '../src/lib/corners';
 import { peakSpeedInSectorMs, msToKmh } from '../src/lib/speed';
 import { findTrackById } from '../src/data/tracks';
@@ -115,11 +115,7 @@ export default function TrackMapScreen() {
     // de timestamp). O ponto de fronteira não pode sair no filtro (AD-006).
     const sectorRef = referenceFromLayout(layout.samples);
     if (!sectorRef) return setState({ kind: 'no-data' });
-    const { samples: savedSamples } = repairDegenerateTimestamps(
-      lap.samples,
-      lap.durationMs,
-      lap.startedAt
-    );
+    const savedSamples = sectorLapSamples(lap);
     const splits = sectorSplits(savedSamples, sectorRef);
     const sectorMs = [splits.s1Ms, splits.s2Ms, splits.s3Ms];
     // Terços do traçado desenhado, só para pintar o mapa e achar as curvas.

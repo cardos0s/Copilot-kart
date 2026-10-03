@@ -20,3 +20,11 @@ test('mapa detalhado: importa sectorSplits e não tem mais o cálculo próprio d
   assert.equal(SRC.includes('interpolateT('), false);
   assert.equal(/tEnd\s*-\s*tStart/.test(SRC), false);
 });
+
+test('mapa detalhado: os setores são medidos sobre os pontos salvos (sectorLapSamples), sem cleanSamples', () => {
+  const m = SRC.match(/import\s*\{([^}]*)\}\s*from\s*'\.\.\/src\/lib\/sectors'/);
+  assert.ok(m, 'importa de ../src/lib/sectors');
+  assert.ok(m[1].split(',').map((x) => x.trim()).includes('sectorLapSamples'));
+  assert.ok(/const savedSamples\s*=\s*sectorLapSamples\(\s*lap\s*\)\s*;/.test(SRC), 'savedSamples = sectorLapSamples(lap)');
+  assert.equal(/sectorLapSamples\([^;]*cleanSamples/.test(SRC), false, 'nenhum cleanSamples no argumento');
+});

@@ -811,13 +811,14 @@ Saídas do `validation.md` de 29/09 (FAIL).
 - Skill: NONE
 
 **Done when**:
-- [ ] Com o M04 aplicado num scratch (`sectorLapSamples({ ...l, samples: cleanSamples(l.samples, 10) })` em `app/session/[id].tsx`), o teste novo falha. Sem ele, passa.
-- [ ] O mesmo vale para a guarda do mapa detalhado.
-- [ ] `app/track-map.tsx` usa `sectorLapSamples`.
-- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+- [x] Com o M04 aplicado num scratch (`sectorLapSamples({ ...l, samples: cleanSamples(l.samples, 10) })` em `app/session/[id].tsx`), o teste novo falha. Sem ele, passa.
+- [x] O mesmo vale para a guarda do mapa detalhado.
+- [x] `app/track-map.tsx` usa `sectorLapSamples`.
+- [x] Gate: `npm test && npm run typecheck`, só com a baseline. 139 testes; com o M04 num scratch, 1 falha.
 
 **Tests**: unit
 **Gate**: build
+**Status**: ✅ (o executor foi interrompido; concluído e conferido pelo orquestrador em 03/10)
 **Commit**: `test(tempos): sessão e mapa detalhado presos à mesma origem de pontos`
 
 ---

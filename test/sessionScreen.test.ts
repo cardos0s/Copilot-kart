@@ -28,6 +28,19 @@ test('sessão: a régua vem do traçado da sessão e, sem ele, da melhor volta',
   assert.ok(SRC.includes('getLayout(ses.layoutId)'));
 });
 
+test('sessão: os setores são medidos sobre os pontos salvos (sectorLapSamples), sem cleanSamples', () => {
+  assert.ok(importsFrom('../../src/lib/sectors').includes('sectorLapSamples'));
+  // Os pontos dos setores são os salvos, só com o reparo de timestamp.
+  assert.ok(
+    /savedSamples\[l\.id\]\s*=\s*sectorLapSamples\(\s*l\s*\)\s*;/.test(SRC),
+    'savedSamples[l.id] = sectorLapSamples(l)',
+  );
+  assert.equal(/sectorLapSamples\([^;]*cleanSamples/.test(SRC), false, 'nenhum cleanSamples no argumento');
+  assert.ok(/setSectorSamples\(\s*savedSamples\s*\)/.test(SRC));
+  // É sobre esses pontos que sectorSplits mede a volta selecionada.
+  assert.ok(/sectorSplits\(\s*sectorSamples\[selected\.id\]/.test(SRC));
+});
+
 test('sessão: o pico não sai mais de laço de máximo bruto nem vira 0 quando é null', () => {
   // O laço antigo do marcador do mapa: `if (x.speed > peakSpeed) peakSpeed = x.speed`.
   assert.equal(/\.speed\s*>\s*peakSpeed\b/.test(SRC), false);
