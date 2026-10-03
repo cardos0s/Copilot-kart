@@ -56,6 +56,12 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: app/session/[id].tsx:267 (M04, rodada 3) (test)
 - last seen: 2026-09-29T15:33:22Z
 
+### L-008 - Guarda estática prende a origem dos dados e os argumentos exatos, não só o nome da chamada; teste de 'não altera a entrada' usa fixture próprio.
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `test` · harmful: 0
+- features: tempos-honestos
+- evidence: M02/M06/M09 (rodada 4) (test)
+- last seen: 2026-10-03T13:18:00Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.
