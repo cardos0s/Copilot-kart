@@ -54,6 +54,8 @@ Um app de telemetria cujo milésimo é inventado não deveria ir para a loja.
 | Sessão que começa já andando, com traçado | A primeira volta começa no primeiro cruzamento da linha, e o trecho antes dele não é volta | Com a linha fixa, o trecho até o primeiro cruzamento é parcial | y |
 
 | "ATUALIZAR REFERÊNCIA" depois de uma volta mais rápida que o traçado | Cria um traçado **novo**, que vira o padrão da pista. O nome é o do anterior mais a data. As sessões antigas continuam presas ao traçado com que foram gravadas | Decidido pela Julia em 30/09, depois da rodada 3 do Verificador: sobrescrever o traçado mudava de 75 a 139 ms os setores já vistos na pista | y |
+| Sessões sem `layout_id` (anteriores à migração v1 ou sem traçado escolhido) | Ficam fora da regra de 30/09: são medidas pelo traçado padrão atual da pista. A gravação passa a salvar o traçado que usou como referência, inclusive no velocímetro demo | Decidido pela Julia em 03/10, depois da rodada 4: não dá para separar as sessões legadas das corridas "sem traçado" | y |
+| PB depois de "ATUALIZAR REFERÊNCIA" | O traçado novo herda o PB do anterior. A linha de chegada é a mesma, então o recorde continua comparável | Decidido pela Julia em 03/10: zerar o PB criava uma "nova PB" falsa, com celebração, XP e ranking | y |
 **Open questions:** none. As decisões da Julia estão marcadas `y`. As outras, padrões meus, foram aprovadas pela Julia em 25/09 junto com a spec.
 
 ---

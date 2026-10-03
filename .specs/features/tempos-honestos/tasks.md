@@ -104,6 +104,14 @@ T28
 
 As duas não dependem uma da outra.
 
+### Phase 7: Decisões de 03/10 (depois da rodada 4)
+
+```
+T31 -> T32
+```
+
+T29 e T30 não dependem de nenhuma tarefa da fase.
+
 ---
 
 ## Task Breakdown
@@ -850,6 +858,103 @@ Saídas do `validation.md` de 29/09 (FAIL).
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(gravação): atualizar a referência cria um traçado novo`
+
+---
+
+### Phase 7: Decisões de 03/10 (depois da rodada 4)
+
+#### T29: Guardas que prendem a origem e os argumentos
+
+**What**: Fortalecer três testes, um para cada mutante que sobreviveu na rodada 4:
+- **M02:** a guarda da sessão confere que o laço dos setores percorre `lapsRaw` (pontos salvos), e não `cleanedLaps`.
+- **M06:** `test/referenceLayout.test.ts` cria um fixture novo em cada teste (ou congelado com `Object.freeze` profundo), para o "não altera a entrada" valer também dentro da suíte.
+- **M09:** a guarda da tela confere a chamada com os argumentos exatos.
+**Where**: `test/sessionScreen.test.ts`
+**Depends on**: None
+**Reuses**: guardas da T27 e da T28
+**Requirement**: TMP-07 (AC 3), Assumption de 30/09, AD-006
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Num scratch isolado, M02, M06 e M09 (como descritos no `validation.md` da rodada 4) fazem a suíte falhar. Sem eles, ela passa.
+- [ ] Gate: `npm test`, contagem registrada.
+
+**Tests**: unit
+**Gate**: quick
+**Commit**: `test(tempos): guardas presas à origem dos pontos e aos argumentos`
+
+---
+
+#### T30: A sessão grava o traçado que usou como referência
+
+**What**: Em `app/recording.tsx`, a sessão salva `layoutId = normalizeId(params.layoutId) ?? reference?.id ?? null`. Isso vale para todos os caminhos de gravação, inclusive o velocímetro demo, que hoje carrega o padrão e grava `null`.
+**Where**: `app/recording.tsx`
+**Depends on**: None
+**Reuses**: `normalizeId`
+**Requirement**: Assumption de 03/10 (sessões sem `layout_id`), TMP-07 (AC 3)
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Teste estático: o `layoutId` gravado na sessão cai em `reference?.id` quando o parâmetro não vem.
+- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+
+**Tests**: unit
+**Gate**: build
+**Commit**: `fix(gravação): sessão guarda o traçado que usou como referência`
+
+---
+
+#### T31: O traçado novo herda o PB
+
+**What**: Criar a função pura `inheritedPb(previousPb, nextLayout, now)` em `src/lib/referenceLayout.ts`. Ela devolve um registro de PB para o traçado novo, com os mesmos `durationMs`, `sessionId` e `lapId` do anterior e `celebrated: true`, para não disparar celebração. Sem PB anterior, devolve `null`.
+**Where**: `src/lib/referenceLayout.ts`
+**Depends on**: None
+**Reuses**: tipo `PbRecord`
+**Requirement**: Assumption de 03/10 (PB herdado)
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Teste: com um PB anterior de 49.776 ms, o registro novo tem `layoutId` do traçado novo, `durationMs: 49776`, `celebrated: true` e id diferente do anterior.
+- [ ] Teste: sem PB anterior, o resultado é `null`.
+- [ ] Teste: com o PB herdado, uma volta de 49.900 ms **não** é PB nova pela regra atual de `processSessionMilestones`.
+- [ ] Gate: `npm test`, contagem registrada.
+
+**Tests**: unit
+**Gate**: quick
+**Commit**: `feat(gravação): traçado novo herda o recorde do anterior`
+
+---
+
+#### T32: Promover o traçado novo numa transação só
+
+**What**: Criar `promoteReferenceLayout(layout, pb)` em `src/storage/db.ts`. Ela grava o traçado novo, marca-o como padrão (desmarcando os outros da pista) e grava o PB herdado, tudo numa `withExclusiveTransactionAsync`. O handler de "ATUALIZAR REFERÊNCIA" passa a chamar `getCurrentPb`, `inheritedPb` e `promoteReferenceLayout`, no lugar de `saveLayout` + `setDefaultLayout`. Entra no Roteiro de UAT o passo 7: "bater a referência, tocar em ATUALIZAR REFERÊNCIA, conferir que o traçado novo vira padrão, que a sessão antiga continua com os mesmos setores e que a próxima volta mais lenta não vira PB".
+**Where**: `src/storage/db.ts`
+**Depends on**: T31
+**Reuses**: `saveLayout`, `setDefaultLayout`, `savePbRecord`
+**Requirement**: Assumptions de 30/09 e 03/10
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Teste estático: o handler chama `promoteReferenceLayout(next, pb)` e não chama mais `saveLayout` e `setDefaultLayout` em separado.
+- [ ] Teste estático: `promoteReferenceLayout` usa `withExclusiveTransactionAsync`.
+- [ ] Passo 7 no Roteiro de UAT.
+- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+
+**Tests**: unit
+**Gate**: build
+**Commit**: `fix(gravação): traçado novo, padrão e recorde gravados juntos`
 
 ---
 
