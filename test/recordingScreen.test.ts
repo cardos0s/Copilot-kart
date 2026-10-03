@@ -46,13 +46,19 @@ test('recording.tsx: antes do 1º cruzamento, o cronômetro da volta mostra "—
 test('recording.tsx: "ATUALIZAR REFERÊNCIA" grava um traçado novo e o torna padrão, sem sobrescrever o anterior', () => {
   assert.equal(/saveLayout\(\{\s*\.\.\.reference/.test(SRC), false);
   assert.ok(/nextReferenceLayout\(\s*reference,\s*best,\s*sessionId,/.test(SRC));
-  assert.ok(/await setDefaultLayout\(/.test(SRC));
-  // Grava o traçado novo e torna padrão esse mesmo traçado, não o anterior.
-  assert.ok(SRC.includes('await saveLayout(next);'), 'await saveLayout(next);');
+  // Traçado novo, padrão e PB herdado vão juntos, numa transação só (T32):
+  // nada de saveLayout e setDefaultLayout em separado.
+  assert.ok(SRC.includes('await promoteReferenceLayout(next, pb);'), 'await promoteReferenceLayout(next, pb);');
+  assert.equal(/\bsaveLayout\(/.test(SRC), false);
+  assert.equal(/\bsetDefaultLayout\(/.test(SRC), false);
+});
+
+test('recording.tsx: o traçado novo herda o PB do traçado anterior', () => {
   assert.ok(
-    SRC.includes('await setDefaultLayout(next.trackId, next.id);'),
-    'await setDefaultLayout(next.trackId, next.id);',
+    /const pb = inheritedPb\(\s*await getCurrentPb\(reference\.trackId, reference\.id\),\s*next,\s*now\s*\);/.test(SRC),
+    'const pb = inheritedPb(await getCurrentPb(reference.trackId, reference.id), next, now);',
   );
+  assert.ok(/const next = nextReferenceLayout\(reference, best, sessionId, now\);/.test(SRC));
 });
 
 test('recording.tsx: a sessão grava o traçado que usou como referência, mesmo sem o parâmetro layoutId', () => {

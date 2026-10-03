@@ -16,10 +16,10 @@ import QRCode from 'react-native-qrcode-svg';
 import { useLapRecorder, GPS_START_ERROR } from '../src/hooks/useLapRecorder';
 import { useLockLandscape } from '../src/hooks/useLockLandscape';
 import {
-  saveLayout,
-  setDefaultLayout,
+  getCurrentPb,
   getDefaultLayoutForTrack,
   getLayout,
+  promoteReferenceLayout,
   TrackLayout,
 } from '../src/storage/db';
 import { sqliteSessionRepo } from '../src/storage/sessionRepo';
@@ -40,7 +40,7 @@ import {
   publishSample,
   subscribeLiveSession,
 } from '../src/lib/liveSession';
-import { nextReferenceLayout } from '../src/lib/referenceLayout';
+import { inheritedPb, nextReferenceLayout } from '../src/lib/referenceLayout';
 import { LapRecord } from '../src/lib/analysis';
 import { Button, Card, Icon } from '../src/components/ui';
 import { TrackSilhouette } from '../src/components/TrackSilhouette';
@@ -914,9 +914,11 @@ export default function Recording() {
               onPress={async () => {
                 const { best, reference, sessionId } = pendingRef;
                 // Traçado novo, que vira o padrão; o anterior fica para as sessões gravadas com ele.
-                const next = nextReferenceLayout(reference, best, sessionId, Date.now());
-                await saveLayout(next);
-                await setDefaultLayout(next.trackId, next.id);
+                // O novo herda o PB do anterior, e os três vão juntos numa transação.
+                const now = Date.now();
+                const next = nextReferenceLayout(reference, best, sessionId, now);
+                const pb = inheritedPb(await getCurrentPb(reference.trackId, reference.id), next, now);
+                await promoteReferenceLayout(next, pb);
                 setPendingRef(null);
                 router.replace(`/session/${sessionId}`);
               }}

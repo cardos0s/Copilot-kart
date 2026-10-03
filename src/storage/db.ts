@@ -778,7 +778,11 @@ export async function getDefaultLayoutForTrack(
 }
 
 export async function saveLayout(layout: TrackLayout): Promise<void> {
-  const d = await db();
+  await saveLayoutOn(await db(), layout);
+}
+
+/** O INSERT do traçado numa conexão dada: a principal ou o `txn` de uma transação. */
+async function saveLayoutOn(d: SQLite.SQLiteDatabase, layout: TrackLayout): Promise<void> {
   await d.runAsync(
     `INSERT OR REPLACE INTO track_layouts
      (id, track_id, name, samples_json, duration_ms, length_m, recorded_at, source_session_id, source_lap_id, is_default)
@@ -807,7 +811,14 @@ export async function deleteLayout(id: string): Promise<void> {
  * app single-user).
  */
 export async function setDefaultLayout(trackId: string, layoutId: string): Promise<void> {
-  const d = await db();
+  await setDefaultLayoutOn(await db(), trackId, layoutId);
+}
+
+async function setDefaultLayoutOn(
+  d: SQLite.SQLiteDatabase,
+  trackId: string,
+  layoutId: string
+): Promise<void> {
   await d.runAsync(
     'UPDATE track_layouts SET is_default = 0 WHERE track_id = ?',
     trackId
@@ -1054,7 +1065,10 @@ export async function getCurrentPb(
 }
 
 export async function savePbRecord(rec: PbRecord): Promise<void> {
-  const d = await db();
+  await savePbRecordOn(await db(), rec);
+}
+
+async function savePbRecordOn(d: SQLite.SQLiteDatabase, rec: PbRecord): Promise<void> {
   await d.runAsync(
     `INSERT INTO pb_records (id, track_id, layout_id, session_id, lap_id, duration_ms, celebrated, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -1067,6 +1081,24 @@ export async function savePbRecord(rec: PbRecord): Promise<void> {
     rec.celebrated ? 1 : 0,
     rec.createdAt
   );
+}
+
+/**
+ * "ATUALIZAR REFERÊNCIA": grava o traçado novo, torna-o o padrão da pista
+ * (desmarcando os outros) e grava o PB herdado, numa transação só. Se o app
+ * morrer no meio, a pista não fica com dois padrões nem com o traçado novo
+ * sem o recorde.
+ */
+export async function promoteReferenceLayout(
+  layout: TrackLayout,
+  pb: PbRecord | null
+): Promise<void> {
+  const d = await db();
+  await d.withExclusiveTransactionAsync(async (txn) => {
+    await saveLayoutOn(txn, layout);
+    await setDefaultLayoutOn(txn, layout.trackId, layout.id);
+    if (pb) await savePbRecordOn(txn, pb);
+  });
 }
 
 export async function markPbCelebrated(id: string): Promise<void> {

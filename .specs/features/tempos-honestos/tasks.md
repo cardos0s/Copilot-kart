@@ -962,10 +962,16 @@ Saídas do `validation.md` de 29/09 (FAIL).
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste estático: o handler chama `promoteReferenceLayout(next, pb)` e não chama mais `saveLayout` e `setDefaultLayout` em separado.
-- [ ] Teste estático: `promoteReferenceLayout` usa `withExclusiveTransactionAsync`.
-- [ ] Passo 7 no Roteiro de UAT.
-- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+- [x] Teste estático: o handler chama `promoteReferenceLayout(next, pb)` e não chama mais `saveLayout` e `setDefaultLayout` em separado.
+- [x] Teste estático: `promoteReferenceLayout` usa `withExclusiveTransactionAsync`.
+- [x] Passo 7 no Roteiro de UAT.
+- [x] Gate: `npm test && npm run typecheck`, só com a baseline: 149 testes, 0 falhas; typecheck com os 8 erros da baseline.
+
+**Notas da execução:**
+- Dentro da transação, toda escrita usa o `txn` (como em `sessionRepo.ts`). Para isso, o SQL de `saveLayout`, `setDefaultLayout` e `savePbRecord` passou para `saveLayoutOn`, `setDefaultLayoutOn` e `savePbRecordOn`, que recebem a conexão. As três exportadas chamam essas com `await db()` e não mudam de comportamento.
+- O teste estático de `test/promoteReferenceLayout.test.ts` confere `setDefaultLayoutOn(txn, layout.trackId, layout.id)` exato: a proteção do M09 passa do handler para a função.
+- Em `test/recordingScreen.test.ts`, as asserções da T28/T29 sobre `saveLayout(next)` e `setDefaultLayout(next.trackId, next.id)` viraram "o handler chama `promoteReferenceLayout(next, pb)` e nenhum dos dois", como pede este Done when. Entrou um teste para `inheritedPb(await getCurrentPb(reference.trackId, reference.id), next, now)`.
+- O handler usa um só `now` para o nome do traçado e para o PB herdado. Os imports `saveLayout` e `setDefaultLayout` saíram de `app/recording.tsx`.
 
 **Tests**: unit
 **Gate**: build
@@ -988,6 +994,7 @@ A execução é sequencial, uma tarefa por vez, na ordem dos números.
 4. Passar pela linha na contramão (box): não fecha volta.
 5. A home e a sessão mostram o pico, e "—" quando não há ponto bom.
 6. Entrar no box por mais de 180 s e voltar: o delta e os setores da volta seguinte começam do zero.
+7. Numa pista com traçado, bater a referência e tocar em ATUALIZAR REFERÊNCIA. Conferir que o traçado novo ("‹nome› · dd/mm") vira o padrão no seletor e que o anterior continua na lista. Uma sessão antiga desse traçado mostra os mesmos S1/S2/S3 de antes do toque. Na sessão seguinte, uma volta mais lenta que o PB do traçado anterior não vira PB (sem celebração).
 
 ---
 
