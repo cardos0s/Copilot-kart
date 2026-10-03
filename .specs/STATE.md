@@ -52,13 +52,14 @@
 
 ## Handoff
 
-- **Feature**: `.specs/features/tempos-honestos/` (2ª de 7). A `gravacao-sem-perda` teve PASS; a UAT no aparelho está pendente.
-- **Phase / Task**: Execute concluído (T1–T8, T16, T9–T15, T17–T26, 137 testes). O Verificador deu **FAIL na rodada 3**, que era o limite, e o caso foi escalado para a Julia em 29/09.
-- **Completed**: todas as tasks de `tasks.md`; lições L-004 a L-007.
+- **Feature**: `.specs/features/tempos-honestos/` (2ª de 7). A `gravacao-sem-perda` teve PASS e a UAT no aparelho está pendente.
+- **Phase / Task**: Phase 6. T27 concluída (`1989599`, 139 testes, M04 morto). A T28 ainda não começou.
+- **Completed**: T1–T27 (exceto a T28); lições L-001 a L-007.
 - **In-progress**: nada.
-- **Next step**: a Julia decide:
-  - se autoriza a correção do M04 (só teste: guarda da origem dos pontos em `sessionScreen`/`trackMapScreen`) e uma 4ª verificação;
-  - qual traçado vale depois de "ATUALIZAR REFERÊNCIA" (`app/recording.tsx:915-925`).
-- **Blockers**: essas duas decisões.
+- **Next step**:
+  1. A T28: "ATUALIZAR REFERÊNCIA" passa a criar um traçado novo (decisão da Julia em 30/09).
+  2. A 4ª rodada do Verificador, autorizada pela Julia.
+  3. O push dos dois ramos. O push foi bloqueado pelo modo automático em 03/10, então a Julia roda por conta própria.
+- **Blockers**: nenhum para a T28. O push depende da Julia.
 - **Uncommitted files**: `CockPit-Guia-do-Testador.pdf`.
-- **Branch**: `feat/tempos-honestos`, só local.
+- **Branch**: `feat/tempos-honestos`, que contém `feat/gravacao-sem-perda`. Os dois estão só no local.
