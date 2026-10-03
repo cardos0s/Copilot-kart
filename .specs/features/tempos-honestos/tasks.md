@@ -836,10 +836,16 @@ Saídas do `validation.md` de 29/09 (FAIL).
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: `nextReferenceLayout` devolve um id diferente do anterior, o mesmo `trackId`, o nome com a data, `isDefault: true`, e pontos que começam e terminam em `synthetic`.
-- [ ] Teste: o traçado anterior não é alterado (o objeto de entrada fica igual).
-- [ ] Teste estático: `app/recording.tsx` não chama mais `saveLayout({ ...reference` e chama `setDefaultLayout`.
-- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+- [x] Teste: `nextReferenceLayout` devolve um id diferente do anterior, o mesmo `trackId`, o nome com a data, `isDefault: true`, e pontos que começam e terminam em `synthetic`.
+- [x] Teste: o traçado anterior não é alterado (o objeto de entrada fica igual).
+- [x] Teste estático: `app/recording.tsx` não chama mais `saveLayout({ ...reference` e chama `setDefaultLayout`.
+- [x] Gate: `npm test && npm run typecheck`, só com a baseline: 143 testes, 0 falhas; typecheck com os 8 erros da baseline.
+
+**Notas da execução:**
+- O id do traçado novo é `layout_<id da melhor volta>`. Repetir o toque grava o mesmo traçado, sem criar um segundo.
+- Nome: se o anterior já termina em ` · dd/mm`, a data é trocada em vez de empilhar (teste próprio). A data é a local de `now`.
+- Testes em `test/referenceLayout.test.ts` (3) e `test/recordingScreen.test.ts` (1). Antes da implementação, os dois arquivos falhavam.
+- Em `app/recording.tsx`, o import de `polylineLength` saiu, porque só o handler antigo o usava.
 
 **Tests**: unit
 **Gate**: build

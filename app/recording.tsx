@@ -17,6 +17,7 @@ import { useLapRecorder, GPS_START_ERROR } from '../src/hooks/useLapRecorder';
 import { useLockLandscape } from '../src/hooks/useLockLandscape';
 import {
   saveLayout,
+  setDefaultLayout,
   getDefaultLayoutForTrack,
   getLayout,
   TrackLayout,
@@ -39,7 +40,7 @@ import {
   publishSample,
   subscribeLiveSession,
 } from '../src/lib/liveSession';
-import { polylineLength } from '../src/lib/geometry';
+import { nextReferenceLayout } from '../src/lib/referenceLayout';
 import { LapRecord } from '../src/lib/analysis';
 import { Button, Card, Icon } from '../src/components/ui';
 import { TrackSilhouette } from '../src/components/TrackSilhouette';
@@ -912,15 +913,10 @@ export default function Recording() {
               style={({ pressed }) => [s.idleEndBtn, pressed && { opacity: 0.8 }]}
               onPress={async () => {
                 const { best, reference, sessionId } = pendingRef;
-                await saveLayout({
-                  ...reference,
-                  samples: best.samples,
-                  durationMs: best.durationMs,
-                  lengthM: polylineLength(best.samples),
-                  recordedAt: Date.now(),
-                  sourceSessionId: sessionId,
-                  sourceLapId: best.id,
-                });
+                // Traçado novo, que vira o padrão; o anterior fica para as sessões gravadas com ele.
+                const next = nextReferenceLayout(reference, best, sessionId, Date.now());
+                await saveLayout(next);
+                await setDefaultLayout(next.trackId, next.id);
                 setPendingRef(null);
                 router.replace(`/session/${sessionId}`);
               }}

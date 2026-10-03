@@ -42,3 +42,9 @@ test('recording.tsx: antes do 1º cruzamento, o cronômetro da volta mostra "—
   assert.ok(/const currentLapMs = info\.currentLapElapsedMs;/.test(SRC));
   assert.ok(SRC.includes("{currentLapMs !== null ? fmtLap(currentLapMs) : '—'}"));
 });
+
+test('recording.tsx: "ATUALIZAR REFERÊNCIA" grava um traçado novo e o torna padrão, sem sobrescrever o anterior', () => {
+  assert.equal(/saveLayout\(\{\s*\.\.\.reference/.test(SRC), false);
+  assert.ok(/nextReferenceLayout\(\s*reference,\s*best,\s*sessionId,/.test(SRC));
+  assert.ok(/await setDefaultLayout\(/.test(SRC));
+});
