@@ -906,8 +906,12 @@ Saídas do `validation.md` de 29/09 (FAIL).
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste estático: o `layoutId` gravado na sessão cai em `reference?.id` quando o parâmetro não vem.
-- [ ] Gate: `npm test && npm run typecheck`, só com a baseline.
+- [x] Teste estático: o `layoutId` gravado na sessão cai em `reference?.id` quando o parâmetro não vem.
+- [x] Gate: `npm test && npm run typecheck`, só com a baseline: 144 testes, 0 falhas; typecheck com os 8 erros da baseline.
+
+**Notas da execução:**
+- Os dois caminhos que gravam a sessão mudaram: a meta do `start()` e a entrada do `finishRecording` (antes, `params.layoutId` cru).
+- O teste (`test/recordingScreen.test.ts`) exige exatamente duas ocorrências do fallback e nenhum `layoutId` sem a referência. Antes da mudança, falhava.
 
 **Tests**: unit
 **Gate**: build

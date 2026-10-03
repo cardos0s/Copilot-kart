@@ -54,3 +54,11 @@ test('recording.tsx: "ATUALIZAR REFERÊNCIA" grava um traçado novo e o torna pa
     'await setDefaultLayout(next.trackId, next.id);',
   );
 });
+
+test('recording.tsx: a sessão grava o traçado que usou como referência, mesmo sem o parâmetro layoutId', () => {
+  const fallback = /layoutId:\s*normalizeId\(params\.layoutId\)\s*\?\?\s*reference\?\.id\s*\?\?\s*null,/g;
+  // Na meta do start() e no finishRecording: os dois caminhos que gravam a sessão.
+  assert.equal(SRC.match(fallback)?.length, 2);
+  assert.equal(/layoutId:\s*params\.layoutId\s*,/.test(SRC), false, 'nenhum layoutId cru do parâmetro');
+  assert.equal(/layoutId:\s*normalizeId\(params\.layoutId\)\s*,/.test(SRC), false, 'nenhum layoutId sem a referência');
+});
