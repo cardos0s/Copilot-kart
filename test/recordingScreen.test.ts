@@ -47,4 +47,10 @@ test('recording.tsx: "ATUALIZAR REFERÊNCIA" grava um traçado novo e o torna pa
   assert.equal(/saveLayout\(\{\s*\.\.\.reference/.test(SRC), false);
   assert.ok(/nextReferenceLayout\(\s*reference,\s*best,\s*sessionId,/.test(SRC));
   assert.ok(/await setDefaultLayout\(/.test(SRC));
+  // Grava o traçado novo e torna padrão esse mesmo traçado, não o anterior.
+  assert.ok(SRC.includes('await saveLayout(next);'), 'await saveLayout(next);');
+  assert.ok(
+    SRC.includes('await setDefaultLayout(next.trackId, next.id);'),
+    'await setDefaultLayout(next.trackId, next.id);',
+  );
 });

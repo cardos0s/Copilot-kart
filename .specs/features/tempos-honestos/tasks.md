@@ -879,8 +879,13 @@ Saídas do `validation.md` de 29/09 (FAIL).
 - Skill: NONE
 
 **Done when**:
-- [ ] Num scratch isolado, M02, M06 e M09 (como descritos no `validation.md` da rodada 4) fazem a suíte falhar. Sem eles, ela passa.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Num scratch isolado, M02, M06 e M09 (como descritos no `validation.md` da rodada 4) fazem a suíte falhar. Sem eles, ela passa.
+- [x] Gate: `npm test`, contagem registrada: 143 testes, 0 falhas (só asserções fortalecidas, nenhum teste novo).
+
+**Notas da execução:**
+- Scratch (`git worktree add --detach`, removido depois), um mutante por vez: M02 (`for (const l of cleanedLaps)`), M06 (`reference.isDefault = false`), a variante do M06 com `reference.name = baseName`, e M09 (`setDefaultLayout(next.trackId, reference.id)`) dão 142 passam, 1 falha cada. M01 e M08 continuam mortos.
+- `test/referenceLayout.test.ts`: o fixture virou `makeReference()`, um objeto novo por teste. O teste "não é alterado" usa um nome com data, para que escrever o nome sem a data na entrada também apareça.
+- `test/recordingScreen.test.ts`: confere `await saveLayout(next);` e `await setDefaultLayout(next.trackId, next.id);` exatos. A T32 troca esse par por `promoteReferenceLayout`.
 
 **Tests**: unit
 **Gate**: quick

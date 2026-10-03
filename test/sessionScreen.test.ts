@@ -36,6 +36,12 @@ test('sessão: os setores são medidos sobre os pontos salvos (sectorLapSamples)
     'savedSamples[l.id] = sectorLapSamples(l)',
   );
   assert.equal(/sectorLapSamples\([^;]*cleanSamples/.test(SRC), false, 'nenhum cleanSamples no argumento');
+  // E o laço percorre as voltas como vieram do banco (lapsRaw), não as já
+  // limpas por cleanSamples (cleanedLaps).
+  assert.ok(
+    /for\s*\(\s*const\s+l\s+of\s+lapsRaw\s*\)\s*\{\s*savedSamples\[l\.id\]\s*=\s*sectorLapSamples\(\s*l\s*\)\s*;\s*\}/.test(SRC),
+    'for (const l of lapsRaw) { savedSamples[l.id] = sectorLapSamples(l); }',
+  );
   assert.ok(/setSectorSamples\(\s*savedSamples\s*\)/.test(SRC));
   // É sobre esses pontos que sectorSplits mede a volta selecionada.
   assert.ok(/sectorSplits\(\s*sectorSamples\[selected\.id\]/.test(SRC));

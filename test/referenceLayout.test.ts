@@ -18,7 +18,9 @@ const pt = (t: number, lat: number, lng: number, synthetic?: true): GpsSample =>
   ...(synthetic ? { synthetic } : {}),
 });
 
-const reference: TrackLayout = {
+// Um traçado novo para cada teste: um teste não enxerga o que outro fez com a
+// entrada, e o "não altera a entrada" vale também dentro da suíte.
+const makeReference = (): TrackLayout => ({
   id: 'layout_rec_antigo',
   trackId: 'kartodromo-x',
   name: 'Layout principal',
@@ -29,7 +31,7 @@ const reference: TrackLayout = {
   sourceSessionId: 'sess_antiga',
   sourceLapId: 'sess_antiga_lap_2',
   isDefault: true,
-};
+});
 
 const best: LapRecord = {
   id: 'sess_nova_lap_3',
@@ -49,6 +51,7 @@ const best: LapRecord = {
 const NOW = new Date(2026, 8, 30, 12, 0, 0).getTime();
 
 test('nextReferenceLayout: id novo, mesmo trackId, nome com a data, padrão, e a volta com as fronteiras sintéticas', () => {
+  const reference = makeReference();
   const next = nextReferenceLayout(reference, best, 'sess_nova', NOW);
 
   assert.notEqual(next.id, reference.id);
@@ -67,12 +70,14 @@ test('nextReferenceLayout: id novo, mesmo trackId, nome com a data, padrão, e a
 });
 
 test('nextReferenceLayout: nome que já termina em " · dd/mm" troca a data em vez de empilhar', () => {
-  const prev = { ...reference, name: 'Layout principal · 12/08' };
+  const prev = { ...makeReference(), name: 'Layout principal · 12/08' };
   const next = nextReferenceLayout(prev, best, 'sess_nova', new Date(2026, 9, 3, 9, 0, 0).getTime());
   assert.equal(next.name, 'Layout principal · 03/10');
 });
 
 test('nextReferenceLayout: o traçado anterior não é alterado', () => {
+  // Nome com data: uma escrita do nome sem a data na entrada também aparece.
+  const reference = { ...makeReference(), name: 'Layout principal · 12/08' };
   const snapshot = structuredClone(reference);
   const next = nextReferenceLayout(reference, best, 'sess_nova', NOW);
   assert.deepEqual(reference, snapshot);
