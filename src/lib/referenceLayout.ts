@@ -5,11 +5,14 @@
  * de sobrescrever o anterior. As sessões antigas continuam presas ao traçado
  * com que foram gravadas, e os S1/S2/S3 delas não mudam.
  *
+ * Decisão de 03/10: o traçado novo herda o PB do anterior. A linha de chegada
+ * é a mesma, então o recorde continua comparável.
+ *
  * Puro: só tipos do armazenamento, nada nativo.
  */
 import type { LapRecord } from './analysis';
 import { polylineLength } from './geometry';
-import type { TrackLayout } from '../storage/db';
+import type { PbRecord, TrackLayout } from '../storage/db';
 
 const DATE_SUFFIX = / · \d{2}\/\d{2}$/;
 
@@ -43,5 +46,28 @@ export function nextReferenceLayout(
     sourceSessionId: sessionId,
     sourceLapId: best.id,
     isDefault: true,
+  };
+}
+
+/**
+ * O PB do traçado anterior, copiado para o traçado novo. Sai já celebrado:
+ * o recorde não é novo, só mudou de traçado. Sem PB anterior, não há o que
+ * herdar.
+ */
+export function inheritedPb(
+  previousPb: PbRecord | null,
+  nextLayout: TrackLayout,
+  now: number
+): PbRecord | null {
+  if (!previousPb) return null;
+  return {
+    id: `pb_${nextLayout.id}_${now}`,
+    trackId: nextLayout.trackId,
+    layoutId: nextLayout.id,
+    sessionId: previousPb.sessionId,
+    lapId: previousPb.lapId,
+    durationMs: previousPb.durationMs,
+    celebrated: true,
+    createdAt: now,
   };
 }

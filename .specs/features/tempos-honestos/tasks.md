@@ -932,10 +932,16 @@ Saídas do `validation.md` de 29/09 (FAIL).
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: com um PB anterior de 49.776 ms, o registro novo tem `layoutId` do traçado novo, `durationMs: 49776`, `celebrated: true` e id diferente do anterior.
-- [ ] Teste: sem PB anterior, o resultado é `null`.
-- [ ] Teste: com o PB herdado, uma volta de 49.900 ms **não** é PB nova pela regra atual de `processSessionMilestones`.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste: com um PB anterior de 49.776 ms, o registro novo tem `layoutId` do traçado novo, `durationMs: 49776`, `celebrated: true` e id diferente do anterior.
+- [x] Teste: sem PB anterior, o resultado é `null`.
+- [x] Teste: com o PB herdado, uma volta de 49.900 ms **não** é PB nova pela regra atual de `processSessionMilestones`.
+- [x] Gate: `npm test`, contagem registrada: 147 testes, 0 falhas (typecheck também rodado: só a baseline).
+
+**Notas da execução:**
+- O id do PB herdado é `pb_<id do traçado novo>_<now>`. Um toque duplo no botão não colide na chave do `INSERT`.
+- `gamification.ts` importa o banco (expo-sqlite), que não carrega em Node. Para usar a regra real de `processSessionMilestones`, `test/referenceLayout.test.ts` põe um módulo vazio no `require.cache` do `db` antes do `require`. A regra em si não foi copiada para o teste.
+- O 3º teste também confere o contraste: sem a herança (`previousPbMs: null`), a mesma volta de 49.900 ms seria PB nova.
+- Os 3 testes falhavam antes da implementação.
 
 **Tests**: unit
 **Gate**: quick
