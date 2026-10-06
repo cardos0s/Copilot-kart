@@ -55,12 +55,14 @@ import { detectSpins } from '../../src/lib/spinDetector';
 import { lineFromLayout, type CrossPoint, type StartLine } from '../../src/lib/startLine';
 import { samplesToSilhouette } from '../../src/lib/trackSilhouette';
 import { countCorners } from '../../src/lib/trackShapeStats';
-import { saveReferenceLayout, sliceLaps, toLapRecord } from '../../src/recording/finishSession';
+import { saveReferenceLayout, sliceLaps, toLapRecord, type RecordedLap } from '../../src/recording/finishSession';
 import { deltaReferenceLap, lapOpened, liveLapClock } from '../../src/recording/liveLapClock';
 import { handleLocations } from '../../src/recording/locationHandler';
 import { createImuCapture } from '../../src/recording/imuCapture';
 import { createSessionClock } from '../../src/recording/sessionClock';
-import { G, type GpsFrame, type ImuFrame } from '../../src/telemetry/frame';
+import { G, type GpsFrame, type ImuFrame, type SeriesMeta } from '../../src/telemetry/frame';
+import { analysisGps, lapFrames, sliceLapWindows } from '../../src/telemetry/laps';
+import { gpsSeriesOf, imuSeriesOf } from '../../src/telemetry/series';
 import type { Session, TrackLayout } from '../../src/storage/db';
 import {
   session1,
@@ -229,25 +231,37 @@ function compareSummary(r: CompareResult) {
 /**
  * Visão antiga de um frame de GPS, para os consumidores que ainda recebem
  * `GpsSample` (até a fase 5): `t` absoluto (`t0Utc + t`) e só as chaves de antes.
- * Só os frames com precisão definida e ≤ 30 m, o corte que a captura fazia.
  */
+function legacyFrame(f: GpsFrame, t0Utc: number): GpsSample {
+  return {
+    t: t0Utc + f.t,
+    lat: f.lat,
+    lng: f.lng,
+    speed: f.speed,
+    accuracy: f.accuracy!,
+    heading: f.heading,
+    altitude: f.altitude,
+    altitudeAccuracy: f.altitudeAccuracy,
+    synthetic: f.synthetic,
+  };
+}
+
+/** Os frames que a análise lê (`analysisGps`, ≤ 30 m), na visão antiga. */
 function legacyGps(frames: GpsFrame[], t0Utc: number): GpsSample[] {
-  return frames
-    .filter((f) => f.accuracy !== undefined && f.accuracy <= 30)
-    .map((f) => ({
-      t: t0Utc + f.t,
-      lat: f.lat,
-      lng: f.lng,
-      speed: f.speed,
-      accuracy: f.accuracy!,
-      heading: f.heading,
-      altitude: f.altitude,
-      altitudeAccuracy: f.altitudeAccuracy,
-    }));
+  return analysisGps(frames).map((f) => legacyFrame(f, t0Utc));
+}
+
+/** IMU na visão antiga: `t` absoluto e o acelerômetro em g, como o sensor entrega. */
+function legacyImu(f: ImuFrame, t0Utc: number): ImuSample {
+  return {
+    t: t0Utc + f.t,
+    accel: { x: f.accel!.x / G, y: f.accel!.y / G, z: f.accel!.z / G },
+    gyro: f.gyro!,
+  };
 }
 
 /** Os lotes pela tarefa de localização, no relógio da sessão que começa em `t0Utc`. */
-async function captureGps(batches: LocationBatch[], t0Utc: number): Promise<GpsSample[]> {
+async function captureGps(batches: LocationBatch[], t0Utc: number): Promise<GpsFrame[]> {
   const buf = { samples: [] as GpsFrame[] };
   const clock = { trustsRaw: false, session: createSessionClock(t0Utc) };
   for (const b of batches) {
@@ -260,7 +274,34 @@ async function captureGps(batches: LocationBatch[], t0Utc: number): Promise<GpsS
       clock,
     });
   }
-  return legacyGps(buf.samples, t0Utc);
+  return buf.samples;
+}
+
+/**
+ * As voltas como o app as recorta: janelas do `sliceLapWindows` sobre os frames
+ * e os frames de cada uma pelo `lapFrames` (fronteiras geradas na leitura), na
+ * visão antiga que o `toLapRecord` e o `saveReferenceLayout` ainda recebem.
+ */
+function recordedLaps(gps: GpsFrame[], imu: ImuFrame[], t0Utc: number, line: StartLine | null): RecordedLap[] {
+  const meta = (kind: 'gps' | 'imu'): SeriesMeta => ({
+    id: `golden_${kind}`,
+    owner: { kind: 'session', id: 'golden' },
+    source: 'PHONE',
+    kind,
+    t0Utc,
+    legacy: false,
+  });
+  const gpsSeries = gpsSeriesOf(meta('gps'), gps);
+  const imuSeries = imuSeriesOf(meta('imu'), imu);
+  return sliceLapWindows(gps, line).map((w) => {
+    const lap = lapFrames(w.window, gpsSeries, imuSeries);
+    return {
+      samples: lap.gps.map((f) => legacyFrame(f, t0Utc)),
+      imuSamples: lap.imu.map((f) => legacyImu(f, t0Utc)),
+      durationMs: w.durationMs,
+      startedAt: t0Utc + w.startT,
+    };
+  });
 }
 
 /** O sensor conta desde o boot: o `timestamp` dos eventos é o instante de chegada menos este boot. */
@@ -271,7 +312,7 @@ const IMU_BOOT_AT = T0 - 3_600_000;
  * no relógio da sessão que começa em `t0Utc`. Volta na visão antiga para os
  * consumidores de hoje: `t` absoluto e o acelerômetro em g, como chegou.
  */
-function captureImu(events: ImuEvent[], t0Utc: number): ImuSample[] {
+function captureImu(events: ImuEvent[], t0Utc: number): ImuFrame[] {
   const frames: ImuFrame[] = [];
   let now = t0Utc;
   const cap = createImuCapture(createSessionClock(t0Utc), (f) => frames.push(f), () => now);
@@ -282,11 +323,7 @@ function captureImu(events: ImuEvent[], t0Utc: number): ImuSample[] {
     else cap.onGyro(reading);
   }
   cap.flush();
-  return frames.map((f) => ({
-    t: t0Utc + f.t,
-    accel: { x: f.accel!.x / G, y: f.accel!.y / G, z: f.accel!.z / G },
-    gyro: f.gyro!,
-  }));
+  return frames;
 }
 
 // ---------------------------------------------------------------------------
@@ -645,15 +682,22 @@ export async function runGolden(): Promise<GoldenOutput> {
   const layoutLine = lineFromLayout(layout.samples);
   const layoutRef = referenceFromLayout(layout.samples);
 
-  // Captura: os mesmos lotes que a tarefa de localização recebe.
-  const s1Gps = await captureGps(s1.batches, s1.t0);
-  const s1Imu = captureImu(s1.imuEvents, s1.t0);
-  const s2Gps = await captureGps(s2.batches, s2.t0);
+  // Captura: os mesmos lotes que a tarefa de localização recebe, em frames.
+  const s1Frames = await captureGps(s1.batches, s1.t0);
+  const s1ImuFrames = captureImu(s1.imuEvents, s1.t0);
+  const s2Frames = await captureGps(s2.batches, s2.t0);
+  // Visão antiga, para a detecção e os resumos da captura.
+  const s1Gps = legacyGps(s1Frames, s1.t0);
+  const s1Imu = s1ImuFrames.map((f) => legacyImu(f, s1.t0));
+  const s2Gps = legacyGps(s2Frames, s2.t0);
 
-  // Voltas salvas: sliceLaps + toLapRecord, como no "Encerrar".
-  const s1Laps = sliceLaps(s1Gps, s1Imu, null).map((l, i) => toLapRecord(l, 'session_golden_s1', i));
-  const s1LayoutLaps = sliceLaps(s1Gps, s1Imu, layoutLine).map((l, i) => toLapRecord(l, 'session_golden_s1_layout', i));
-  const s2Laps = sliceLaps(s2Gps, [], null).map((l, i) => toLapRecord(l, 'session_golden_s2', i));
+  // Voltas salvas: janelas + lapFrames + toLapRecord, como no "Encerrar".
+  const s1Recorded = recordedLaps(s1Frames, s1ImuFrames, s1.t0, null);
+  const s1Laps = s1Recorded.map((l, i) => toLapRecord(l, 'session_golden_s1', i));
+  const s1LayoutLaps = recordedLaps(s1Frames, s1ImuFrames, s1.t0, layoutLine).map((l, i) =>
+    toLapRecord(l, 'session_golden_s1_layout', i),
+  );
+  const s2Laps = recordedLaps(s2Frames, [], s2.t0, null).map((l, i) => toLapRecord(l, 'session_golden_s2', i));
 
   // Sessão demo pelo caminho real do seed, com o relógio congelado.
   db.savedLaps = [];
@@ -732,7 +776,7 @@ export async function runGolden(): Promise<GoldenOutput> {
       recordingId: 'golden_s1',
       trackId: 'golden-track',
       layoutName: null,
-      laps: sliceLaps(s1Gps, s1Imu, null),
+      laps: s1Recorded,
       recordedAt: s1.phases.end,
     },
     { listLayoutsForTrack: async () => [], saveLayout: async (l) => void savedLayouts.push(l) },

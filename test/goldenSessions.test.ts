@@ -12,6 +12,7 @@ import { detectLaps } from '../src/lib/lapDetector';
 import { handleLocations } from '../src/recording/locationHandler';
 import { createSessionClock } from '../src/recording/sessionClock';
 import type { GpsFrame } from '../src/telemetry/frame';
+import { analysisGps } from '../src/telemetry/laps';
 import { session1, session2, session3, session4, type LocationBatch } from './golden/sessions';
 
 /**
@@ -33,9 +34,7 @@ async function capture(batches: LocationBatch[]): Promise<GpsSample[]> {
       clock,
     });
   }
-  return buf.samples
-    .filter((f) => f.accuracy !== undefined && f.accuracy <= 30)
-    .map((f) => ({ ...f, t: t0Utc + f.t, accuracy: f.accuracy! }));
+  return analysisGps(buf.samples).map((f) => ({ ...f, t: t0Utc + f.t }));
 }
 
 test('sessão 1: paddock, volta de saída, 6 voltas e box; detectLaps fecha exatamente 6 voltas', async () => {

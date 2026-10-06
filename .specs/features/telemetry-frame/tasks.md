@@ -585,11 +585,11 @@ A regra de falha e de nova tentativa continua igual.
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: numa pista sintética com fixes de 45 m, `sliceLapWindows` dá as mesmas voltas e cruzamentos que `sliceLaps` dá sobre os frames filtrados em 30 m.
-- [ ] Teste: `lapFrames` de uma janela por cruzamento devolve `[fronteira, frames internos com ≤ 30 m, fronteira]`, com as fronteiras `synthetic` e a precisão guardada.
-- [ ] Teste: a IMU da janela inclui os frames em `start.t` e em `end.t`.
-- [ ] Teste: uma janela por índice devolve os frames `from..to` como estão; `kind: 'none'` devolve vazio.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste: numa pista sintética com fixes de 45 m, `sliceLapWindows` dá as mesmas voltas e cruzamentos que `sliceLaps` dá sobre os frames filtrados em 30 m.
+- [x] Teste: `lapFrames` de uma janela por cruzamento devolve `[fronteira, frames internos com ≤ 30 m, fronteira]`, com as fronteiras `synthetic` e a precisão guardada.
+- [x] Teste: a IMU da janela inclui os frames em `start.t` e em `end.t`.
+- [x] Teste: uma janela por índice devolve os frames `from..to` como estão; `kind: 'none'` devolve vazio.
+- [x] Gate: `npm test`, contagem registrada: 216 testes (211 + 5).
 
 **Tests**: unit
 **Gate**: quick
