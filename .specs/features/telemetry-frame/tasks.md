@@ -162,9 +162,9 @@ T46 -> T47
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: numa volta sintética com uma frenagem conhecida (de 25 m/s para 10 m/s em 1 s), a função devolve o ponto e o valor que o código inline devolvia.
-- [ ] Teste estático: a tela chama `hardestBraking(` e não contém mais o laço inline.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste: numa volta sintética com uma frenagem conhecida (de 25 m/s para 10 m/s em 1 s), a função devolve o ponto e o valor que o código inline devolvia.
+- [x] Teste estático: a tela chama `hardestBraking(` e não contém mais o laço inline.
+- [x] Gate: `npm test`, contagem registrada: 153 testes (149 + 4).
 
 **Tests**: unit
 **Gate**: quick

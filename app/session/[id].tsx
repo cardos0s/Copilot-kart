@@ -42,6 +42,7 @@ import {
 } from '../../src/components/analysis/parts';
 import { formatLapPlain } from '../../src/lib/format';
 import { msToKmh, peakSpeedInSectorMs, peakSpeedKmh, peakSpeedMs } from '../../src/lib/speed';
+import { hardestBraking } from '../../src/lib/brakingPoint';
 import { consumePendingCelebration } from '../../src/lib/celebrationQueue';
 import {
   Achievement,
@@ -1340,22 +1341,10 @@ function MapPanel({
     }
 
     // Hardest braking — maior decel entre samples consecutivos
-    let brakeIdx = -1;
-    let maxDecel = 0;
-    for (let i = 1; i < selected.samples.length; i++) {
-      const dv = selected.samples[i].speed - selected.samples[i - 1].speed;
-      const dt = (selected.samples[i].t - selected.samples[i - 1].t) / 1000;
-      if (dt > 0.05 && dt < 5) {
-        const decel = -dv / dt; // m/s²
-        if (decel > maxDecel) {
-          maxDecel = decel;
-          brakeIdx = i;
-        }
-      }
-    }
-    if (brakeIdx > 0 && maxDecel > 3 && selected.samples[brakeIdx]) {
+    const brake = hardestBraking(selected.samples);
+    if (brake) {
       out.push({
-        point: { lat: selected.samples[brakeIdx].lat, lng: selected.samples[brakeIdx].lng },
+        point: { lat: brake.lat, lng: brake.lng },
         color: colors.warning,
         label: 'B',
       });

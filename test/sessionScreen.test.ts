@@ -56,3 +56,12 @@ test('sessão: o pico não sai mais de laço de máximo bruto nem vira 0 quando 
   assert.ok(/km\/h máx/.test(SRC));
   assert.ok(/PeakKmh\s*!==\s*null\s*\?[^:]*:\s*'—'/.test(SRC), 'o pico null vira "—" no painel');
 });
+
+test('sessão: o ponto de frenagem B sai de hardestBraking, sem o laço inline (TF-14, T1)', () => {
+  assert.ok(importsFrom('../../src/lib/brakingPoint').includes('hardestBraking'));
+  assert.ok(/hardestBraking\(\s*selected\.samples\s*\)/.test(SRC));
+  // O laço antigo: `let maxDecel`, `const decel = -dv / dt` e o `brakeIdx`.
+  assert.equal(/\bmaxDecel\b/.test(SRC), false);
+  assert.equal(/-dv\s*\/\s*dt/.test(SRC), false);
+  assert.equal(/\bbrakeIdx\b/.test(SRC), false);
+});
