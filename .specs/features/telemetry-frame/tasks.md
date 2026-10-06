@@ -531,9 +531,9 @@ O buffer e o diário recebem frames.
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: accel (1 g em z) e gyro chegando com 3 ms de diferença dão um frame com `accel.z = 9.80665` e o `t` do gyro.
-- [ ] Teste: accel, accel e depois gyro dão um frame só com `accel` (`gyro` ausente) e depois um frame completo.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste: accel (1 g em z) e gyro chegando com 3 ms de diferença dão um frame com `accel.z = 9.80665` e o `t` do gyro.
+- [x] Teste: accel, accel e depois gyro dão um frame só com `accel` (`gyro` ausente) e depois um frame completo.
+- [x] Gate: `npm test`, contagem registrada: 208 testes (205 + 3).
 
 **Tests**: unit
 **Gate**: quick

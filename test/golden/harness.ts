@@ -13,9 +13,10 @@
  * Os módulos que importam o banco, o perfil, o Supabase e o id do aparelho
  * (nativos) entram como stubs no `require.cache` antes do `require`: assim o
  * `loadCoachContext`, o `seedDemoSession` e o `publishSample` reais rodam em
- * Node. Dois trechos do hook de gravação, que é React e não roda em Node, estão
- * reproduzidos aqui: o pareamento da IMU (`flushImu`) e o poll de 500 ms que
- * monta o `info` do ao vivo (`useLapRecorder.ts:456-668`).
+ * Node. A captura passa pelo código do app: `handleLocations` com o relógio da
+ * sessão e `createImuCapture`. Um trecho do hook de gravação, que é React e não
+ * roda em Node, está reproduzido aqui: o poll de 500 ms que monta o `info` do
+ * ao vivo (`useLapRecorder.ts:456-668`).
  */
 import {
   analyzeLap,
@@ -57,8 +58,9 @@ import { countCorners } from '../../src/lib/trackShapeStats';
 import { saveReferenceLayout, sliceLaps, toLapRecord } from '../../src/recording/finishSession';
 import { deltaReferenceLap, lapOpened, liveLapClock } from '../../src/recording/liveLapClock';
 import { handleLocations } from '../../src/recording/locationHandler';
+import { createImuCapture } from '../../src/recording/imuCapture';
 import { createSessionClock } from '../../src/recording/sessionClock';
-import type { GpsFrame } from '../../src/telemetry/frame';
+import { G, type GpsFrame, type ImuFrame } from '../../src/telemetry/frame';
 import type { Session, TrackLayout } from '../../src/storage/db';
 import {
   session1,
@@ -261,21 +263,30 @@ async function captureGps(batches: LocationBatch[], t0Utc: number): Promise<GpsS
   return legacyGps(buf.samples, t0Utc);
 }
 
-/** O `flushImu` do hook: um par acelerômetro + giroscópio vira uma amostra no instante do 2º evento. */
-function pairImu(events: ImuEvent[]): ImuSample[] {
-  const out: ImuSample[] = [];
-  let accel: ImuSample['accel'] | null = null;
-  let gyro: ImuSample['gyro'] | null = null;
+/** O sensor conta desde o boot: o `timestamp` dos eventos é o instante de chegada menos este boot. */
+const IMU_BOOT_AT = T0 - 3_600_000;
+
+/**
+ * A captura da IMU do app (`createImuCapture`) sobre os eventos do expo-sensors,
+ * no relógio da sessão que começa em `t0Utc`. Volta na visão antiga para os
+ * consumidores de hoje: `t` absoluto e o acelerômetro em g, como chegou.
+ */
+function captureImu(events: ImuEvent[], t0Utc: number): ImuSample[] {
+  const frames: ImuFrame[] = [];
+  let now = t0Utc;
+  const cap = createImuCapture(createSessionClock(t0Utc), (f) => frames.push(f), () => now);
   for (const e of events) {
-    if (e.kind === 'accel') accel = { x: e.x, y: e.y, z: e.z };
-    else gyro = { x: e.x, y: e.y, z: e.z };
-    if (accel && gyro) {
-      out.push({ t: e.at, accel, gyro });
-      accel = null;
-      gyro = null;
-    }
+    now = e.at;
+    const reading = { x: e.x, y: e.y, z: e.z, timestamp: (e.at - IMU_BOOT_AT) / 1000 };
+    if (e.kind === 'accel') cap.onAccel(reading);
+    else cap.onGyro(reading);
   }
-  return out;
+  cap.flush();
+  return frames.map((f) => ({
+    t: t0Utc + f.t,
+    accel: { x: f.accel!.x / G, y: f.accel!.y / G, z: f.accel!.z / G },
+    gyro: f.gyro!,
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -636,7 +647,7 @@ export async function runGolden(): Promise<GoldenOutput> {
 
   // Captura: os mesmos lotes que a tarefa de localização recebe.
   const s1Gps = await captureGps(s1.batches, s1.t0);
-  const s1Imu = pairImu(s1.imuEvents);
+  const s1Imu = captureImu(s1.imuEvents, s1.t0);
   const s2Gps = await captureGps(s2.batches, s2.t0);
 
   // Voltas salvas: sliceLaps + toLapRecord, como no "Encerrar".
