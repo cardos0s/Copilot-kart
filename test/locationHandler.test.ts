@@ -1,20 +1,43 @@
 /**
  * Handler da tarefa de localização: REC-01 (o GPS vai ao diário direto do
- * callback) e REC-09 (sem gravação ativa, a tarefa se para).
+ * callback), REC-09 (sem gravação ativa, a tarefa se para) e, desde a T14,
+ * TF-02/03/04/06 (cada fix vira um `GpsFrame` no relógio da sessão, sem descarte).
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import type { GpsSample } from '../src/lib/geometry';
 import { RecordingJournal } from '../src/recording/journal';
 import {
   handleLocations,
   type LocationLike,
   type LocationTaskDeps,
 } from '../src/recording/locationHandler';
+import { createSessionClock } from '../src/recording/sessionClock';
+import type { GpsFrame } from '../src/telemetry/frame';
 import { fakeJournalStore, persistedGps } from './helpers/fakeJournalStore';
 
 const NOW = 1_700_000_050_000;
+/** Início da sessão (`t0Utc`): o `t` dos frames é contado a partir dele. */
+const START = 1_700_000_000_000;
+
+/** O frame que uma fix de `loc()` vira, com o `t` no relógio da sessão. */
+function frame(t: number, accuracy: number | undefined, gnssTime: number, over: Partial<GpsFrame> = {}): GpsFrame {
+  return {
+    kind: 'gps',
+    source: 'PHONE',
+    t,
+    lat: -14.86,
+    lng: -40.84,
+    speed: 12,
+    accuracy,
+    heading: 90,
+    altitude: 900,
+    altitudeAccuracy: 3,
+    fix: 'unknown',
+    gnssTime,
+    ...over,
+  };
+}
 
 function loc(timestamp: number, accuracy: number | null, lat = -14.86): LocationLike {
   return {
@@ -44,7 +67,7 @@ async function setup(active: boolean, uiActive = false) {
         kartSetupId: null,
       })
     : null;
-  const buf = { samples: [] as GpsSample[] };
+  const buf = { samples: [] as GpsFrame[] };
   const calls = { stop: 0 };
   const deps: LocationTaskDeps = {
     buf,
@@ -54,28 +77,63 @@ async function setup(active: boolean, uiActive = false) {
       calls.stop++;
     },
     now: () => NOW,
-    clock: { trustsRaw: false, lastT: 0 },
+    clock: { trustsRaw: false, session: createSessionClock(START) },
   };
   return { store, journal, id, buf, calls, deps };
 }
 
-test('handleLocations: fix com accuracy 31 m é descartado e com 30 m entra', async () => {
+// Substitui "fix com accuracy 31 m é descartado e com 30 m entra": desde a
+// T14 nenhuma fix é descartada na captura (TF-03). O corte de 30 m é da análise.
+test('handleLocations: fix com precisão de 45 m é gravada com accuracy 45, e a de 30 m também', async () => {
   const { buf, journal, store, id, deps } = await setup(true);
-  await handleLocations([loc(NOW - 123, 31, -14.1), loc(NOW - 23, 30, -14.2)], deps);
+  await handleLocations([loc(NOW - 123, 45, -14.1), loc(NOW - 23, 30, -14.2)], deps);
 
-  assert.deepEqual(buf.samples.map((s) => s.lat), [-14.2]);
+  assert.deepEqual(buf.samples.map((s) => [s.lat, s.accuracy]), [[-14.1, 45], [-14.2, 30]]);
   await journal.flush();
-  assert.deepEqual(persistedGps(store, id!).map((s) => s.lat), [-14.2]);
+  assert.deepEqual(persistedGps(store, id!).map((s) => [s.lat, s.accuracy]), [[-14.1, 45], [-14.2, 30]]);
+});
+
+test('handleLocations: fix sem precisão é emitida com accuracy indefinido (não 999)', async () => {
+  const { buf, deps } = await setup(true);
+  await handleLocations([loc(NOW - 123, null)], deps);
+
+  assert.equal(buf.samples.length, 1);
+  assert.equal(buf.samples[0].accuracy, undefined);
+});
+
+test('handleLocations: com o relógio confiável o frame sai sem timeRepaired; com timestamp quantizado, sai marcado', async () => {
+  const trusted = await setup(true);
+  await handleLocations([loc(1_700_000_049_123, 4), loc(1_700_000_049_223, 4)], trusted.deps);
+  assert.deepEqual(trusted.buf.samples.map((s) => s.timeRepaired), [undefined, undefined]);
+
+  const quant = await setup(true);
+  await handleLocations([loc(1_700_000_048_000, 4), loc(1_700_000_049_000, 4), loc(0, 4)], quant.deps);
+  assert.deepEqual(quant.buf.samples.map((s) => s.timeRepaired), [true, true, true]);
+});
+
+test('handleLocations: cada frame tem gnssTime = loc.timestamp e t = tempo resolvido − t0Utc', async () => {
+  // Relógio confiável: o tempo resolvido é o próprio timestamp.
+  const raw = await setup(true);
+  await handleLocations([loc(1_700_000_049_123, 4), loc(1_700_000_049_223, 4)], raw.deps);
+  assert.deepEqual(raw.buf.samples.map((s) => [s.t, s.gnssTime]), [
+    [1_700_000_049_123 - START, 1_700_000_049_123],
+    [1_700_000_049_223 - START, 1_700_000_049_223],
+  ]);
+
+  // Quantizado: o tempo resolvido é o de chegada espalhado; gnssTime guarda o que veio.
+  const quant = await setup(true);
+  await handleLocations([loc(1_700_000_049_000, 4), loc(0, 4)], quant.deps);
+  assert.deepEqual(quant.buf.samples.map((s) => [s.t, s.gnssTime]), [
+    [NOW - 100 - START, 1_700_000_049_000],
+    [NOW - START, 0],
+  ]);
 });
 
 test('handleLocations: com diário ativo, os pontos vão ao buf e ao diário', async () => {
   const { buf, journal, store, id, deps, calls } = await setup(true);
   await handleLocations([loc(NOW - 223, 4), loc(NOW - 123, 5)], deps);
 
-  const expected: GpsSample[] = [
-    { t: NOW - 223, lat: -14.86, lng: -40.84, speed: 12, accuracy: 4, heading: 90, altitude: 900, altitudeAccuracy: 3 },
-    { t: NOW - 123, lat: -14.86, lng: -40.84, speed: 12, accuracy: 5, heading: 90, altitude: 900, altitudeAccuracy: 3 },
-  ];
+  const expected: GpsFrame[] = [frame(NOW - 223 - START, 4, NOW - 223), frame(NOW - 123 - START, 5, NOW - 123)];
   assert.deepEqual(buf.samples, expected);
   await journal.flush();
   assert.deepEqual(persistedGps(store, id!), expected);
@@ -86,10 +144,7 @@ test('handleLocations: gravação real (diário ativo e tela ativa), os pontos v
   const { buf, journal, store, id, deps, calls } = await setup(true, true);
   await handleLocations([loc(NOW - 223, 4), loc(NOW - 123, 5)], deps);
 
-  const expected: GpsSample[] = [
-    { t: NOW - 223, lat: -14.86, lng: -40.84, speed: 12, accuracy: 4, heading: 90, altitude: 900, altitudeAccuracy: 3 },
-    { t: NOW - 123, lat: -14.86, lng: -40.84, speed: 12, accuracy: 5, heading: 90, altitude: 900, altitudeAccuracy: 3 },
-  ];
+  const expected: GpsFrame[] = [frame(NOW - 223 - START, 4, NOW - 223), frame(NOW - 123 - START, 5, NOW - 123)];
   assert.deepEqual(buf.samples, expected);
   await journal.flush();
   assert.deepEqual(persistedGps(store, id!), expected);
@@ -115,10 +170,7 @@ test('handleLocations: tela de gravação ativa sem diário, os pontos vão só 
   await handleLocations([loc(NOW - 223, 4), loc(NOW - 123, 5)], deps);
 
   assert.equal(calls.stop, 0);
-  assert.deepEqual(buf.samples, [
-    { t: NOW - 223, lat: -14.86, lng: -40.84, speed: 12, accuracy: 4, heading: 90, altitude: 900, altitudeAccuracy: 3 },
-    { t: NOW - 123, lat: -14.86, lng: -40.84, speed: 12, accuracy: 5, heading: 90, altitude: 900, altitudeAccuracy: 3 },
-  ]);
+  assert.deepEqual(buf.samples, [frame(NOW - 223 - START, 4, NOW - 223), frame(NOW - 123 - START, 5, NOW - 123)]);
   await journal.flush();
   assert.equal(journal.recordingId, null);
   assert.equal(store.chunks.size, 0);
@@ -139,17 +191,18 @@ test('handleLocations: sem tela de gravação e sem diário, para a tarefa e o b
   assert.deepEqual(buf.samples, []);
 });
 
+// Desde a T14 o `t` é contado a partir do início da sessão: `t + START` é o tempo resolvido.
 test('handleLocations: timestamp sub-segundo é usado; quantizado ou zero vira now espalhado a 100 ms', async () => {
   const sub = await setup(true);
   await handleLocations([loc(1_700_000_049_123, 4)], sub.deps);
-  assert.deepEqual(sub.buf.samples.map((s) => s.t), [1_700_000_049_123]);
+  assert.deepEqual(sub.buf.samples.map((s) => s.t + START), [1_700_000_049_123]);
 
   const quant = await setup(true);
   await handleLocations(
     [loc(1_700_000_047_000, 4), loc(1_700_000_048_000, 4), loc(0, 4)],
     quant.deps,
   );
-  assert.deepEqual(quant.buf.samples.map((s) => s.t), [NOW - 200, NOW - 100, NOW]);
+  assert.deepEqual(quant.buf.samples.map((s) => s.t + START), [NOW - 200, NOW - 100, NOW]);
 });
 
 // ---------------------------------------------------------------------------
@@ -162,16 +215,16 @@ test('handleLocations: lote com t = …49.900, …50.000, …50.100 mantém os t
     [loc(1_700_000_049_900, 4), loc(1_700_000_050_000, 4), loc(1_700_000_050_100, 4)],
     deps,
   );
-  assert.deepEqual(buf.samples.map((s) => s.t), [1_700_000_049_900, 1_700_000_050_000, 1_700_000_050_100]);
+  assert.deepEqual(buf.samples.map((s) => s.t + START), [1_700_000_049_900, 1_700_000_050_000, 1_700_000_050_100]);
 
   // O fix no segundo cheio abrindo o lote também fica com o seu timestamp.
   const first = await setup(true);
   await handleLocations([loc(1_700_000_050_000, 4), loc(1_700_000_050_100, 4)], first.deps);
-  assert.deepEqual(first.buf.samples.map((s) => s.t), [1_700_000_050_000, 1_700_000_050_100]);
+  assert.deepEqual(first.buf.samples.map((s) => s.t + START), [1_700_000_050_000, 1_700_000_050_100]);
 
   // Depois de visto o sub-segundo, um lote só com segundo cheio também confia no cru.
   await handleLocations([loc(1_700_000_051_000, 4)], first.deps);
-  assert.deepEqual(first.buf.samples.map((s) => s.t), [1_700_000_050_000, 1_700_000_050_100, 1_700_000_051_000]);
+  assert.deepEqual(first.buf.samples.map((s) => s.t + START), [1_700_000_050_000, 1_700_000_050_100, 1_700_000_051_000]);
 });
 
 test('handleLocations: aparelho que só entrega timestamp quantizado continua com o horário de chegada espalhado a 100 ms', async () => {
@@ -181,7 +234,7 @@ test('handleLocations: aparelho que só entrega timestamp quantizado continua co
   await handleLocations([loc(1_700_000_049_000, 4), loc(1_700_000_050_000, 4), loc(0, 4)], withNow);
   now = NOW + 1_000;
   await handleLocations([loc(1_700_000_050_000, 4), loc(1_700_000_051_000, 4)], withNow);
-  assert.deepEqual(buf.samples.map((s) => s.t), [NOW - 200, NOW - 100, NOW, NOW + 900, NOW + 1_000]);
+  assert.deepEqual(buf.samples.map((s) => s.t + START), [NOW - 200, NOW - 100, NOW, NOW + 900, NOW + 1_000]);
   assert.equal(deps.clock.trustsRaw, false);
 });
 
@@ -190,14 +243,14 @@ test('handleLocations: os timestamps emitidos são estritamente crescentes entre
   const raw = await setup(true);
   await handleLocations([loc(1_700_000_049_900, 4), loc(1_700_000_050_000, 4)], raw.deps);
   await handleLocations([loc(1_700_000_050_000, 4), loc(1_700_000_050_100, 4)], raw.deps);
-  const tr = raw.buf.samples.map((s) => s.t);
+  const tr = raw.buf.samples.map((s) => s.t + START);
   assert.deepEqual(tr, [1_700_000_049_900, 1_700_000_050_000, 1_700_000_050_001, 1_700_000_050_100]);
 
   // Horário de chegada: dois lotes que chegam no mesmo instante.
   const arr = await setup(true);
   await handleLocations([loc(1_700_000_049_000, 4), loc(1_700_000_050_000, 4)], arr.deps);
   await handleLocations([loc(1_700_000_050_000, 4), loc(1_700_000_051_000, 4)], arr.deps);
-  const ta = arr.buf.samples.map((s) => s.t);
+  const ta = arr.buf.samples.map((s) => s.t + START);
   assert.deepEqual(ta, [NOW - 100, NOW, NOW + 1, NOW + 2]);
 
   for (const ts of [tr, ta]) {

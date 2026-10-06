@@ -6,7 +6,8 @@
  * `busy_timeout` de 2 s faz a escrita esperar o lock em vez de falhar na hora;
  * se ainda assim falhar, o diário guarda o pendente e tenta de novo.
  */
-import type { GpsSample, ImuSample } from '../lib/geometry';
+import type { ImuSample } from '../lib/geometry';
+import type { GpsFrame } from '../telemetry/frame';
 import { once } from '../lib/once';
 import type {
   ActiveRecording,
@@ -32,7 +33,7 @@ export const sqliteJournalStore: JournalStore = {
     );
   },
 
-  async appendChunk(id: string, seq: number, gps: GpsSample[], imu: ImuSample[]) {
+  async appendChunk(id: string, seq: number, gps: GpsFrame[], imu: ImuSample[]) {
     await (await conn()).runAsync(
       'INSERT INTO recording_chunks (recording_id, seq, gps_json, imu_json) VALUES (?, ?, ?, ?)',
       id,

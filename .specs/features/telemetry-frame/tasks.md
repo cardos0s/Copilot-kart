@@ -501,12 +501,12 @@ O buffer e o diário recebem frames.
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: uma fix com precisão de 45 m é emitida com `accuracy: 45` (antes era descartada).
-- [ ] Teste: uma fix sem precisão é emitida com `accuracy` indefinido.
-- [ ] Teste: num lote com `timestamp` quantizado, os frames estimados saem com `timeRepaired`; com o relógio confiável, saem sem a marca.
-- [ ] Teste: cada frame tem `gnssTime` igual ao `loc.timestamp` e `t = tempo resolvido − t0Utc`.
-- [ ] `test/locationHandler.test.ts` atualizado: a asserção do descarte de 30 m é substituída pela de gravação com a precisão real, com nota no teste.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste: uma fix com precisão de 45 m é emitida com `accuracy: 45` (antes era descartada).
+- [x] Teste: uma fix sem precisão é emitida com `accuracy` indefinido.
+- [x] Teste: num lote com `timestamp` quantizado, os frames estimados saem com `timeRepaired`; com o relógio confiável, saem sem a marca.
+- [x] Teste: cada frame tem `gnssTime` igual ao `loc.timestamp` e `t = tempo resolvido − t0Utc`.
+- [x] `test/locationHandler.test.ts` atualizado: a asserção do descarte de 30 m é substituída pela de gravação com a precisão real, com nota no teste.
+- [x] Gate: `npm test`, contagem registrada: 205 testes (202 + 3).
 
 **Tests**: unit
 **Gate**: quick

@@ -7,7 +7,8 @@
  * escrita que falha nunca trava a gravação: o pendente fica guardado para a
  * próxima tentativa e `failed` liga o aviso do HUD.
  */
-import type { GpsSample, ImuSample } from '../lib/geometry';
+import type { ImuSample } from '../lib/geometry';
+import type { GpsFrame } from '../telemetry/frame';
 import type { StartLine } from '../lib/startLine';
 
 export const FLUSH_INTERVAL_MS = 5000;
@@ -40,7 +41,7 @@ export type JournalChunk = { seq: number; gpsJson: string; imuJson: string };
 
 export type JournalStore = {
   createActive(meta: RecordingMeta): Promise<void>;
-  appendChunk(id: string, seq: number, gps: GpsSample[], imu: ImuSample[]): Promise<void>;
+  appendChunk(id: string, seq: number, gps: GpsFrame[], imu: ImuSample[]): Promise<void>;
   readActive(): Promise<ActiveRecording | null>;
   /** Pedaços em ordem de `seq`. */
   readChunks(id: string): Promise<JournalChunk[]>;
@@ -58,7 +59,7 @@ export class UnresolvedRecordingError extends Error {
 export class RecordingJournal {
   private id: string | null = null;
   private seq = 0;
-  private pendingGps: GpsSample[] = [];
+  private pendingGps: GpsFrame[] = [];
   private pendingImu: ImuSample[] = [];
   private lastFlushAt = 0;
   private inflight: Promise<void> | null = null;
@@ -96,7 +97,7 @@ export class RecordingJournal {
     return recordingId;
   }
 
-  appendGps(samples: GpsSample[]): void {
+  appendGps(samples: GpsFrame[]): void {
     if (this.id) this.pendingGps.push(...samples);
   }
 

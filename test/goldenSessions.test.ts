@@ -10,12 +10,19 @@ import type { GpsSample } from '../src/lib/geometry';
 import { haversine } from '../src/lib/geometry';
 import { detectLaps } from '../src/lib/lapDetector';
 import { handleLocations } from '../src/recording/locationHandler';
+import { createSessionClock } from '../src/recording/sessionClock';
+import type { GpsFrame } from '../src/telemetry/frame';
 import { session1, session2, session3, session4, type LocationBatch } from './golden/sessions';
 
-/** Passa os lotes pela tarefa de localização atual, sem diário. */
+/**
+ * Passa os lotes pela tarefa de localização, sem diário. Desde a T14 ela emite
+ * frames no relógio da sessão e sem o corte de 30 m; aqui eles voltam ao tempo
+ * absoluto e ao corte de 30 m, que é o que as fases da sessão descrevem.
+ */
 async function capture(batches: LocationBatch[]): Promise<GpsSample[]> {
-  const buf = { samples: [] as GpsSample[] };
-  const clock = { trustsRaw: false, lastT: 0 };
+  const t0Utc = batches[0].arrivalAt;
+  const buf = { samples: [] as GpsFrame[] };
+  const clock = { trustsRaw: false, session: createSessionClock(t0Utc) };
   for (const b of batches) {
     await handleLocations(b.locations, {
       buf,
@@ -26,7 +33,9 @@ async function capture(batches: LocationBatch[]): Promise<GpsSample[]> {
       clock,
     });
   }
-  return buf.samples;
+  return buf.samples
+    .filter((f) => f.accuracy !== undefined && f.accuracy <= 30)
+    .map((f) => ({ ...f, t: t0Utc + f.t, accuracy: f.accuracy! }));
 }
 
 test('sessão 1: paddock, volta de saída, 6 voltas e box; detectLaps fecha exatamente 6 voltas', async () => {

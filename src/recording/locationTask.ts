@@ -5,12 +5,14 @@
  */
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
-import type { GpsSample, ImuSample } from '../lib/geometry';
+import type { ImuSample } from '../lib/geometry';
+import type { GpsFrame } from '../telemetry/frame';
 import { handleLocations, type LocationTaskDeps } from './locationHandler';
+import { createSessionClock } from './sessionClock';
 
 export const BG_TASK = 'KARTLAP_BG_LOCATION';
 
-type Buffer = { samples: GpsSample[]; imu: ImuSample[] };
+type Buffer = { samples: GpsFrame[]; imu: ImuSample[] };
 
 /** Buffer que a UI drena a cada poll. Global para sobreviver a reload em dev. */
 export const buf: Buffer = (globalThis as any).__kartlapBuf ?? { samples: [], imu: [] };
@@ -19,7 +21,7 @@ if (!buf.imu) buf.imu = [];
 
 let journal: LocationTaskDeps['journal'] = null;
 let uiActive = false;
-const clock: LocationTaskDeps['clock'] = { trustsRaw: false, lastT: 0 };
+const clock: LocationTaskDeps['clock'] = { trustsRaw: false, session: createSessionClock(Date.now()) };
 
 /** O hook de gravação liga o diário aqui ao começar e desliga ao terminar. */
 export function setLocationTaskJournal(j: LocationTaskDeps['journal']): void {
@@ -30,13 +32,16 @@ export function setLocationTaskJournal(j: LocationTaskDeps['journal']): void {
  * O hook de gravação marca aqui que uma tela ligou o GPS neste processo. Vale
  * também para as telas que gravam sem diário. Um processo relançado pelo
  * sistema começa com `false`, e a tarefa órfã se para.
+ *
+ * `t0Utc` é o início da sessão (o `startedAt` do diário): o `t` dos frames é
+ * contado a partir dele.
  */
-export function setLocationTaskUiActive(v: boolean): void {
+export function setLocationTaskUiActive(v: boolean, t0Utc: number = Date.now()): void {
   uiActive = v;
-  // Toda gravação começa aqui: o relógio do GPS é zerado.
+  // Toda gravação começa aqui: o relógio do GPS é recriado.
   if (v) {
     clock.trustsRaw = false;
-    clock.lastT = 0;
+    clock.session = createSessionClock(t0Utc);
   }
 }
 

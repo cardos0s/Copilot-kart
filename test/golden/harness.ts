@@ -57,6 +57,8 @@ import { countCorners } from '../../src/lib/trackShapeStats';
 import { saveReferenceLayout, sliceLaps, toLapRecord } from '../../src/recording/finishSession';
 import { deltaReferenceLap, lapOpened, liveLapClock } from '../../src/recording/liveLapClock';
 import { handleLocations } from '../../src/recording/locationHandler';
+import { createSessionClock } from '../../src/recording/sessionClock';
+import type { GpsFrame } from '../../src/telemetry/frame';
 import type { Session, TrackLayout } from '../../src/storage/db';
 import {
   session1,
@@ -222,9 +224,30 @@ function compareSummary(r: CompareResult) {
 // Captura: lotes de fix → handleLocations; eventos da IMU → pares
 // ---------------------------------------------------------------------------
 
-async function captureGps(batches: LocationBatch[]): Promise<GpsSample[]> {
-  const buf = { samples: [] as GpsSample[] };
-  const clock = { trustsRaw: false, lastT: 0 };
+/**
+ * Visão antiga de um frame de GPS, para os consumidores que ainda recebem
+ * `GpsSample` (até a fase 5): `t` absoluto (`t0Utc + t`) e só as chaves de antes.
+ * Só os frames com precisão definida e ≤ 30 m, o corte que a captura fazia.
+ */
+function legacyGps(frames: GpsFrame[], t0Utc: number): GpsSample[] {
+  return frames
+    .filter((f) => f.accuracy !== undefined && f.accuracy <= 30)
+    .map((f) => ({
+      t: t0Utc + f.t,
+      lat: f.lat,
+      lng: f.lng,
+      speed: f.speed,
+      accuracy: f.accuracy!,
+      heading: f.heading,
+      altitude: f.altitude,
+      altitudeAccuracy: f.altitudeAccuracy,
+    }));
+}
+
+/** Os lotes pela tarefa de localização, no relógio da sessão que começa em `t0Utc`. */
+async function captureGps(batches: LocationBatch[], t0Utc: number): Promise<GpsSample[]> {
+  const buf = { samples: [] as GpsFrame[] };
+  const clock = { trustsRaw: false, session: createSessionClock(t0Utc) };
   for (const b of batches) {
     await handleLocations(b.locations, {
       buf,
@@ -235,7 +258,7 @@ async function captureGps(batches: LocationBatch[]): Promise<GpsSample[]> {
       clock,
     });
   }
-  return buf.samples;
+  return legacyGps(buf.samples, t0Utc);
 }
 
 /** O `flushImu` do hook: um par acelerômetro + giroscópio vira uma amostra no instante do 2º evento. */
@@ -276,8 +299,8 @@ function currentLapSamples(all: GpsSample[], openCross: OpenCross | null): GpsSa
 }
 
 async function livePoll(input: RecordedSessionInput, line: StartLine | null, sectorRef: ReferenceLap | null) {
-  const buf = { samples: [] as GpsSample[] };
-  const clock = { trustsRaw: false, lastT: 0 };
+  const buf = { samples: [] as GpsFrame[] };
+  const clock = { trustsRaw: false, session: createSessionClock(input.t0) };
   const all: GpsSample[] = [];
   const tracker = new DeltaTracker();
   let lastOpen: OpenCross | null = null;
@@ -305,7 +328,7 @@ async function livePoll(input: RecordedSessionInput, line: StartLine | null, sec
       bi++;
     }
     if (buf.samples.length > 0) {
-      all.push(...buf.samples);
+      all.push(...legacyGps(buf.samples, input.t0));
       buf.samples = [];
     }
     const last = all[all.length - 1];
@@ -612,9 +635,9 @@ export async function runGolden(): Promise<GoldenOutput> {
   const layoutRef = referenceFromLayout(layout.samples);
 
   // Captura: os mesmos lotes que a tarefa de localização recebe.
-  const s1Gps = await captureGps(s1.batches);
+  const s1Gps = await captureGps(s1.batches, s1.t0);
   const s1Imu = pairImu(s1.imuEvents);
-  const s2Gps = await captureGps(s2.batches);
+  const s2Gps = await captureGps(s2.batches, s2.t0);
 
   // Voltas salvas: sliceLaps + toLapRecord, como no "Encerrar".
   const s1Laps = sliceLaps(s1Gps, s1Imu, null).map((l, i) => toLapRecord(l, 'session_golden_s1', i));
