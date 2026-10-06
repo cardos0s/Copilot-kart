@@ -346,12 +346,12 @@ Criar também `test/golden.test.ts`, que roda o mesmo harness e compara com o `g
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: ida e volta de uma `GpsSeries`, uma `ImuSeries` e uma `ChannelSeries` com valores aleatórios. Todos os valores e instantes são bit a bit iguais, inclusive NaN nas posições ausentes.
-- [ ] Teste: a decodificação de um payload deslocado em 3 bytes dentro de um `Uint8Array` maior funciona.
-- [ ] Teste: uma coluna toda NaN não ocupa bytes (tamanho do payload conferido).
-- [ ] Teste (TF-10): 20 min de GPS a 10 Hz e de IMU a 50 Hz, em blocos de 5 s, somam ≤ 5.000.000 bytes de payload.
-- [ ] Teste: versão desconhecida e tamanho inconsistente lançam `BlockError`.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste: ida e volta de uma `GpsSeries`, uma `ImuSeries` e uma `ChannelSeries` com valores aleatórios. Todos os valores e instantes são bit a bit iguais, inclusive NaN nas posições ausentes.
+- [x] Teste: a decodificação de um payload deslocado em 3 bytes dentro de um `Uint8Array` maior funciona.
+- [x] Teste: uma coluna toda NaN não ocupa bytes (tamanho do payload conferido).
+- [x] Teste (TF-10): 20 min de GPS a 10 Hz e de IMU a 50 Hz, em blocos de 5 s, somam ≤ 5.000.000 bytes de payload.
+- [x] Teste: versão desconhecida e tamanho inconsistente lançam `BlockError`.
+- [x] Gate: `npm test`, contagem registrada: 184 testes (174 + 10). TF-10 medido: 4.251.840 bytes de payload em 20 min (pior caso, todas as colunas presentes).
 
 **Tests**: unit
 **Gate**: quick
