@@ -184,9 +184,9 @@ T46 -> T47
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: numa volta da pista circular com duas curvas, devolve a velocidade mínima de cada uma, igual ao código inline.
-- [ ] Teste estático: a tela chama `minSpeedPerCorner(`.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste: numa volta da pista circular com duas curvas, devolve a velocidade mínima de cada uma, igual ao código inline.
+- [x] Teste estático: a tela chama `minSpeedPerCorner(`.
+- [x] Gate: `npm test`, contagem registrada: 156 testes (153 + 3).
 
 **Tests**: unit
 **Gate**: quick

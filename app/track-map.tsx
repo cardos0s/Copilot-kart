@@ -25,7 +25,8 @@ import {
 import { buildReferenceLap, ReferenceLap } from '../src/lib/geometry';
 import { referenceFromLayout, sectorLapSamples, sectorSplits } from '../src/lib/sectors';
 import { Corner, detectCorners } from '../src/lib/corners';
-import { peakSpeedInSectorMs, msToKmh } from '../src/lib/speed';
+import { peakSpeedInSectorMs } from '../src/lib/speed';
+import { minSpeedPerCorner } from '../src/lib/cornerSpeed';
 import { findTrackById } from '../src/data/tracks';
 import { ScreenHeader } from '../src/components/ui';
 import { colors, radius, spacing, typography } from '../src/theme';
@@ -148,24 +149,7 @@ export default function TrackMapScreen() {
     if (bestSecIdx >= 0) sectors[bestSecIdx].isPb = true;
 
     // Velocidade mínima por curva — útil pra ver onde travou freada
-    const cornerSpeeds = corners.map((c) => {
-      let minMs = Infinity;
-      for (const p of matched.points) {
-        if (p.s >= c.sStart && p.s <= c.sEnd) {
-          if (p.speed < minMs) minMs = p.speed;
-        }
-      }
-      const minKmh = msToKmh(Number.isFinite(minMs) ? minMs : 0);
-      return { index: c.index + 1, minKmh, deltaVsBest: 0 };
-    });
-    // delta vs corner mais rápida
-    const bestCornerKmh = cornerSpeeds.reduce(
-      (b, c) => Math.max(b, c.minKmh),
-      0
-    );
-    for (const c of cornerSpeeds) {
-      c.deltaVsBest = c.minKmh - bestCornerKmh;
-    }
+    const cornerSpeeds = minSpeedPerCorner(corners, matched);
 
     const track = session.trackId ? findTrackById(session.trackId) : null;
     setState({

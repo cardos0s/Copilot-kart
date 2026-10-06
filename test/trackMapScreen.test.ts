@@ -28,3 +28,13 @@ test('mapa detalhado: os setores são medidos sobre os pontos salvos (sectorLapS
   assert.ok(/const savedSamples\s*=\s*sectorLapSamples\(\s*lap\s*\)\s*;/.test(SRC), 'savedSamples = sectorLapSamples(lap)');
   assert.equal(/sectorLapSamples\([^;]*cleanSamples/.test(SRC), false, 'nenhum cleanSamples no argumento');
 });
+
+test('mapa detalhado: a velocidade mínima por curva sai de minSpeedPerCorner, sem o laço inline (TF-14, T2)', () => {
+  const m = SRC.match(/import\s*\{([^}]*)\}\s*from\s*'\.\.\/src\/lib\/cornerSpeed'/);
+  assert.ok(m, 'importa de ../src/lib/cornerSpeed');
+  assert.ok(m[1].split(',').map((x) => x.trim()).includes('minSpeedPerCorner'));
+  assert.ok(/const cornerSpeeds\s*=\s*minSpeedPerCorner\(\s*corners,\s*matched\s*\)/.test(SRC));
+  // O laço antigo: `let minMs = Infinity` e o `bestCornerKmh`.
+  assert.equal(/let\s+minMs\s*=\s*Infinity/.test(SRC), false);
+  assert.equal(/\bbestCornerKmh\b/.test(SRC), false);
+});
