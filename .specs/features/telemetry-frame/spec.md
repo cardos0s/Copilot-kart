@@ -189,35 +189,35 @@ coisa para a nuvem.
 
 ## Requirement Traceability
 
-| Requirement ID | Story | Phase | Status |
+| Requirement ID | Story | Tasks | Status |
 | -------------- | ----- | ----- | ------ |
-| TF-01 | P1: Bruto — início com UTC e fonte (AC 1) | Design | Pending |
-| TF-02 | P1: Bruto — frame de GPS completo (AC 2) | Design | Pending |
-| TF-03 | P1: Bruto — fix > 30 m gravada (AC 3) | Design | Pending |
-| TF-04 | P1: Bruto — `timeRepaired` (AC 4) | Design | Pending |
-| TF-05 | P1: Bruto — IMU no relógio do GPS (AC 5) | Design | Pending |
-| TF-06 | P1: Bruto — `t` estritamente crescente (AC 6, edge do relógio) | Design | Pending |
-| TF-07 | P1: Bruto — sessão inteira mantida (AC 7) | Design | Pending |
-| TF-08 | P1: Bruto — recuperação após crash (AC 8, edge da recuperada) | Design | Pending |
-| TF-09 | P1: Bruto — exclusão apaga frames (AC 9) | Design | Pending |
-| TF-10 | P1: Bruto — ≤ 5 MB por 20 min (AC 10) | Design | Pending |
-| TF-11 | P1: Voltas — janela com cruzamentos (AC 1, 2) | Design | Pending |
-| TF-12 | P1: Voltas — corte de 30 m na leitura (AC 3) | Design | Pending |
-| TF-13 | P1: Voltas — sem `samples_json` e sem tipos antigos (AC 4, 5) | Design | Pending |
-| TF-14 | P1: Voltas — mesmos números nas sessões de referência (AC 6, edge da demo) | Design | Pending |
-| TF-15 | P1: Voltas — payload do ao vivo inalterado (AC 7) | Design | Pending |
-| TF-16 | P1: Voltas — leitura ≤ 200 ms (AC 8) | Design | Pending |
-| TF-17 | P1: Antigas — conversão de voltas, sintéticos e duplicatas (AC 1, 2, 3, 5) | Design | Pending |
-| TF-18 | P1: Antigas — tempos, PB e `started_at` intactos (AC 4, 10) | Design | Pending |
-| TF-19 | P1: Antigas — traçados convertidos com a mesma linha (AC 6) | Design | Pending |
-| TF-20 | P1: Antigas — migração em etapas com retomada, colunas antigas só saem no fim, JSON ilegível não derruba a sessão (AC 7, 8, 9) | Design | Pending |
-| TF-21 | P1: Contrato — multi-taxa, canais extras e unidades (AC 1, 2, 3) | Design | Pending |
-| TF-22 | P1: Contrato — GPS sem fix e ida e volta de MyChron sintético (AC 4, 5) | Design | Pending |
-| TF-23 | P2: Selo — fonte (AC 1) | Design | Pending |
-| TF-24 | P2: Selo — faixas de qualidade (AC 2, 3, 4) | Design | Pending |
-| TF-25 | Edge — sessão sem GPS e IMU incompleta | Design | Pending |
+| TF-01 | P1: Bruto — início com UTC e fonte (AC 1) | T16 | In Tasks |
+| TF-02 | P1: Bruto — frame de GPS completo (AC 2) | T14 | In Tasks |
+| TF-03 | P1: Bruto — fix > 30 m gravada (AC 3) | T14 | In Tasks |
+| TF-04 | P1: Bruto — `timeRepaired` (AC 4) | T14 | In Tasks |
+| TF-05 | P1: Bruto — IMU no relógio do GPS (AC 5) | T13, T15, T19 | In Tasks |
+| TF-06 | P1: Bruto — `t` estritamente crescente (AC 6, edge do relógio) | T13, T14, T19 | In Tasks |
+| TF-07 | P1: Bruto — sessão inteira mantida (AC 7) | T16, T19, T20, T40 | In Tasks |
+| TF-08 | P1: Bruto — recuperação após crash (AC 8, edge da recuperada) | T21 | In Tasks |
+| TF-09 | P1: Bruto — exclusão apaga frames (AC 9) | T16, T24, T40 | In Tasks |
+| TF-10 | P1: Bruto — ≤ 5 MB por 20 min (AC 10) | T8 | In Tasks |
+| TF-11 | P1: Voltas — janela com cruzamentos (AC 1, 2) | T17, T20, T22 | In Tasks |
+| TF-12 | P1: Voltas — corte de 30 m na leitura (AC 3) | T17, T19 | In Tasks |
+| TF-13 | P1: Voltas — sem `samples_json` e sem tipos antigos (AC 4, 5) | T27–T41, T44, T46 | In Tasks |
+| TF-14 | P1: Voltas — mesmos números nas sessões de referência (AC 6, edge da demo) | T1–T6, T27–T33, T45 | In Tasks |
+| TF-15 | P1: Voltas — payload do ao vivo inalterado (AC 7) | T18 | In Tasks |
+| TF-16 | P1: Voltas — leitura ≤ 200 ms (AC 8) | T22, T34, T39 | In Tasks |
+| TF-17 | P1: Antigas — conversão de voltas, sintéticos e duplicatas (AC 1, 2, 3, 5) | T42, T43 | In Tasks |
+| TF-18 | P1: Antigas — tempos, PB e `started_at` intactos (AC 4, 10) | T43, T44, T45 | In Tasks |
+| TF-19 | P1: Antigas — traçados convertidos com a mesma linha (AC 6) | T23, T43 | In Tasks |
+| TF-20 | P1: Antigas — migração em etapas com retomada, colunas antigas só saem no fim, JSON ilegível não derruba a sessão (AC 7, 8, 9) | T43, T44 | In Tasks |
+| TF-21 | P1: Contrato — multi-taxa, canais extras e unidades (AC 1, 2, 3) | T7, T11 | In Tasks |
+| TF-22 | P1: Contrato — GPS sem fix e ida e volta de MyChron sintético (AC 4, 5) | T8, T11 | In Tasks |
+| TF-23 | P2: Selo — fonte (AC 1) | T26, T36 | In Tasks |
+| TF-24 | P2: Selo — faixas de qualidade (AC 2, 3, 4) | T26, T36 | In Tasks |
+| TF-25 | Edge — sessão sem GPS e IMU incompleta | T20, T25 | In Tasks |
 
-**Coverage:** 25 total, 0 mapped to tasks, 25 unmapped ⚠️ (Tasks ainda não existe)
+**Coverage:** 25 total, 25 mapped to tasks, 0 unmapped
 
 ---
 
