@@ -206,9 +206,9 @@ T46 -> T47
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: para 100 velocidades conhecidas, devolve exatamente o p5 e o p95 que o código inline devolvia.
-- [ ] Teste estático: a tela chama `speedColorRange(`.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste: para 100 velocidades conhecidas, devolve exatamente o p5 e o p95 que o código inline devolvia.
+- [x] Teste estático: a tela chama `speedColorRange(`.
+- [x] Gate: `npm test`, contagem registrada: 159 testes (156 + 3).
 
 **Tests**: unit
 **Gate**: quick

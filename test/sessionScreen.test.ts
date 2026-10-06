@@ -65,3 +65,10 @@ test('sessão: o ponto de frenagem B sai de hardestBraking, sem o laço inline (
   assert.equal(/-dv\s*\/\s*dt/.test(SRC), false);
   assert.equal(/\bbrakeIdx\b/.test(SRC), false);
 });
+
+test('sessão: a faixa de cor por velocidade sai de speedColorRange, sem percentil local (TF-14, T3)', () => {
+  assert.ok(importsFrom('../../src/lib/speedRange').includes('speedColorRange'));
+  assert.ok(/const\s*\{\s*minS,\s*maxS\s*\}\s*=\s*speedColorRange\(\s*selected\.samples\s*\)/.test(SRC));
+  assert.equal(/function\s+percentile\b/.test(SRC), false);
+  assert.equal(SRC.includes('percentile('), false);
+});

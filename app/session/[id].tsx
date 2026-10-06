@@ -43,6 +43,7 @@ import {
 import { formatLapPlain } from '../../src/lib/format';
 import { msToKmh, peakSpeedInSectorMs, peakSpeedKmh, peakSpeedMs } from '../../src/lib/speed';
 import { hardestBraking } from '../../src/lib/brakingPoint';
+import { speedColorRange } from '../../src/lib/speedRange';
 import { consumePendingCelebration } from '../../src/lib/celebrationQueue';
 import {
   Achievement,
@@ -123,14 +124,6 @@ function speedColor(speed: number, minS: number, maxS: number): string {
     const b = Math.floor(60 + k * 20);
     return `rgb(${r}, ${g}, ${b})`;
   }
-}
-
-/** Percentil (clamp 0..1) sem mutar o array. */
-function percentile(values: number[], p: number) {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  const idx = Math.max(0, Math.min(sorted.length - 1, Math.floor(p * (sorted.length - 1))));
-  return sorted[idx];
 }
 
 function SessionScreenInner() {
@@ -1254,9 +1247,7 @@ function MapPanel({
   const mapPoints = selected.samples.map((p) => ({ latitude: p.lat, longitude: p.lng }));
 
   // Speed range pra colorização (5p–95p evita outliers)
-  const speeds = selected.samples.map((p) => p.speed);
-  const minS = percentile(speeds, 0.05);
-  const maxS = percentile(speeds, 0.95);
+  const { minS, maxS } = speedColorRange(selected.samples);
 
   // Por amostra, computa cor segundo o modo
   const sampleColors: string[] = useMemo(() => {
