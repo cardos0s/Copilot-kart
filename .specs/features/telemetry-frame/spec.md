@@ -63,10 +63,11 @@ coisa para a nuvem.
 | Filtro de 30 m | Sai da captura: a fix ruim é gravada com a qualidade marcada. Os consumidores aplicam o mesmo corte de 30 m ao ler, o que mantém os números de hoje | O bruto precisa ser completo, e o corte é uma regra de análise | y |
 | Unidades | Cada canal declara a unidade a partir de um catálogo fixo (SI, mais rpm e °C). A conversão acontece no adaptador da fonte, e o frame guarda o valor convertido | O spike mostrou unidades do logger (g, deg/s, km/h, mV). O consumidor não pode ter de saber de onde o valor veio | y |
 | Traçados (`track_layouts`) | Guardam uma cópia própria dos frames do traçado, convertida na migração. Não dependem da sessão de origem | A sessão de origem pode ser excluída, e o traçado precisa continuar existindo | y |
+| Migração em etapas | Uma transação por sessão e por traçado, com retomada; as colunas antigas saem só no fim | Uma transação única pode levar minutos para quem tem muito histórico e ser morta pelo sistema na abertura, repetindo para sempre. Ajuste de TF-20 aprovado pela Julia em 06/10, no Design | y |
 | Lap com JSON ilegível na conversão | A volta continua listada com o tempo salvo e sem trajetória, e a sessão abre. A conversão registra quantas voltas pulou | Perder a sessão inteira por uma volta corrompida é pior que perder a trajetória dessa volta | y |
 | Espaço | Uma sessão de 20 min com GPS a 10 Hz e IMU a 50 Hz ocupa no máximo 5 MB no aparelho | Em JSON, como hoje, daria cerca de 9 MB. O limite obriga a um formato compacto em blocos (§6 do documento), sem fixar qual | y |
 | Tempo de leitura | Ler o bruto de uma sessão de 20 min e montar as voltas leva no máximo 200 ms no Node da suíte | Só o Node é mensurável na suíte. O spike do `.xrk` mostrou que esse custo é da ordem de dezenas de ms | y |
-| "Mesmos números" | Para as sessões de referência, cada valor derivado sai igual ao de antes da troca: inteiros exatamente, números reais com diferença ≤ 1e-9 | Assim a reescrita não pode mudar nenhum número em silêncio. As referências são gravadas a partir do código atual antes de qualquer mudança | y |
+| "Mesmos números" | Para as sessões de referência, cada valor derivado sai igual ao de antes da troca: inteiros e textos exatamente, grandezas de tempo com diferença ≤ 0,001 ms, as demais grandezas reais com diferença ≤ 1e-9 | O `t` desde o início da sessão é mais preciso que o epoch em ms: perto de 1,8e12, o double só distingue cerca de 0,00024 ms. A diferença no tempo vem desse erro de arredondamento do formato antigo. Ajustado e aprovado pela Julia em 06/10, no Design | y |
 
 **Open questions:** none. Quatro decisões são da Julia, de 06/10. As demais são padrões meus, aprovados por ela com a spec no mesmo dia.
 
@@ -132,11 +133,12 @@ coisa para a nuvem.
 4. The migration SHALL manter `started_at` e `duration_ms` de cada volta como estavam.
 5. WHEN a migração termina THEN the app SHALL marcar o estado do fix dos frames convertidos como `unknown`, mantendo a precisão que existia.
 6. WHEN o app atualizado abre pela primeira vez THEN the migration SHALL converter cada traçado de `track_layouts` em frames próprios do traçado, com a mesma linha de chegada que ele produzia antes.
-7. IF a migração falha no meio THEN the migration SHALL desfazer tudo, deixar o banco como estava e tentar de novo na próxima abertura.
-8. IF o JSON de uma volta não pode ser lido THEN the migration SHALL manter a volta com o tempo salvo e sem trajetória, e seguir com as outras.
-9. WHEN uma sessão convertida é aberta THEN the app SHALL mostrar os mesmos tempos de volta e o mesmo PB de antes da atualização.
+7. IF a conversão de uma sessão ou de um traçado falha THEN the migration SHALL desfazer só a conversão dela, manter os dados antigos dela legíveis e retomar dela na próxima abertura.
+8. The migration SHALL remover as colunas e tabelas antigas só depois que todas as sessões e todos os traçados estiverem convertidos.
+9. IF o JSON de uma volta não pode ser lido THEN the migration SHALL manter a volta com o tempo salvo e sem trajetória, e seguir com as outras.
+10. WHEN uma sessão convertida é aberta THEN the app SHALL mostrar os mesmos tempos de volta e o mesmo PB de antes da atualização.
 
-**Independent Test**: montar um banco v4 com sessões das features 1 e 2 (com e sem pontos sintéticos, com e sem IMU, uma volta com JSON corrompido) e um traçado. Rodar a migração e conferir frames, tempos, PB e linha de chegada. Repetir com uma falha injetada no meio da migração.
+**Independent Test**: montar um banco v4 com sessões das features 1 e 2 (com e sem pontos sintéticos, com e sem IMU, uma volta com JSON corrompido) e um traçado. Rodar a migração e conferir frames, tempos, PB e linha de chegada. Repetir com uma falha injetada na conversão da segunda sessão: a primeira fica convertida, a segunda continua legível no formato antigo, as colunas antigas continuam lá, e a próxima execução termina o trabalho.
 
 ---
 
@@ -206,9 +208,9 @@ coisa para a nuvem.
 | TF-15 | P1: Voltas — payload do ao vivo inalterado (AC 7) | Design | Pending |
 | TF-16 | P1: Voltas — leitura ≤ 200 ms (AC 8) | Design | Pending |
 | TF-17 | P1: Antigas — conversão de voltas, sintéticos e duplicatas (AC 1, 2, 3, 5) | Design | Pending |
-| TF-18 | P1: Antigas — tempos, PB e `started_at` intactos (AC 4, 9) | Design | Pending |
+| TF-18 | P1: Antigas — tempos, PB e `started_at` intactos (AC 4, 10) | Design | Pending |
 | TF-19 | P1: Antigas — traçados convertidos com a mesma linha (AC 6) | Design | Pending |
-| TF-20 | P1: Antigas — falha desfaz tudo; JSON ilegível não derruba a sessão (AC 7, 8) | Design | Pending |
+| TF-20 | P1: Antigas — migração em etapas com retomada, colunas antigas só saem no fim, JSON ilegível não derruba a sessão (AC 7, 8, 9) | Design | Pending |
 | TF-21 | P1: Contrato — multi-taxa, canais extras e unidades (AC 1, 2, 3) | Design | Pending |
 | TF-22 | P1: Contrato — GPS sem fix e ida e volta de MyChron sintético (AC 4, 5) | Design | Pending |
 | TF-23 | P2: Selo — fonte (AC 1) | Design | Pending |

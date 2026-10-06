@@ -50,6 +50,14 @@
 - **Date**: 2026-09-27
 - **Status**: active
 
+### AD-007
+- **Decision**: Todo dado de telemetria do app entra e sai pelo modelo `TelemetryFrame` (`src/telemetry/`). O dado é guardado em séries por dono (sessão, traçado), em blocos binários Float64 (`telemetry_series` + `telemetry_blocks`), com fonte, `t` em ms desde o `t0Utc` da série e qualidade por amostra. O bruto da sessão é preservado inteiro até a exclusão. As features derivadas são recalculáveis. A AD-006 continua valendo: os pontos de fronteira da volta são gerados na leitura a partir dos cruzamentos guardados, e nunca gravados no bruto.
+- **Reason**: O Telemetry Engine precisa de um formato estável e independente de fornecedor (celular, MyChron, GoPro, Alfano) antes da conta-e-backup. O bruto perdido no "Encerrar" impedia recalcular análises.
+- **Trade-off**: Três formas do mesmo dado para manter (bloco, série colunar, frame). A migração v5 converte todo o histórico. Cada feature nova que lê ou grava telemetria passa pelo `telemetryStore` e pelo codec.
+- **Scope**: telemetry-frame e todas as features seguintes (conta-e-backup, nuvem-segura, corner-intelligence, importar-xrk).
+- **Date**: 2026-10-06
+- **Status**: active
+
 ## Handoff
 
 - **Pausa em 06/10**: a Julia vai continuar numa sessão nova.
