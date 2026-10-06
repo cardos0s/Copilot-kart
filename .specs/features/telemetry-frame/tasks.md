@@ -470,10 +470,10 @@ Criar também `test/golden.test.ts`, que roda o mesmo harness e compara com o `g
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: com `t0Utc = 1000`, sensor em 5,000 s e `nowMs = 6020` no 1º evento, o `t` é 5020; no evento seguinte, com sensor em 5,020 s e `nowMs = 6100`, o `t` é 5040. O espaçamento é o do sensor, e não o do relógio.
-- [ ] Teste: GPS e IMU com o mesmo instante absoluto dão o mesmo `t`.
-- [ ] Teste: `nowMs` voltando 1 h (ajuste de relógio) não faz `t` decrescer em nenhuma das séries.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste: com `t0Utc = 1000`, sensor em 5,000 s e `nowMs = 6020` no 1º evento, o `t` é 5020; no evento seguinte, com sensor em 5,020 s e `nowMs = 6100`, o `t` é 5040. O espaçamento é o do sensor, e não o do relógio.
+- [x] Teste: GPS e IMU com o mesmo instante absoluto dão o mesmo `t`.
+- [x] Teste: `nowMs` voltando 1 h (ajuste de relógio) não faz `t` decrescer em nenhuma das séries.
+- [x] Gate: `npm test`, contagem registrada: 202 testes (199 + 3).
 
 **Tests**: unit
 **Gate**: quick
