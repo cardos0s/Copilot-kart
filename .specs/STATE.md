@@ -61,15 +61,24 @@
   - A v1 sai intercalada com o Telemetry Engine, a partir do documento de ideias da Julia: Modo Mobile, Modo Pro, `TelemetryFrame`, Corner Intelligence, coach com evidência e `.xrk`.
   - O `.xrk` do MyChron é importado **direto no app**.
   - Ordem: 3 `telemetry-frame` → 4 `conta-e-backup` → 5 `nuvem-segura` → 6 `corner-intelligence` → 7 `importar-xrk` → 8 `produto-limpo` → 9 `conformidade-e-ficha`.
-- **Spike do `.xrk`, interrompido**:
-  - As amostras públicas (libxrk, MIT, dados de carro) e o trabalho parcial do leitor em TypeScript estão em `/Volumes/SSD/Dev/Pessoal/Copilot-kart-dados/xrk/` (ver `LEIA-ME.md`).
-  - Objetivo: portar `xrk_format.py` para TypeScript puro e validar contra o gabarito do arquivo 0033 (13 voltas, 26 canais), medir desempenho e comparar com o `detectLaps`.
-  - O MyChron real é do namorado da Julia. Ainda não há sessão de kart para validar.
-- **Next step, a escolher pela Julia**:
-  1. Terminar o spike do `.xrk`.
-  2. Especificar a `telemetry-frame`, que é a próxima frente.
+- **Spike do `.xrk`, fechado em 06/10**: o veredito está em `/Volumes/SSD/Dev/Pessoal/Copilot-kart-dados/xrk/spike/RELATORIO.md`.
+  - O leitor em TypeScript puro bate com a DLL da AiM, pelo teste do libxrk. Também bate com o CSV
+    do Race Studio (a diferença é só arredondamento) e com o `detectLaps` do app, a até 2 ms por
+    volta, quando a linha vem do `TRK` do arquivo.
+  - Sem JIT, que é o proxy do Hermes, ele leva de 0,2 a 1 s por arquivo de 3 a 9 MB no Mac.
+  - Corrigidos dois bugs: o `idn` vem embutido em `SRC`/`iSLV`, e as strings de piloto, carro e
+    sessão ficam num trailer no fim do arquivo.
+  - O que o relatório muda na `telemetry-frame`:
+    - canais com taxas e relógios próprios (1, 20, 25 e 50 Hz);
+    - pontos de GPS sem fix, que precisam de marca;
+    - hora do logger sem fuso;
+    - unidades a normalizar.
+  - Sem traçado, o `detectLaps` não fecha volta nos arquivos de carro, porque o ritmo começa no pit
+    lane. Na importação, a linha vem do arquivo ou do traçado.
+  - Ainda não há `.xrk` de kart: o MyChron 5 segue sem validação.
+- **Next step**: especificar a `telemetry-frame` (feature 3), usando o §"O que isto muda" do relatório do spike.
 - **Pendências**:
-  - Os 8 commits de `feat/tempos-honestos` depois de `3bc4232` e o commit do roteiro (`557f973`) podem ainda não estar no origin. O push é da Julia, porque o modo automático bloqueia.
+  - O origin já tem tudo até `8ed370d`, conferido em 06/10.
   - A GoPro dela é uma HERO7: falta confirmar se é a Black (com GPS) mandando um MP4.
 - **Blockers**: nenhum.
 - **Uncommitted files**: `CockPit-Guia-do-Testador.pdf`.
