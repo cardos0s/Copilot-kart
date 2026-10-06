@@ -560,12 +560,12 @@ A regra de falha e de nova tentativa continua igual.
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste (sql.js): `begin` registra `t0Utc` e fonte `PHONE` nas duas séries.
-- [ ] Teste (sql.js): 12 s de gravação dão 3 blocos por série, e `end` mantém todos.
-- [ ] Teste (sql.js): `discard` apaga séries, blocos e o registro ativo.
-- [ ] Teste: uma escrita que falha devolve o pendente à fila e liga `failed`; a próxima grava tudo, sem duplicar.
-- [ ] `test/journal.test.ts` e `test/helpers/fakeJournalStore.ts` migrados para o formato novo, com as mesmas asserções de comportamento.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste (sql.js): `begin` registra `t0Utc` e fonte `PHONE` nas duas séries.
+- [x] Teste (sql.js): 12 s de gravação dão 3 blocos por série, e `end` mantém todos.
+- [x] Teste (sql.js): `discard` apaga séries, blocos e o registro ativo.
+- [x] Teste: uma escrita que falha devolve o pendente à fila e liga `failed`; a próxima grava tudo, sem duplicar.
+- [x] `test/journal.test.ts` e `test/helpers/fakeJournalStore.ts` migrados para o formato novo, com as mesmas asserções de comportamento.
+- [x] Gate: `npm test`, contagem registrada: 211 testes (208 + 3).
 
 **Tests**: integration
 **Gate**: full

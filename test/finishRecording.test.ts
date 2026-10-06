@@ -15,7 +15,7 @@ import {
   type FinishRecordingMeta,
 } from '../src/recording/finishRecording';
 import { RecordingJournal } from '../src/recording/journal';
-import { fakeJournalStore, persistedGps } from './helpers/fakeJournalStore';
+import { asFrames, fakeJournalStore, persistedGps, totalBlocks } from './helpers/fakeJournalStore';
 import { fakeSessionRepo } from './helpers/fakeSessionRepo';
 import { generateLapSamples, generateTimedLaps } from './helpers/syntheticTrack';
 
@@ -23,7 +23,7 @@ const T0 = 1_700_000_000_000;
 
 /** Grava pelo diário, como no app, e devolve o que o `stop()` devolveria. */
 async function recorded(samples: GpsSample[]) {
-  const store = fakeJournalStore();
+  const store = await fakeJournalStore();
   const journal = new RecordingJournal(store, () => T0);
   const recordingId = await journal.begin({
     mode: 'race',
@@ -35,7 +35,7 @@ async function recorded(samples: GpsSample[]) {
   });
   for (let i = 0; i < samples.length; i += 25) {
     const batch = samples.slice(i, i + 25);
-    journal.appendGps(batch);
+    journal.appendGps(asFrames(batch, T0));
     await journal.flushIfDue(batch[batch.length - 1].t);
   }
   await journal.flush();
@@ -43,6 +43,7 @@ async function recorded(samples: GpsSample[]) {
   const repo = fakeSessionRepo();
   const events: string[] = [];
   const endCalls: string[] = [];
+  const discardCalls: string[] = [];
   const postSaveCalls: { session: RecordedSessionRow; lapIds: string[] }[] = [];
   const deps: FinishRecordingDeps = {
     journal: {
@@ -50,6 +51,10 @@ async function recorded(samples: GpsSample[]) {
         endCalls.push(id);
         events.push(`end(sessões gravadas: ${repo.sessions.length})`);
         await journal.end(id);
+      },
+      discard: async (id) => {
+        discardCalls.push(id);
+        await journal.discard(id);
       },
     },
     repo,
@@ -68,7 +73,7 @@ async function recorded(samples: GpsSample[]) {
     startedAt: T0,
   };
   const result = { allSamples: samples, laps: sliceLaps(samples, []) };
-  return { store, journal, recordingId, repo, deps, meta, result, events, endCalls, postSaveCalls };
+  return { store, journal, recordingId, repo, deps, meta, result, events, endCalls, discardCalls, postSaveCalls };
 }
 
 function track(numLaps: number): GpsSample[] {
@@ -100,9 +105,12 @@ test('finishRecording: menos de 30 pontos → too-few e o diário é apagado; 30
   const out = await finishRecording(r.result, r.meta, r.deps);
 
   assert.deepEqual(out, { kind: 'too-few' });
-  assert.deepEqual(r.endCalls, [r.recordingId]);
+  // Desde a T16 o `end` mantém as séries (são a sessão); sem sessão, o diário sai
+  // pelo `discard`, que apaga o registro e as séries (substitui "endCalls = [id]").
+  assert.deepEqual(r.discardCalls, [r.recordingId]);
+  assert.deepEqual(r.endCalls, []);
   assert.equal(r.store.active, null);
-  assert.equal(r.store.chunks.size, 0);
+  assert.equal(totalBlocks(r.store), 0);
   assert.equal(r.repo.sessions.length, 0);
   assert.deepEqual(r.postSaveCalls, []);
 
@@ -128,10 +136,12 @@ test('finishRecording: sucesso → saved com as voltas, journal.end depois do co
     r.repo.laps.map((l) => l.id),
     Array.from({ length: n }, (_, i) => `${id}_lap_${i + 1}`),
   );
-  // O diário só é apagado com a sessão já no banco, e os efeitos vêm depois.
+  // O diário só é encerrado com a sessão já no banco, e os efeitos vêm depois.
   assert.deepEqual(r.events, ['end(sessões gravadas: 1)', 'postSave']);
   assert.equal(r.store.active, null);
-  assert.equal(r.store.chunks.size, 0);
+  // Desde a T16 o `end` apaga só o registro ativo: os blocos ficam como o bruto
+  // da sessão (TF-07). Substitui "nenhum pedaço sobra".
+  assert.equal(persistedGps(r.store, r.recordingId).length, r.result.allSamples.length);
   assert.equal(r.postSaveCalls[0].session.id, id);
   assert.deepEqual(r.postSaveCalls[0].lapIds, r.repo.laps.map((l) => l.id));
 });
@@ -144,7 +154,7 @@ test('finishRecording: com meta.line no diário, salva voltas que começam no cr
   assert.ok(line);
   const samples = generateTimedLaps({ lapDurationMs: 37_699, sampleRateHz: 10, startPhase: 0.5, laps: 4, t0: T0 }).samples;
 
-  const store = fakeJournalStore();
+  const store = await fakeJournalStore();
   const journal = new RecordingJournal(store, () => T0);
   const recordingId = await journal.begin({
     mode: 'race',
@@ -155,7 +165,7 @@ test('finishRecording: com meta.line no diário, salva voltas que começam no cr
     kartSetupId: 'setup_1',
     line,
   });
-  journal.appendGps(samples);
+  journal.appendGps(asFrames(samples, T0));
   await journal.flush();
   // A linha que o "Encerrar" usa é a da meta gravada no diário.
   const metaLine = JSON.parse(store.active!.metaJson).line;

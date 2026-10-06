@@ -12,7 +12,13 @@ import type { TrackLayout } from '../src/storage/db';
 import { sliceLaps, type LayoutRepo } from '../src/recording/finishSession';
 import { RecordingJournal, type RecordingMetaInput } from '../src/recording/journal';
 import { discard, recover, summarize, type RecoveryDeps } from '../src/recording/recovery';
-import { fakeJournalStore, persistedGps, type FakeJournalStore } from './helpers/fakeJournalStore';
+import {
+  asFrames,
+  fakeJournalStore,
+  persistedGps,
+  persistedSeries,
+  type FakeJournalStore,
+} from './helpers/fakeJournalStore';
 import { fakeSessionRepo, type FakeSessionRepo } from './helpers/fakeSessionRepo';
 import { generateLapSamples, generateTimedLaps } from './helpers/syntheticTrack';
 
@@ -49,13 +55,13 @@ function fakeLayouts(): LayoutRepo & { layouts: TrackLayout[] } {
 
 /** Grava pelo próprio diário, como no app: pedaços a cada 5 s. */
 async function journalWith(meta: RecordingMetaInput, numLaps: number) {
-  const store = fakeJournalStore();
+  const store = await fakeJournalStore();
   const journal = new RecordingJournal(store, () => T0);
   const id = await journal.begin(meta);
   const samples = generateLapSamples({ numLaps, warmupS: 5, cooldownS: 10, startTimestamp: T0 });
   for (let i = 0; i < samples.length; i += 25) {
     const batch = samples.slice(i, i + 25);
-    journal.appendGps(batch);
+    journal.appendGps(asFrames(batch, T0));
     await journal.flushIfDue(batch[batch.length - 1].t);
   }
   await journal.flush();
@@ -69,7 +75,7 @@ function deps(store: FakeJournalStore, sessions: FakeSessionRepo = fakeSessionRe
 
 test('summarize: diário com 3 voltas dá a pista, o startedAt e laps = 3', async () => {
   const { store, id } = await journalWith(RACE, 3);
-  const s = summarize(store.active!, await store.readChunks(id));
+  const s = summarize(store.active!, await store.readSeries(id));
   assert.notEqual(s, 'unreadable');
   if (s === 'unreadable') return;
   assert.equal(s.trackName, 'Kartódromo de Conquista');
@@ -104,22 +110,22 @@ test('recover (corrida): cria a sessão com pista, traçado, setup e modo da met
   assert.ok('sessionId' in r && r.sessionId === `session_${id}`);
 
   assert.equal(store.active, null);
-  assert.equal(store.chunks.has(id), false);
+  assert.deepEqual(persistedSeries(store, id), []);
 });
 
 test('recover: se morre depois do commit e antes de apagar, rodar de novo não duplica', async () => {
   const { store, id } = await journalWith(RACE, 3);
   const { d, sessions } = deps(store);
 
-  const realDelete = store.deleteRecording;
-  store.deleteRecording = async () => {
+  const realDelete = store.discardRecording;
+  store.discardRecording = async () => {
     throw new Error('processo morto');
   };
   await assert.rejects(recover(id, d), /processo morto/);
   assert.equal(sessions.sessions.length, 1);
   assert.notEqual(store.active, null); // o diário continua lá
 
-  store.deleteRecording = realDelete;
+  store.discardRecording = realDelete;
   await recover(id, d);
   assert.equal(sessions.sessions.length, 1);
   assert.equal(sessions.laps.length, 3);
@@ -148,40 +154,41 @@ test('recover (reconhecimento): cria o layout com o nome da meta a partir da mel
 test('summarize: sem volta completa dá laps = 0', async () => {
   const { store, id } = await journalWith(RACE, 0);
   assert.ok(persistedGps(store, id).length > 0);
-  const s = summarize(store.active!, await store.readChunks(id));
+  const s = summarize(store.active!, await store.readSeries(id));
   assert.notEqual(s, 'unreadable');
   assert.equal(s !== 'unreadable' && s.laps, 0);
 });
 
 test('summarize: version 2 ou JSON quebrado dá unreadable', async () => {
   const { store, id } = await journalWith(RACE, 1);
-  const chunks = await store.readChunks(id);
+  const read = await store.readSeries(id);
   const active = store.active!;
 
   const v2 = { ...active, metaJson: JSON.stringify({ ...JSON.parse(active.metaJson), version: 2 }) };
-  assert.equal(summarize(v2, chunks), 'unreadable');
+  assert.equal(summarize(v2, read), 'unreadable');
 
-  assert.equal(summarize({ ...active, metaJson: '{"version":1,' }, chunks), 'unreadable');
+  assert.equal(summarize({ ...active, metaJson: '{"version":1,' }, read), 'unreadable');
 
-  const brokenChunk = [{ ...chunks[0], gpsJson: '[{"t":1' }, ...chunks.slice(1)];
-  assert.equal(summarize(active, brokenChunk), 'unreadable');
+  // O pedaço de JSON quebrado de antes (T16): um bloco com o cabeçalho corrompido.
+  store.conn.db.run("UPDATE telemetry_blocks SET payload = x'0900' WHERE seq = 0");
+  assert.equal(summarize(active, await store.readSeries(id)), 'unreadable');
 });
 
 test('discard: apaga o diário', async () => {
   const { store, id } = await journalWith(RACE, 2);
   await discard(id, { store });
   assert.equal(store.active, null);
-  assert.equal(store.chunks.has(id), false);
+  assert.deepEqual(persistedSeries(store, id), []);
 });
 
 /** Grava pelo diário os pontos dados, em pedaços de 25, como `journalWith`. */
 async function journalFromSamples(meta: RecordingMetaInput, samples: GpsSample[]) {
-  const store = fakeJournalStore();
+  const store = await fakeJournalStore();
   const journal = new RecordingJournal(store, () => T0);
   const id = await journal.begin(meta);
   for (let i = 0; i < samples.length; i += 25) {
     const batch = samples.slice(i, i + 25);
-    journal.appendGps(batch);
+    journal.appendGps(asFrames(batch, T0));
     await journal.flushIfDue(batch[batch.length - 1].t);
   }
   await journal.flush();
@@ -243,7 +250,7 @@ test('recover: diário com meta.line recupera as voltas do detectLaps com essa l
   const samples = midTrackRace();
   const { store, id } = await journalFromSamples({ ...RACE, line }, samples);
 
-  const s = summarize(store.active!, await store.readChunks(id));
+  const s = summarize(store.active!, await store.readSeries(id));
   const withLine = detectLaps(samples, { line }).laps;
   assert.equal(s !== 'unreadable' && s.laps, withLine.length);
 
@@ -267,7 +274,7 @@ test('recover: diário antigo sem line continua legível e recupera com a linha 
   const { store, id } = await journalFromSamples(RACE, samples);
   assert.equal('line' in JSON.parse(store.active!.metaJson), false);
 
-  const s = summarize(store.active!, await store.readChunks(id));
+  const s = summarize(store.active!, await store.readSeries(id));
   assert.notEqual(s, 'unreadable');
   const inferred = detectLaps(samples).laps;
   assert.equal(s !== 'unreadable' && s.laps, inferred.length);

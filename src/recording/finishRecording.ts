@@ -17,13 +17,13 @@ import {
 } from './finishSession';
 import type { RecordingJournal } from './journal';
 
-/** Abaixo disso não houve dado para uma sessão, e o diário é apagado. */
+/** Abaixo disso não houve dado para uma sessão, e o diário é descartado com as séries. */
 export const MIN_SAMPLES = 30;
 
 export type FinishRecordingMeta = Omit<RecordedSessionInput, 'laps' | 'recovered'>;
 
 export type FinishRecordingDeps = {
-  journal: Pick<RecordingJournal, 'end'>;
+  journal: Pick<RecordingJournal, 'end' | 'discard'>;
   repo: SessionRepo;
   /** XP, PB, conquistas e desafios. Roda só depois de salvar, com voltas. */
   postSave(session: RecordedSessionRow, laps: LapRecord[]): Promise<unknown>;
@@ -40,7 +40,8 @@ export async function finishRecording(
   deps: FinishRecordingDeps
 ): Promise<FinishRecordingOutcome> {
   if (result.allSamples.length < MIN_SAMPLES) {
-    await deps.journal.end(meta.recordingId).catch(() => {});
+    // Sem sessão, as séries não têm dono: saem com o registro ativo (TF-09).
+    await deps.journal.discard(meta.recordingId).catch(() => {});
     return { kind: 'too-few' };
   }
 
@@ -52,8 +53,9 @@ export async function finishRecording(
   } catch (error) {
     return { kind: 'save-failed', error };
   }
-  // Só depois do commit. Se falhar aqui, a abertura seguinte vê a sessão
-  // já salva e limpa o diário em silêncio.
+  // Só depois do commit. O `end` apaga só o registro ativo: as séries do
+  // diário são o bruto da sessão (TF-07). Se falhar aqui, a abertura seguinte
+  // vê a sessão já salva e limpa o registro em silêncio.
   await deps.journal
     .end(meta.recordingId)
     .catch((e) => console.warn('[recording] journal.end:', e));

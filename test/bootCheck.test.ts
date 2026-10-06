@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 
 import { runBootCheck, type BootCheckDeps } from '../src/recording/bootCheck';
 import { RecordingJournal, type RecordingMetaInput } from '../src/recording/journal';
-import { fakeJournalStore, type FakeJournalStore } from './helpers/fakeJournalStore';
+import { asFrames, fakeJournalStore, persistedSeries, type FakeJournalStore } from './helpers/fakeJournalStore';
 import { generateLapSamples } from './helpers/syntheticTrack';
 
 const T0 = 1_700_000_000_000;
@@ -39,13 +39,13 @@ function bootDeps(store: FakeJournalStore, opts: { taskRunning: boolean; savedSe
 async function activeJournal(store: FakeJournalStore) {
   const journal = new RecordingJournal(store, () => T0);
   const id = await journal.begin(META);
-  journal.appendGps(generateLapSamples({ numLaps: 2, warmupS: 5, cooldownS: 5, startTimestamp: T0 }));
+  journal.appendGps(asFrames(generateLapSamples({ numLaps: 2, warmupS: 5, cooldownS: 5, startTimestamp: T0 }), T0));
   await journal.flush();
   return id;
 }
 
 test('bootCheck: tarefa registrada e sem diário para a tarefa e devolve none', async () => {
-  const store = fakeJournalStore();
+  const store = await fakeJournalStore();
   const { d, calls, isRunning } = bootDeps(store, { taskRunning: true });
   const r = await runBootCheck(d);
   assert.deepEqual(r, { kind: 'none' });
@@ -54,7 +54,7 @@ test('bootCheck: tarefa registrada e sem diário para a tarefa e devolve none', 
 });
 
 test('bootCheck: tarefa registrada e diário ativo para a tarefa e devolve interrupted com o resumo', async () => {
-  const store = fakeJournalStore();
+  const store = await fakeJournalStore();
   const id = await activeJournal(store);
   const { d, calls, isRunning } = bootDeps(store, { taskRunning: true });
 
@@ -72,7 +72,7 @@ test('bootCheck: tarefa registrada e diário ativo para a tarefa e devolve inter
 });
 
 test('bootCheck: sessão já salva devolve already-saved e apaga o diário', async () => {
-  const store = fakeJournalStore();
+  const store = await fakeJournalStore();
   const id = await activeJournal(store);
   const { d } = bootDeps(store, { taskRunning: false, savedSessions: [`session_${id}`] });
 
@@ -80,11 +80,11 @@ test('bootCheck: sessão já salva devolve already-saved e apaga o diário', asy
 
   assert.deepEqual(r, { kind: 'already-saved' });
   assert.equal(store.active, null);
-  assert.equal(store.chunks.has(id), false);
+  assert.deepEqual(persistedSeries(store, id), []);
 });
 
 test('bootCheck: diário ilegível devolve unreadable e apaga', async () => {
-  const store = fakeJournalStore();
+  const store = await fakeJournalStore();
   const id = await activeJournal(store);
   store.active = { ...store.active!, metaJson: JSON.stringify({ version: 2 }) };
   const { d } = bootDeps(store, { taskRunning: false });
@@ -93,5 +93,5 @@ test('bootCheck: diário ilegível devolve unreadable e apaga', async () => {
 
   assert.deepEqual(r, { kind: 'unreadable' });
   assert.equal(store.active, null);
-  assert.equal(store.chunks.has(id), false);
+  assert.deepEqual(persistedSeries(store, id), []);
 });

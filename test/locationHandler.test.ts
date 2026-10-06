@@ -14,7 +14,7 @@ import {
 } from '../src/recording/locationHandler';
 import { createSessionClock } from '../src/recording/sessionClock';
 import type { GpsFrame } from '../src/telemetry/frame';
-import { fakeJournalStore, persistedGps } from './helpers/fakeJournalStore';
+import { fakeJournalStore, persistedGps, totalBlocks } from './helpers/fakeJournalStore';
 
 const NOW = 1_700_000_050_000;
 /** Início da sessão (`t0Utc`): o `t` dos frames é contado a partir dele. */
@@ -55,8 +55,9 @@ function loc(timestamp: number, accuracy: number | null, lat = -14.86): Location
 }
 
 async function setup(active: boolean, uiActive = false) {
-  const store = fakeJournalStore();
-  const journal = new RecordingJournal(store, () => NOW);
+  const store = await fakeJournalStore();
+  // O diário começa em START: é o t0Utc das séries e do relógio da tarefa.
+  const journal = new RecordingJournal(store, () => START);
   const id = active
     ? await journal.begin({
         mode: 'race',
@@ -157,12 +158,12 @@ test('handleLocations: sem diário ativo, para a tarefa e nada vai ao diário', 
 
   assert.equal(calls.stop, 1);
   assert.equal(journal.recordingId, null);
-  assert.equal(store.chunks.size, 0);
+  assert.equal(totalBlocks(store), 0);
 
   // Sem diário nenhum configurado, o mesmo.
   await handleLocations([loc(NOW - 123, 4)], { ...deps, journal: null });
   assert.equal(calls.stop, 2);
-  assert.equal(store.chunks.size, 0);
+  assert.equal(totalBlocks(store), 0);
 });
 
 test('handleLocations: tela de gravação ativa sem diário, os pontos vão só ao buf e a tarefa segue', async () => {
@@ -173,13 +174,13 @@ test('handleLocations: tela de gravação ativa sem diário, os pontos vão só 
   assert.deepEqual(buf.samples, [frame(NOW - 223 - START, 4, NOW - 223), frame(NOW - 123 - START, 5, NOW - 123)]);
   await journal.flush();
   assert.equal(journal.recordingId, null);
-  assert.equal(store.chunks.size, 0);
+  assert.equal(totalBlocks(store), 0);
 
   // Sem diário nenhum configurado, o mesmo.
   await handleLocations([loc(NOW - 23, 6)], { ...deps, journal: null });
   assert.equal(calls.stop, 0);
   assert.deepEqual(buf.samples.map((s) => s.accuracy), [4, 5, 6]);
-  assert.equal(store.chunks.size, 0);
+  assert.equal(totalBlocks(store), 0);
 });
 
 test('handleLocations: sem tela de gravação e sem diário, para a tarefa e o buf não recebe nada', async () => {

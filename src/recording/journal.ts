@@ -1,15 +1,19 @@
 /**
- * Diário da gravação: acumula os pontos novos em memória e os grava no
- * armazenamento durável a cada 5 s, em pedaços só de append. Se o processo
- * morre, perde-se no máximo o que chegou desde a última escrita.
+ * Diário da gravação: acumula os frames novos em memória e os grava a cada 5 s,
+ * um bloco por série (GPS e IMU) numa transação. As séries são as da sessão
+ * (dono `session:session_<recordingId>`), e o que o diário grava já é o bruto
+ * dela (TF-07): o "Encerrar" não copia nada. Se o processo morre, perde-se no
+ * máximo o que chegou desde a última escrita.
  *
  * Puro: o armazenamento (`JournalStore`) e o relógio são injetados. Uma
  * escrita que falha nunca trava a gravação: o pendente fica guardado para a
  * próxima tentativa e `failed` liga o aviso do HUD.
  */
-import type { ImuSample } from '../lib/geometry';
-import type { GpsFrame } from '../telemetry/frame';
 import type { StartLine } from '../lib/startLine';
+import { encodeBlock } from '../telemetry/blockCodec';
+import type { GpsFrame, ImuFrame, Owner, SeriesMeta } from '../telemetry/frame';
+import { gpsSeriesOf, imuSeriesOf } from '../telemetry/series';
+import type { BlockRow, ReadResult } from '../telemetry/telemetryStore';
 
 export const FLUSH_INTERVAL_MS = 5000;
 
@@ -36,16 +40,37 @@ export type RecordingMetaInput = Omit<RecordingMeta, 'version' | 'recordingId' |
 /** O registro ativo como está no armazenamento: a meta ainda em JSON. */
 export type ActiveRecording = { id: string; metaJson: string; startedAt: number };
 
-/** Um pedaço como está no armazenamento: os pontos ainda em JSON. */
-export type JournalChunk = { seq: number; gpsJson: string; imuJson: string };
+/** Dono das séries da gravação: a sessão que ela vira (`session_<recordingId>`). */
+export function recordingOwner(recordingId: string): Owner {
+  return { kind: 'session', id: `session_${recordingId}` };
+}
+
+/** As duas séries do celular, com fonte `PHONE` e o `t0Utc` do início (TF-01). */
+export function recordingSeries(recordingId: string, t0Utc: number): { gps: SeriesMeta; imu: SeriesMeta } {
+  const owner = recordingOwner(recordingId);
+  const meta = (kind: 'gps' | 'imu'): SeriesMeta => ({
+    id: `${owner.id}_${kind}`,
+    owner,
+    source: 'PHONE',
+    kind,
+    t0Utc,
+    legacy: false,
+  });
+  return { gps: meta('gps'), imu: meta('imu') };
+}
 
 export type JournalStore = {
-  createActive(meta: RecordingMeta): Promise<void>;
-  appendChunk(id: string, seq: number, gps: GpsFrame[], imu: ImuSample[]): Promise<void>;
+  /** O registro ativo e as séries da gravação, numa transação. */
+  createActive(meta: RecordingMeta, series: SeriesMeta[]): Promise<void>;
+  /** Os blocos de um flush, numa transação: entram todos, ou nenhum. */
+  appendBlocks(blocks: BlockRow[]): Promise<void>;
   readActive(): Promise<ActiveRecording | null>;
-  /** Pedaços em ordem de `seq`. */
-  readChunks(id: string): Promise<JournalChunk[]>;
-  deleteRecording(id: string): Promise<void>;
+  /** As séries da gravação, com os blocos em ordem. */
+  readSeries(recordingId: string): Promise<ReadResult>;
+  /** Apaga só o registro ativo: as séries ficam, porque são a sessão (TF-07). */
+  deleteActive(recordingId: string): Promise<void>;
+  /** Apaga o registro ativo e as séries, numa transação. */
+  discardRecording(recordingId: string): Promise<void>;
 };
 
 /** Já existe uma gravação interrompida: recuperar ou descartar antes de começar outra. */
@@ -58,10 +83,12 @@ export class UnresolvedRecordingError extends Error {
 
 export class RecordingJournal {
   private id: string | null = null;
-  private seq = 0;
+  private series: { gps: SeriesMeta; imu: SeriesMeta } | null = null;
+  private seq = { gps: 0, imu: 0 };
   private pendingGps: GpsFrame[] = [];
-  private pendingImu: ImuSample[] = [];
+  private pendingImu: ImuFrame[] = [];
   private lastFlushAt = 0;
+  private startedAt = 0;
   private inflight: Promise<void> | null = null;
   private _failed = false;
 
@@ -75,6 +102,11 @@ export class RecordingJournal {
     return this.id;
   }
 
+  /** Instante UTC do início da gravação em andamento: o `t` dos frames conta a partir dele. */
+  get t0Utc(): number | null {
+    return this.id ? this.startedAt : null;
+  }
+
   /** Verdadeiro se a última escrita falhou. */
   get failed(): boolean {
     return this._failed;
@@ -86,23 +118,26 @@ export class RecordingJournal {
 
     const startedAt = this.clock();
     const recordingId = `rec_${startedAt}_${Math.random().toString(36).slice(2, 8)}`;
-    await this.store.createActive({ version: 1, recordingId, startedAt, ...input });
+    const series = recordingSeries(recordingId, startedAt);
+    await this.store.createActive({ version: 1, recordingId, startedAt, ...input }, [series.gps, series.imu]);
 
     this.id = recordingId;
-    this.seq = 0;
+    this.series = series;
+    this.seq = { gps: 0, imu: 0 };
     this.pendingGps = [];
     this.pendingImu = [];
     this.lastFlushAt = startedAt;
+    this.startedAt = startedAt;
     this._failed = false;
     return recordingId;
   }
 
-  appendGps(samples: GpsFrame[]): void {
-    if (this.id) this.pendingGps.push(...samples);
+  appendGps(frames: GpsFrame[]): void {
+    if (this.id) this.pendingGps.push(...frames);
   }
 
-  appendImu(samples: ImuSample[]): void {
-    if (this.id) this.pendingImu.push(...samples);
+  appendImu(frames: ImuFrame[]): void {
+    if (this.id) this.pendingImu.push(...frames);
   }
 
   /** Grava o pendente se já passaram 5 s desde a última escrita. */
@@ -113,20 +148,24 @@ export class RecordingJournal {
     await this.flush();
   }
 
-  /** Grava o pendente agora. Nunca lança: uma falha liga `failed`. */
+  /** Grava o pendente agora, um bloco por série. Nunca lança: uma falha liga `failed`. */
   async flush(): Promise<void> {
     while (this.inflight) await this.inflight;
-    const id = this.id;
-    if (!id || (this.pendingGps.length === 0 && this.pendingImu.length === 0)) return;
+    const series = this.series;
+    if (!this.id || !series || (this.pendingGps.length === 0 && this.pendingImu.length === 0)) return;
 
     const gps = this.pendingGps;
     const imu = this.pendingImu;
     this.pendingGps = [];
     this.pendingImu = [];
+    const blocks: BlockRow[] = [];
+    if (gps.length > 0) blocks.push(block(gpsSeriesOf(series.gps, gps), this.seq.gps));
+    if (imu.length > 0) blocks.push(block(imuSeriesOf(series.imu, imu), this.seq.imu));
     this.inflight = (async () => {
       try {
-        await this.store.appendChunk(id, this.seq, gps, imu);
-        this.seq++;
+        await this.store.appendBlocks(blocks);
+        if (gps.length > 0) this.seq.gps++;
+        if (imu.length > 0) this.seq.imu++;
         this._failed = false;
       } catch {
         // O pendente volta para a frente da fila e entra na próxima tentativa.
@@ -140,15 +179,38 @@ export class RecordingJournal {
     await this.inflight;
   }
 
-  /** Apaga o registro ativo e os pedaços da gravação. */
+  /** Fim da gravação salva: apaga só o registro ativo. As séries ficam, são a sessão (TF-07). */
   async end(recordingId: string): Promise<void> {
     while (this.inflight) await this.inflight;
-    await this.store.deleteRecording(recordingId);
-    if (this.id === recordingId) {
-      this.id = null;
-      this.pendingGps = [];
-      this.pendingImu = [];
-      this._failed = false;
-    }
+    await this.store.deleteActive(recordingId);
+    this.forget(recordingId);
   }
+
+  /** Descarte: apaga o registro ativo e as séries da gravação (TF-09). */
+  async discard(recordingId: string): Promise<void> {
+    while (this.inflight) await this.inflight;
+    await this.store.discardRecording(recordingId);
+    this.forget(recordingId);
+  }
+
+  private forget(recordingId: string): void {
+    if (this.id !== recordingId) return;
+    this.id = null;
+    this.series = null;
+    this.pendingGps = [];
+    this.pendingImu = [];
+    this._failed = false;
+  }
+}
+
+/** Um bloco com a série inteira dada. */
+function block(series: Parameters<typeof encodeBlock>[0], seq: number): BlockRow {
+  return {
+    seriesId: series.meta.id,
+    seq,
+    n: series.n,
+    tFirst: series.t[0],
+    tLast: series.t[series.n - 1],
+    payload: encodeBlock(series, 0, series.n),
+  };
 }

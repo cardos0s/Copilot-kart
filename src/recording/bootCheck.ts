@@ -34,14 +34,15 @@ export async function runBootCheck(deps: BootCheckDeps): Promise<BootResult> {
   if (!active) return { kind: 'none' };
 
   // Crash entre o commit da sessão e a limpeza: já está salva, só limpa.
+  // Transição (T16 → T21): apaga o diário inteiro, como antes; a T21 mantém as séries.
   if (await deps.sessionExists(sessionIdFor(active.id))) {
-    await deps.store.deleteRecording(active.id);
+    await deps.store.discardRecording(active.id);
     return { kind: 'already-saved' };
   }
 
-  const summary = summarize(active, await deps.store.readChunks(active.id));
+  const summary = summarize(active, await deps.store.readSeries(active.id));
   if (summary === 'unreadable') {
-    await deps.store.deleteRecording(active.id);
+    await deps.store.discardRecording(active.id);
     return { kind: 'unreadable' };
   }
   return { kind: 'interrupted', summary };
