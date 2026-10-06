@@ -2,7 +2,8 @@ import * as SQLite from 'expo-sqlite';
 import { GpsSample } from '../lib/geometry';
 import { LapRecord } from '../lib/analysis';
 import { once } from '../lib/once';
-import { migrateV4 } from './migrations';
+import { migrateV4, migrateV5Schema, migrationExecutorFrom } from './migrations';
+import { expoSqlConn } from './sqlConn';
 
 // A promise da inicialização é memoizada: chamadas simultâneas na abertura
 // esperam o schema e as migrações, e ninguém recebe o banco pela metade.
@@ -213,6 +214,10 @@ export const db = once(async () => {
         fn({ exec: (sql) => txn.execAsync(sql) })
       ),
   });
+
+  // v5a: schema das séries de telemetria. A conversão (v5b) e a remoção do
+  // formato antigo (v5c) vêm depois.
+  await migrateV5Schema(migrationExecutorFrom(expoSqlConn(dbInstance)));
   return dbInstance;
 });
 

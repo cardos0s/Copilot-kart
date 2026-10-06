@@ -445,10 +445,10 @@ Criar também `test/golden.test.ts`, que roda o mesmo harness e compara com o `g
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste (sql.js): sobre um banco v4 com dados, a v5a cria tabelas e colunas, e os dados antigos continuam legíveis.
-- [ ] Teste (sql.js): rodar duas vezes não falha nem duplica nada.
-- [ ] Teste: uma falha no meio desfaz tudo da v5a.
-- [ ] Gate: `npm test && npm run typecheck`, contagem registrada.
+- [x] Teste (sql.js): sobre um banco v4 com dados, a v5a cria tabelas e colunas, e os dados antigos continuam legíveis.
+- [x] Teste (sql.js): rodar duas vezes não falha nem duplica nada.
+- [x] Teste: uma falha no meio desfaz tudo da v5a.
+- [x] Gate: `npm test && npm run typecheck`, contagem registrada: 199 testes (195 + 4). Fim da fase: `npm run typecheck` com os mesmos 8 erros da baseline.
 
 **Tests**: integration
 **Gate**: build
