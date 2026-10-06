@@ -234,10 +234,10 @@ T46 -> T47
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: a sessão 1 tem paddock, volta de saída, 6 voltas e box, e `detectLaps` atual fecha exatamente 6 voltas nela.
-- [ ] Teste: a sessão 1 tem pelo menos 5 fixes acima de 30 m e um trecho de pelo menos 20 fixes com `timestamp % 1000 === 0`.
-- [ ] Teste: as entradas são determinísticas (duas gerações dão arrays idênticos).
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste: a sessão 1 tem paddock, volta de saída, 6 voltas e box, e `detectLaps` atual fecha exatamente 6 voltas nela.
+- [x] Teste: a sessão 1 tem pelo menos 5 fixes acima de 30 m e um trecho de pelo menos 20 fixes com `timestamp % 1000 === 0`.
+- [x] Teste: as entradas são determinísticas (duas gerações dão arrays idênticos).
+- [x] Gate: `npm test`, contagem registrada: 162 testes (159 + 3).
 
 **Tests**: unit
 **Gate**: quick
