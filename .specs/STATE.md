@@ -52,19 +52,25 @@
 
 ## Handoff
 
-- **Feature**: `tempos-honestos` (2ª de 7) concluída, com o Verificador **PASS na rodada 5** (03/10). Antes dele houve 4 rodadas de FAIL, escaladas para a Julia depois da 3ª. A `gravacao-sem-perda` também teve PASS. A UAT no aparelho das duas está pendente.
-- **Phase / Task**: as duas features estão fechadas. A próxima é `conta-e-backup` (Specify).
-- **Completed**: gravacao-sem-perda T1–T27; tempos-honestos T1–T32; lições L-001 a L-008, todas candidatas.
-- **In-progress**: nada.
-- **Next step**:
-  1. A Julia sobe a branch (`git push`) e roda a UAT das duas features num dev build por EAS.
-  2. Especificar a `conta-e-backup`.
-- **Observações não bloqueantes**, todas no `validation.md` da rodada 5:
-  - a inserção de uma 2ª `setDefaultLayoutOn` passa na suíte;
-  - a meta do diário fica sem `layoutId` se a gravação começar antes do traçado carregar;
-  - o painel web e "Lendas" mostram 0 em vez de "—" (vai para `nuvem-segura`/`produto-limpo`);
-  - o nome do traçado troca a data;
-  - pendência D1 da gravacao-sem-perda.
+- **Pausa em 06/10**: a Julia vai continuar numa sessão nova.
+- **Feito**:
+  - `gravacao-sem-perda` com PASS (24/09).
+  - `tempos-honestos` com PASS na rodada 5 (03/10).
+  - A UAT no aparelho das duas está pendente.
+- **Roteiro novo**: `docs/levantamento-loja.md` §7, revisto em 06/10.
+  - A v1 sai intercalada com o Telemetry Engine, a partir do documento de ideias da Julia: Modo Mobile, Modo Pro, `TelemetryFrame`, Corner Intelligence, coach com evidência e `.xrk`.
+  - O `.xrk` do MyChron é importado **direto no app**.
+  - Ordem: 3 `telemetry-frame` → 4 `conta-e-backup` → 5 `nuvem-segura` → 6 `corner-intelligence` → 7 `importar-xrk` → 8 `produto-limpo` → 9 `conformidade-e-ficha`.
+- **Spike do `.xrk`, interrompido**:
+  - As amostras públicas (libxrk, MIT, dados de carro) e o trabalho parcial do leitor em TypeScript estão em `/Volumes/SSD/Dev/Pessoal/Copilot-kart-dados/xrk/` (ver `LEIA-ME.md`).
+  - Objetivo: portar `xrk_format.py` para TypeScript puro e validar contra o gabarito do arquivo 0033 (13 voltas, 26 canais), medir desempenho e comparar com o `detectLaps`.
+  - O MyChron real é do namorado da Julia. Ainda não há sessão de kart para validar.
+- **Next step, a escolher pela Julia**:
+  1. Terminar o spike do `.xrk`.
+  2. Especificar a `telemetry-frame`, que é a próxima frente.
+- **Pendências**:
+  - Os 8 commits de `feat/tempos-honestos` depois de `3bc4232` e o commit do roteiro (`557f973`) podem ainda não estar no origin. O push é da Julia, porque o modo automático bloqueia.
+  - A GoPro dela é uma HERO7: falta confirmar se é a Black (com GPS) mandando um MP4.
 - **Blockers**: nenhum.
 - **Uncommitted files**: `CockPit-Guia-do-Testador.pdf`.
-- **Branch**: `feat/tempos-honestos`. Os commits depois de `3bc4232` estão só no local.
+- **Branch**: `feat/tempos-honestos`.
