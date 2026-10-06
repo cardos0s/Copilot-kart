@@ -2,6 +2,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import { getSupabase } from './supabase';
 import { getDeviceId } from './deviceId';
 import { getProfile } from '../storage/profile';
+import type { GpsFrame } from '../telemetry/frame';
 
 /**
  * Abstração de live sharing.
@@ -161,6 +162,52 @@ export async function endLiveSession(code: string): Promise<void> {
     .from('live_sessions')
     .update({ ended_at: new Date().toISOString() })
     .eq('code', code);
+}
+
+/** O que o ponto do ao vivo leva do frame de GPS (um `GpsSample` também serve). */
+export type LiveFrame = Pick<GpsFrame, 't' | 'lat' | 'lng' | 'speed' | 'heading' | 'accuracy' | 'altitude' | 'altitudeAccuracy'>;
+
+/** O que o ponto do ao vivo leva do `info` do hook de gravação. */
+export type LiveSampleInfo = {
+  lapsCompleted: number;
+  currentLapElapsedMs: number | null;
+  bestLapMs: number | null;
+  liveDeltaMs: number | null;
+  currentSectorIdx: 0 | 1 | 2 | null;
+  currentSectorElapsedMs: number | null;
+  currentSectors: { s1Ms: number | null; s2Ms: number | null; s3Ms: number | null };
+};
+
+/**
+ * O ponto do ao vivo (TF-15): o mesmo `LiveSample` que a tela montava, agora a
+ * partir de um frame no relógio da sessão. `t0Utc + frame.t` é o instante
+ * absoluto que `live_samples.t` recebe.
+ */
+export function toLiveSample(frame: LiveFrame, info: LiveSampleInfo, t0Utc: number): LiveSample {
+  return {
+    t: t0Utc + frame.t,
+    lat: frame.lat,
+    lng: frame.lng,
+    speed: frame.speed,
+    heading: frame.heading,
+    accuracy: frame.accuracy,
+    lapNumber: info.lapsCompleted,
+    // Tempo da volta ATUAL (reseta a cada cruzamento da linha), NÃO o total
+    // da sessão. Antes do 1º cruzamento não há volta aberta, e o
+    // `publishSample` manda null (TMP-05 AC 3).
+    lapElapsedMs: info.currentLapElapsedMs ?? undefined,
+    bestLapMs: info.bestLapMs ?? null,
+    // Delta ao vivo no ponto atual da pista (do tracker do hook).
+    deltaVsRefMs: info.liveDeltaMs,
+    // Setores: null quando o app não tem traçado de referência carregado.
+    currentSectorIdx: info.currentSectorIdx,
+    currentSectorElapsedMs: info.currentSectorElapsedMs,
+    s1Ms: info.currentSectors.s1Ms,
+    s2Ms: info.currentSectors.s2Ms,
+    s3Ms: info.currentSectors.s3Ms,
+    altitude: frame.altitude ?? null,
+    altitudeAccuracy: frame.altitudeAccuracy ?? null,
+  };
 }
 
 export async function publishSample(sessionId: string, sample: LiveSample): Promise<void> {

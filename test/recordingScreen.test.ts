@@ -36,8 +36,10 @@ test('recording.tsx: HUD mostra "Salvamento automático falhou" sob info.autosav
 test('recording.tsx: antes do 1º cruzamento, o cronômetro da volta mostra "—" e a publicação não manda o tempo da sessão', () => {
   assert.equal(SRC.includes('currentLapElapsedMs ?? info.elapsedMs'), false);
   assert.equal(SRC.includes('currentLapElapsedMs ?? elapsedMs'), false);
-  // Publicação: sem volta aberta, vai vazio (o publishSample grava null).
-  assert.ok(/lapElapsedMs:\s*info\.currentLapElapsedMs\s*\?\?\s*(undefined|null),/.test(SRC));
+  // Publicação: sem volta aberta, vai vazio (o publishSample grava null). Desde a
+  // T18 o payload é do `toLiveSample` (regra testada em `liveSample.test.ts`),
+  // e a tela só o chama; substitui o regex `lapElapsedMs: info.currentLapElapsedMs ?? undefined`.
+  assert.ok(SRC.includes('publishSample(live.id, toLiveSample('));
   // Cockpit: o cronômetro da volta é o do hook, e null vira "—".
   assert.ok(/const currentLapMs = info\.currentLapElapsedMs;/.test(SRC));
   assert.ok(SRC.includes("{currentLapMs !== null ? fmtLap(currentLapMs) : '—'}"));

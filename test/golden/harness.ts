@@ -128,7 +128,7 @@ stub('../../src/lib/supabase', {
 
 const { loadCoachContext } = require('../../src/lib/coachContext') as typeof import('../../src/lib/coachContext');
 const { seedDemoSession } = require('../../src/lib/demoSession') as typeof import('../../src/lib/demoSession');
-const { publishSample } = require('../../src/lib/liveSession') as typeof import('../../src/lib/liveSession');
+const { publishSample, toLiveSample } = require('../../src/lib/liveSession') as typeof import('../../src/lib/liveSession');
 
 // ---------------------------------------------------------------------------
 // Subamostra e resumos
@@ -468,25 +468,22 @@ async function livePoll(input: RecordedSessionInput, line: StartLine | null, sec
     // O que `app/recording.tsx` publica para o ponto, com o `info` deste poll.
     if (last) {
       liveRows.length = 0;
-      await publishSample('golden-live', {
-        t: last.t,
-        lat: last.lat,
-        lng: last.lng,
-        speed: last.speed,
-        heading: last.heading,
-        accuracy: last.accuracy,
-        lapNumber: detection.laps.length,
-        lapElapsedMs: currentLapElapsedMs ?? undefined,
-        bestLapMs: bestLapMs ?? null,
-        deltaVsRefMs: reading ? reading.deltaMs : null,
-        currentSectorIdx,
-        currentSectorElapsedMs,
-        s1Ms: currentSectors.s1Ms,
-        s2Ms: currentSectors.s2Ms,
-        s3Ms: currentSectors.s3Ms,
-        altitude: last.altitude ?? null,
-        altitudeAccuracy: last.altitudeAccuracy ?? null,
-      });
+      await publishSample(
+        'golden-live',
+        toLiveSample(
+          last,
+          {
+            lapsCompleted: detection.laps.length,
+            currentLapElapsedMs,
+            bestLapMs,
+            liveDeltaMs: reading ? reading.deltaMs : null,
+            currentSectorIdx,
+            currentSectorElapsedMs,
+            currentSectors,
+          },
+          0,
+        ),
+      );
       payloads.push(...liveRows);
     }
   }

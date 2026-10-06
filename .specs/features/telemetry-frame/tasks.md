@@ -609,10 +609,10 @@ A regra de falha e de nova tentativa continua igual.
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: para um frame com `t0Utc` conhecido, o payload sai igual ao que o código de hoje montava para o `GpsSample` equivalente, inclusive o `t` em ISO absoluto.
-- [ ] Teste estático: `recording.tsx` chama `toLiveSample(`.
-- [ ] Golden (payload do ao vivo) passa sem mudar o `expected.json`.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste: para um frame com `t0Utc` conhecido, o payload sai igual ao que o código de hoje montava para o `GpsSample` equivalente, inclusive o `t` em ISO absoluto.
+- [x] Teste estático: `recording.tsx` chama `toLiveSample(`.
+- [x] Golden (payload do ao vivo) passa sem mudar o `expected.json`.
+- [x] Gate: `npm test`, contagem registrada: 219 testes (216 + 3).
 
 **Tests**: unit
 **Gate**: quick

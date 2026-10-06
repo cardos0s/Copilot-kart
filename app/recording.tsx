@@ -38,6 +38,7 @@ import {
   ackMessage,
   publishLap,
   publishSample,
+  toLiveSample,
   subscribeLiveSession,
 } from '../src/lib/liveSession';
 import { inheritedPb, nextReferenceLayout } from '../src/lib/referenceLayout';
@@ -309,34 +310,9 @@ export default function Recording() {
     // Fire-and-forget — não bloqueia se network engasgar
     (async () => {
       for (const s of toSend) {
-        publishSample(live.id, {
-            t: s.t,
-            lat: s.lat,
-            lng: s.lng,
-            speed: s.speed,
-            heading: s.heading,
-            accuracy: s.accuracy,
-            lapNumber: info.lapsCompleted,
-            // Tempo da volta ATUAL (reseta a cada cruzamento da linha),
-            // NÃO o total da sessão. Antes do 1º cruzamento não há volta
-            // aberta, e o `publishSample` manda null (TMP-05 AC 3).
-            lapElapsedMs: info.currentLapElapsedMs ?? undefined,
-            bestLapMs: info.bestLapMs ?? null,
-            // Delta MyChron AO VIVO no ponto atual da pista (vem do tracker
-            // do hook). Antes mandava um valor estático (melhor − referência
-            // do layout) que só mudava ao bater PB — por isso "DELTA LIVE"
-            // ficava congelado em +1.000s.
-            deltaVsRefMs: info.liveDeltaMs,
-            // Setores — null quando o app não tem layout reference carregada.
-            // Team panel usa esses pra mostrar delta por setor + ranking.
-            currentSectorIdx: info.currentSectorIdx,
-            currentSectorElapsedMs: info.currentSectorElapsedMs,
-            s1Ms: info.currentSectors.s1Ms,
-            s2Ms: info.currentSectors.s2Ms,
-            s3Ms: info.currentSectors.s3Ms,
-            altitude: s.altitude ?? null,
-            altitudeAccuracy: s.altitudeAccuracy ?? null,
-          }).catch(() => {
+        // T19: o hook passa a entregar frames e o t0Utc da sessão; até lá o
+        // ponto ainda tem o tempo absoluto, e o t0Utc é 0.
+        publishSample(live.id, toLiveSample(s, info, 0)).catch(() => {
           /* engole — não pode quebrar gravação se realtime falhar */
         });
       }
