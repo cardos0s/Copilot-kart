@@ -235,17 +235,38 @@ Registradas como AD-001 a AD-005 em `.specs/STATE.md`.
 6. **Ao vivo com dois links:** espectador só vê; equipe vê e manda mensagem.
 7. **Plataformas:** iOS e Android juntos.
 
-## 7. Roteiro: sete features, nesta ordem
+## 7. Roteiro: v1 intercalada com o Telemetry Engine (revisto em 06/10)
+
+Em 06/10 a Julia trouxe o documento "CockPit — Telemetria, IA, Visão Computacional e
+Arquitetura" e decidiu **intercalar**: a v1 já sai com parte das ideias. Em seguida
+fixou que **o `.xrk` do MyChron é importado direto no app**.
 
 | # | Feature (`.specs/features/`) | Cobre | Estado |
 |---|---|---|---|
-| 1 | `gravacao-sem-perda` | T1, T2, T5, T6, T8, T9, init do banco | spec escrita |
-| 2 | `tempos-honestos` | T3, T4, T7, T10, T11, T12 e a suíte de testes do núcleo | — |
-| 3 | `conta-e-backup` | conta opcional, backup/sync/restauração, migrar dado local para a conta, exclusão de conta | — |
-| 4 | `nuvem-segura` | RLS por dono, dois links ao vivo, ranking validado com denúncia e opção de não publicar, TTL agendado, canal da corrida por código | — |
-| 5 | `produto-limpo` | marca CockPit 219, Lendas fora, telas órfãs, demo atrás de `__DEV__`, toggles sem efeito, idioma, deps mortas | — |
-| 6 | `corrida-por-codigo` | pista real e posição pelo GPS | — |
-| 7 | `conformidade-e-ficha` | privacidade, termos, aviso de localização, permissões, privacy manifest, consentimento da IA, crash reporting, ficha das lojas, build de produção e teste fechado | — |
+| 1 | `gravacao-sem-perda` | T1, T2, T5, T6, T8, T9, init do banco | PASS (24/09), UAT pendente |
+| 2 | `tempos-honestos` | T3, T4, T7, T10, T11, T12, suíte do núcleo | PASS (03/10), UAT pendente |
+| 3 | `telemetry-frame` | Modelo interno único (§3 do documento): `source`, relógio monotônico e qualidade em cada amostra, e dado bruto preservado. Fica independente de MyChron, GoPro e Alfano | — |
+| 4 | `conta-e-backup` | Conta opcional; backup, sync e restauração dos frames brutos em blocos (§6); migração do dado local; exclusão de conta | — |
+| 5 | `nuvem-segura` | RLS por dono, dois links ao vivo, ranking validado, TTL | — |
+| 6 | `corner-intelligence` | Ponto de frenagem, entrada, ápice e saída por curva, mais o coach que só recomenda com evidência e mostra de onde veio a conclusão (Spikes F e H) | — |
+| 7 | `importar-xrk` | Importação do `.xrk` do MyChron/AiM **direto no app**, convertido em `TelemetryFrame` com `source: MYCHRON` (Spike C) | — |
+| 8 | `produto-limpo` | Marca, Lendas fora, telas órfãs, demo atrás de `__DEV__`, idioma, deps mortas | — |
+| 9 | `conformidade-e-ficha` | Privacidade, termos, localização, permissões, ficha, build de produção e teste fechado | — |
+
+**Fica para a v2:**
+- recorder nativo em Kotlin e Swift (Spike A);
+- GoPro com GPMF e vídeo sincronizado (Spike D);
+- EngineSense (Spike B);
+- Alfano;
+- Racing Line Model;
+- `corrida-por-codigo`, que saiu da v1 para compensar o atraso.
+
+Os spikes de GoPro e EngineSense podem andar como pesquisa em `cockpit-vision/`, fora do app.
+
+**Repositórios de referência** (conferidos em 06/10 na API do GitHub):
+- `gopro/gpmf-parser` (Apache-2.0) e `Kyree-Yang/road-sensor-logger` (MIT): podem ser usados.
+- `caezium/kart-telemetry-experiment`, `garysclaw/xrk-rs` e `xdw15c/esp32-adxl-fft-rpm`: não têm licença, então são só estudo, e o código não pode ser copiado.
+- `tobi/omatrack`: não existe (404).
 
 A `fix/live-perf` não entra por merge. As peças úteis (anti-crash, backup, as telas
 que "ficavam carregando pra sempre") são portadas dentro das features 1, 3 e 5.
