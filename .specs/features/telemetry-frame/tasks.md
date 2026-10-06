@@ -324,9 +324,9 @@ Criar também `test/golden.test.ts`, que roda o mesmo harness e compara com o `g
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: `assertUnit('RPM', 'rpm')` devolve `'rpm'`; `assertUnit('BRK', 'bar')` lança `UnitError` com `channel === 'BRK'` e `unit === 'bar'`.
-- [ ] Teste: cada unidade do catálogo é aceita.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste: `assertUnit('RPM', 'rpm')` devolve `'rpm'`; `assertUnit('BRK', 'bar')` lança `UnitError` com `channel === 'BRK'` e `unit === 'bar'`.
+- [x] Teste: cada unidade do catálogo é aceita.
+- [x] Gate: `npm test`, contagem registrada: 174 testes (170 + 4).
 
 **Tests**: unit
 **Gate**: quick
