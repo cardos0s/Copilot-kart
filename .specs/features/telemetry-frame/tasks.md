@@ -423,9 +423,9 @@ Criar também `test/golden.test.ts`, que roda o mesmo harness e compara com o `g
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste (sql.js): uma sessão `MYCHRON` com canais a 1, 20, 25 e 50 Hz, mais rpm, temperatura em °C e um GPS com 50 pontos sem fix (`fix: none`), é gravada e lida de volta com todos os valores e instantes iguais.
-- [ ] Teste: um canal em `bar` é recusado com `UnitError` que nomeia o canal.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste (sql.js): uma sessão `MYCHRON` com canais a 1, 20, 25 e 50 Hz, mais rpm, temperatura em °C e um GPS com 50 pontos sem fix (`fix: none`), é gravada e lida de volta com todos os valores e instantes iguais.
+- [x] Teste: um canal em `bar` é recusado com `UnitError` que nomeia o canal.
+- [x] Gate: `npm test`, contagem registrada: 195 testes (193 + 2).
 
 **Tests**: integration
 **Gate**: full
