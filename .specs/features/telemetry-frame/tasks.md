@@ -398,12 +398,12 @@ Criar também `test/golden.test.ts`, que roda o mesmo harness e compara com o `g
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste (sql.js): grava uma série em 10 blocos e lê de volta igual.
-- [ ] Teste (sql.js): uma janela `[tFrom, tTo]` lê só os blocos que cruzam a janela (conferido pelo número de blocos decodificados).
-- [ ] Teste (sql.js): uma falha no 2º bloco de um `appendBlocks` não deixa o 1º gravado.
-- [ ] Teste (sql.js): `deleteOwner` apaga séries e blocos daquele dono e não toca nos de outro.
-- [ ] Teste: um bloco corrompido é pulado na leitura, e a contagem de blocos pulados é devolvida.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste (sql.js): grava uma série em 10 blocos e lê de volta igual.
+- [x] Teste (sql.js): uma janela `[tFrom, tTo]` lê só os blocos que cruzam a janela (conferido pelo número de blocos decodificados).
+- [x] Teste (sql.js): uma falha no 2º bloco de um `appendBlocks` não deixa o 1º gravado.
+- [x] Teste (sql.js): `deleteOwner` apaga séries e blocos daquele dono e não toca nos de outro.
+- [x] Teste: um bloco corrompido é pulado na leitura, e a contagem de blocos pulados é devolvida.
+- [x] Gate: `npm test`, contagem registrada: 193 testes (187 + 6).
 
 **Tests**: integration
 **Gate**: full
