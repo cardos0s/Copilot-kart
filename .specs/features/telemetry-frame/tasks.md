@@ -263,10 +263,10 @@ A falha devolve o caminho exato da primeira diferença.
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: `{lapMs: 1000}` contra `{lapMs: 1000.0009}` passa; contra `1000.0011` falha com o caminho `lapMs`.
-- [ ] Teste: `{speed: 1}` contra `1 + 2e-9` falha; contra `1 + 5e-10` passa.
-- [ ] Teste: um inteiro diferente, uma string diferente e um array de outro tamanho falham, cada um com o caminho.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste: `{lapMs: 1000}` contra `{lapMs: 1000.0009}` passa; contra `1000.0011` falha com o caminho `lapMs`.
+- [x] Teste: `{speed: 1}` contra `1 + 2e-9` falha; contra `1 + 5e-10` passa.
+- [x] Teste: um inteiro diferente, uma string diferente e um array de outro tamanho falham, cada um com o caminho.
+- [x] Gate: `npm test`, contagem registrada: 167 testes (162 + 5).
 
 **Tests**: unit
 **Gate**: quick
