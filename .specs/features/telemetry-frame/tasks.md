@@ -375,10 +375,10 @@ Criar também `test/golden.test.ts`, que roda o mesmo harness e compara com o `g
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: no sql.js, criar uma tabela, inserir um BLOB `Uint8Array` e lê-lo de volta igual.
-- [ ] Teste: um erro dentro de `withExclusiveTransactionAsync` desfaz o que foi escrito nela.
-- [ ] `package.json` e `package-lock.json` atualizados; o `sql.js` não aparece em `dependencies`.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste: no sql.js, criar uma tabela, inserir um BLOB `Uint8Array` e lê-lo de volta igual.
+- [x] Teste: um erro dentro de `withExclusiveTransactionAsync` desfaz o que foi escrito nela.
+- [x] `package.json` e `package-lock.json` atualizados; o `sql.js` não aparece em `dependencies`.
+- [x] Gate: `npm test`, contagem registrada: 187 testes (184 + 3). sql.js 1.14.2 e @types/sql.js 1.4.11 em devDependencies.
 
 **Tests**: integration
 **Gate**: full
