@@ -294,10 +294,10 @@ Criar também `test/golden.test.ts`, que roda o mesmo harness e compara com o `g
 - Skill: NONE
 
 **Done when**:
-- [ ] `expected.json` commitado, gerado pelo script, com uma entrada por consumidor e por sessão.
-- [ ] `golden.test.ts` passa sobre o código atual.
-- [ ] Teste de sanidade: mudar 1 ms num tempo de volta dentro do teste (cópia local) faz a comparação falhar.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] `expected.json` commitado, gerado pelo script, com uma entrada por consumidor e por sessão.
+- [x] `golden.test.ts` passa sobre o código atual.
+- [x] Teste de sanidade: mudar 1 ms num tempo de volta dentro do teste (cópia local) faz a comparação falhar.
+- [x] Gate: `npm test`, contagem registrada: 170 testes (167 + 3). Fim da fase: `npm run typecheck` com os mesmos 8 erros da baseline.
 
 **Tests**: unit
 **Gate**: quick

@@ -1,0 +1,730 @@
+/**
+ * Harness da comparação de referência (TF-14, TF-15; design §10).
+ *
+ * Roda o pipeline ATUAL sobre as sessões brutas de `sessions.ts`, das entradas
+ * do sensor até cada consumidor puro, e devolve um objeto por consumidor e por
+ * sessão. `scripts/golden-capture.ts` grava o resultado em `expected.json`;
+ * `test/golden.test.ts` roda o mesmo harness e compara pelo `goldenCompare`.
+ *
+ * Determinístico: sem Date.now (o da demo é congelado) e sem Math.random.
+ * Guarda saídas derivadas, não o bruto. Séries longas viram uma subamostra
+ * (um a cada `k`, com `len`) mais somas; nada é arredondado.
+ *
+ * Os módulos que importam o banco, o perfil, o Supabase e o id do aparelho
+ * (nativos) entram como stubs no `require.cache` antes do `require`: assim o
+ * `loadCoachContext`, o `seedDemoSession` e o `publishSample` reais rodam em
+ * Node. Dois trechos do hook de gravação, que é React e não roda em Node, estão
+ * reproduzidos aqui: o pareamento da IMU (`flushImu`) e o poll de 500 ms que
+ * monta o `info` do ao vivo (`useLapRecorder.ts:456-668`).
+ */
+import {
+  analyzeLap,
+  cleanSamples,
+  matchLapToReference,
+  repairDegenerateTimestamps,
+  type LapRecord,
+  type MatchedLap,
+} from '../../src/lib/analysis';
+import { hardestBraking } from '../../src/lib/brakingPoint';
+import { analyzeCorners } from '../../src/lib/cornerAnalysis';
+import { detectCorners, type Corner } from '../../src/lib/corners';
+import { minSpeedPerCorner } from '../../src/lib/cornerSpeed';
+import {
+  buildReferenceLap,
+  polylineLength,
+  type GpsSample,
+  type ImuSample,
+  type ReferenceLap,
+} from '../../src/lib/geometry';
+import { compareLaps, type CompareResult, type LapTrace } from '../../src/lib/lapCompare';
+import { detectLaps, type OpenCross } from '../../src/lib/lapDetector';
+import { buildLapInsight } from '../../src/lib/lapInsight';
+import { buildPilotDna, type DnaSessionInput } from '../../src/lib/pilotDna';
+import { DeltaTracker } from '../../src/lib/realtimeDelta';
+import {
+  referenceFromLap,
+  referenceFromLayout,
+  sectorLapSamples,
+  sectorSplits,
+  type SectorSplits,
+} from '../../src/lib/sectors';
+import { msToKmh, peakSpeedInSectorMs, peakSpeedKmh, peakSpeedMs, peakSpeedMsOfLaps } from '../../src/lib/speed';
+import { speedColorRange } from '../../src/lib/speedRange';
+import { detectSpins } from '../../src/lib/spinDetector';
+import { lineFromLayout, type CrossPoint, type StartLine } from '../../src/lib/startLine';
+import { samplesToSilhouette } from '../../src/lib/trackSilhouette';
+import { countCorners } from '../../src/lib/trackShapeStats';
+import { saveReferenceLayout, sliceLaps, toLapRecord } from '../../src/recording/finishSession';
+import { deltaReferenceLap, lapOpened, liveLapClock } from '../../src/recording/liveLapClock';
+import { handleLocations } from '../../src/recording/locationHandler';
+import type { Session, TrackLayout } from '../../src/storage/db';
+import {
+  session1,
+  session2,
+  session3,
+  session4,
+  T0,
+  type ImuEvent,
+  type LocationBatch,
+  type RecordedSessionInput,
+} from './sessions';
+
+// ---------------------------------------------------------------------------
+// Stubs dos módulos nativos
+// ---------------------------------------------------------------------------
+
+type DbState = {
+  sessions: Session[];
+  laps: LapRecord[];
+  layouts: TrackLayout[];
+  savedLaps: LapRecord[];
+};
+
+const db: DbState = { sessions: [], laps: [], layouts: [], savedLaps: [] };
+const liveRows: Record<string, unknown>[] = [];
+
+function stub(path: string, exports: Record<string, unknown>): void {
+  const resolved = require.resolve(path);
+  require.cache[resolved] = { id: resolved, filename: resolved, loaded: true, exports } as NodeJS.Module;
+}
+
+stub('../../src/storage/db', {
+  getSession: async (id: string) => db.sessions.find((s) => s.id === id) ?? null,
+  getLapsForSession: async (id: string) => db.laps.filter((l) => l.sessionId === id),
+  getLayout: async (id: string) => db.layouts.find((l) => l.id === id) ?? null,
+  getDefaultLayoutForTrack: async () => null,
+  getTrackHistory: async () => [],
+  listSessions: async () => [],
+  createSession: async (input: Omit<Session, 'id' | 'startedAt' | 'recovered'>) => ({
+    ...input,
+    id: 'session_demo',
+    startedAt: Date.now(),
+    recovered: false,
+  }),
+  saveLap: async (lap: LapRecord) => {
+    db.savedLaps.push(lap);
+  },
+  deleteSession: async () => {},
+});
+stub('../../src/storage/profile', { getProfile: async () => null });
+stub('../../src/lib/deviceId', { getDeviceId: async () => 'golden-device' });
+stub('../../src/lib/supabase', {
+  getSupabase: () => ({
+    from: () => ({
+      insert: async (row: Record<string, unknown>) => {
+        liveRows.push(row);
+        return { error: null };
+      },
+    }),
+  }),
+});
+(globalThis as { __DEV__?: boolean }).__DEV__ = false;
+
+const { loadCoachContext } = require('../../src/lib/coachContext') as typeof import('../../src/lib/coachContext');
+const { seedDemoSession } = require('../../src/lib/demoSession') as typeof import('../../src/lib/demoSession');
+const { publishSample } = require('../../src/lib/liveSession') as typeof import('../../src/lib/liveSession');
+
+// ---------------------------------------------------------------------------
+// Subamostra e resumos
+// ---------------------------------------------------------------------------
+
+export const SAMPLE_K = 10;
+export const IMU_K = 50;
+export const MATCH_K = 10;
+/** Um a cada `POLL_K` polls é guardado (o estado do tracker corre em todos). */
+export const POLL_K = 4;
+
+type Series<T> = { len: number; k: number; items: T[] };
+
+function sub<T>(arr: T[], k: number): Series<T> {
+  return { len: arr.length, k, items: arr.filter((_, i) => i % k === 0) };
+}
+
+function sum(values: number[]): number {
+  let s = 0;
+  for (const v of values) s += v;
+  return s;
+}
+
+function gpsSeries(samples: GpsSample[], k = SAMPLE_K) {
+  return {
+    ...sub(samples, k),
+    first: samples[0] ?? null,
+    last: samples[samples.length - 1] ?? null,
+    latSum: sum(samples.map((p) => p.lat)),
+    lngSum: sum(samples.map((p) => p.lng)),
+    speedSum: sum(samples.map((p) => p.speed)),
+    accuracySum: sum(samples.map((p) => p.accuracy)),
+  };
+}
+
+function imuSeries(imu: ImuSample[] | undefined) {
+  if (!imu) return null;
+  return {
+    ...sub(imu, IMU_K),
+    first: imu[0] ?? null,
+    last: imu[imu.length - 1] ?? null,
+    gyroZSum: sum(imu.map((s) => s.gyro.z)),
+    accelXSum: sum(imu.map((s) => s.accel.x)),
+  };
+}
+
+function lapSummary(l: LapRecord) {
+  return {
+    id: l.id,
+    startedAt: l.startedAt,
+    durationMs: l.durationMs,
+    samples: gpsSeries(l.samples),
+    imu: imuSeries(l.imuSamples),
+  };
+}
+
+function matchedSummary(m: MatchedLap) {
+  return {
+    durationMs: m.durationMs,
+    referenceLength: m.referenceLength,
+    points: sub(m.points, MATCH_K),
+    sSum: sum(m.points.map((p) => p.s)),
+    speedSum: sum(m.points.map((p) => p.speed)),
+  };
+}
+
+function refSummary(ref: ReferenceLap) {
+  return {
+    totalLength: ref.totalLength,
+    origin: ref.origin,
+    pointCount: ref.points.length,
+    cumulativeDist: sub(ref.cumulativeDist, MATCH_K),
+  };
+}
+
+/** `tValues` do LapTrace é tempo (ms): sai como `tValuesMs` para a regra de tolerância. */
+function traceSummary(tr: LapTrace) {
+  return { sValues: tr.sValues, tValuesMs: tr.tValues, speedValues: tr.speedValues, durationMs: tr.durationMs };
+}
+
+function compareSummary(r: CompareResult) {
+  return {
+    aTotalMs: r.aTotalMs,
+    bTotalMs: r.bTotalMs,
+    totalDeltaMs: r.totalDeltaMs,
+    trackLengthM: r.trackLengthM,
+    traceA: traceSummary(r.traceA),
+    traceB: traceSummary(r.traceB),
+    trechos: r.trechos,
+    sectors: r.sectors,
+    matchedA: matchedSummary(r.matchedA),
+    matchedB: matchedSummary(r.matchedB),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Captura: lotes de fix → handleLocations; eventos da IMU → pares
+// ---------------------------------------------------------------------------
+
+async function captureGps(batches: LocationBatch[]): Promise<GpsSample[]> {
+  const buf = { samples: [] as GpsSample[] };
+  const clock = { trustsRaw: false, lastT: 0 };
+  for (const b of batches) {
+    await handleLocations(b.locations, {
+      buf,
+      journal: null,
+      uiActive: true,
+      stopLocationUpdates: async () => {},
+      now: () => b.arrivalAt,
+      clock,
+    });
+  }
+  return buf.samples;
+}
+
+/** O `flushImu` do hook: um par acelerômetro + giroscópio vira uma amostra no instante do 2º evento. */
+function pairImu(events: ImuEvent[]): ImuSample[] {
+  const out: ImuSample[] = [];
+  let accel: ImuSample['accel'] | null = null;
+  let gyro: ImuSample['gyro'] | null = null;
+  for (const e of events) {
+    if (e.kind === 'accel') accel = { x: e.x, y: e.y, z: e.z };
+    else gyro = { x: e.x, y: e.y, z: e.z };
+    if (accel && gyro) {
+      out.push({ t: e.at, accel, gyro });
+      accel = null;
+      gyro = null;
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// O poll do ao vivo (useLapRecorder.ts), em modo de referência 'best'
+// ---------------------------------------------------------------------------
+
+/** `crossSample` + `currentLapSamples` do hook (privados lá). */
+function currentLapSamples(all: GpsSample[], openCross: OpenCross | null): GpsSample[] | null {
+  if (!openCross) return null;
+  const t0 = openCross.t;
+  const cross: CrossPoint = openCross;
+  const first: GpsSample = {
+    t: cross.t,
+    lat: cross.lat,
+    lng: cross.lng,
+    speed: cross.speed,
+    accuracy: all[openCross.idx].accuracy,
+    synthetic: true,
+  };
+  return [first, ...all.slice(openCross.idx).filter((p) => p.t > t0)];
+}
+
+async function livePoll(input: RecordedSessionInput, line: StartLine | null, sectorRef: ReferenceLap | null) {
+  const buf = { samples: [] as GpsSample[] };
+  const clock = { trustsRaw: false, lastT: 0 };
+  const all: GpsSample[] = [];
+  const tracker = new DeltaTracker();
+  let lastOpen: OpenCross | null = null;
+  let lastLapCount = 0;
+  let loadedLapIdx: number | null = null;
+  let lastClosedLapSectors: SectorSplits | null = null;
+  const best: { s1: number | null; s2: number | null; s3: number | null } = { s1: null, s2: null, s3: null };
+  const polls: unknown[] = [];
+  const payloads: Record<string, unknown>[] = [];
+  let pollCount = 0;
+  let liveDeltaCount = 0;
+  let bi = 0;
+
+  for (let pollAt = input.t0 + 500; bi < input.batches.length; pollAt += 500) {
+    while (bi < input.batches.length && input.batches[bi].arrivalAt <= pollAt) {
+      const b = input.batches[bi];
+      await handleLocations(b.locations, {
+        buf,
+        journal: null,
+        uiActive: true,
+        stopLocationUpdates: async () => {},
+        now: () => b.arrivalAt,
+        clock,
+      });
+      bi++;
+    }
+    if (buf.samples.length > 0) {
+      all.push(...buf.samples);
+      buf.samples = [];
+    }
+    const last = all[all.length - 1];
+    const detection = detectLaps(all, { line });
+
+    let bestLapMs: number | null = null;
+    let bestLapIdx = -1;
+    for (let i = 0; i < detection.laps.length; i++) {
+      if (bestLapMs === null || detection.laps[i].durationMs < bestLapMs) {
+        bestLapMs = detection.laps[i].durationMs;
+        bestLapIdx = i;
+      }
+    }
+
+    if (lapOpened(lastOpen, detection.openCross)) tracker.resetLap();
+    lastOpen = detection.openCross;
+
+    if (detection.laps.length > lastLapCount) {
+      if (sectorRef) {
+        const sliced = sliceLaps(all, [], line);
+        const splits = sectorSplits(sliced[sliced.length - 1].samples, sectorRef);
+        lastClosedLapSectors = splits;
+        const { s1Ms: s1, s2Ms: s2, s3Ms: s3 } = splits;
+        if (s1 !== null && s2 !== null && s3 !== null) {
+          if (best.s1 === null || s1 < best.s1) best.s1 = s1;
+          if (best.s2 === null || s2 < best.s2) best.s2 = s2;
+          if (best.s3 === null || s3 < best.s3) best.s3 = s3;
+        }
+      }
+      loadedLapIdx = null;
+    }
+    lastLapCount = detection.laps.length;
+
+    if (bestLapIdx >= 0 && loadedLapIdx !== bestLapIdx) {
+      const refLap = deltaReferenceLap(all, line, bestLapIdx);
+      if (refLap) tracker.setReference(refLap.samples, refLap.durationMs);
+      loadedLapIdx = bestLapIdx;
+    } else if (bestLapIdx < 0 && tracker.hasReference()) {
+      tracker.clear();
+      loadedLapIdx = null;
+    }
+
+    const lapClock = last ? liveLapClock(detection, all, last.t, line) : null;
+    const currentLapElapsedMs = lapClock ? lapClock.elapsedMs : null;
+    const reading = last && currentLapElapsedMs !== null && tracker.hasReference()
+      ? tracker.compute(last, currentLapElapsedMs)
+      : null;
+
+    let currentSectorIdx: 0 | 1 | 2 | null = null;
+    let currentSectorElapsedMs: number | null = null;
+    let currentSectors: SectorSplits = { s1Ms: null, s2Ms: null, s3Ms: null };
+    if (last && line && sectorRef) {
+      const lapSamples = currentLapSamples(all, detection.openCross);
+      if (lapSamples) {
+        const splits = sectorSplits(lapSamples, sectorRef);
+        currentSectors = { s1Ms: splits.s1Ms, s2Ms: splits.s2Ms, s3Ms: null };
+        const lapStartT = lapSamples[0].t;
+        if (splits.s1Ms === null) {
+          currentSectorIdx = 0;
+          currentSectorElapsedMs = last.t - lapStartT;
+        } else if (splits.s2Ms === null) {
+          currentSectorIdx = 1;
+          currentSectorElapsedMs = last.t - (lapStartT + splits.s1Ms);
+        } else {
+          currentSectorIdx = 2;
+          currentSectorElapsedMs = last.t - (lapStartT + splits.s1Ms + splits.s2Ms);
+        }
+      }
+    }
+
+    pollCount++;
+    if (reading && reading.deltaMs !== null) liveDeltaCount++;
+    if ((pollCount - 1) % POLL_K !== 0) continue;
+    polls.push({
+      pollAt,
+      sampleCount: all.length,
+      lapsCompleted: detection.laps.length,
+      bestLapMs,
+      currentLapElapsedMs,
+      liveDeltaMs: reading ? reading.deltaMs : null,
+      reading,
+      currentSectorIdx,
+      currentSectorElapsedMs,
+      currentSectors,
+      lastClosedLapSectors,
+      bestSectors: { s1Ms: best.s1, s2Ms: best.s2, s3Ms: best.s3 },
+    });
+
+    // O que `app/recording.tsx` publica para o ponto, com o `info` deste poll.
+    if (last) {
+      liveRows.length = 0;
+      await publishSample('golden-live', {
+        t: last.t,
+        lat: last.lat,
+        lng: last.lng,
+        speed: last.speed,
+        heading: last.heading,
+        accuracy: last.accuracy,
+        lapNumber: detection.laps.length,
+        lapElapsedMs: currentLapElapsedMs ?? undefined,
+        bestLapMs: bestLapMs ?? null,
+        deltaVsRefMs: reading ? reading.deltaMs : null,
+        currentSectorIdx,
+        currentSectorElapsedMs,
+        s1Ms: currentSectors.s1Ms,
+        s2Ms: currentSectors.s2Ms,
+        s3Ms: currentSectors.s3Ms,
+        altitude: last.altitude ?? null,
+        altitudeAccuracy: last.altitudeAccuracy ?? null,
+      });
+      payloads.push(...liveRows);
+    }
+  }
+  return { pollCount, liveDeltaCount, k: POLL_K, polls, payloads };
+}
+
+// ---------------------------------------------------------------------------
+// Pipeline das telas sobre as voltas salvas
+// ---------------------------------------------------------------------------
+
+type GoldenSession = {
+  name: string;
+  session: Session;
+  laps: LapRecord[];
+  layout: TrackLayout | null;
+};
+
+function prepareLap(l: LapRecord): { lap: LapRecord; repaired: boolean } {
+  const cleaned = cleanSamples(l.samples, 10);
+  const { samples, repaired } = repairDegenerateTimestamps(cleaned, l.durationMs, l.startedAt);
+  return { lap: { ...l, samples }, repaired };
+}
+
+/** A tela da sessão (`app/session/[id].tsx`), com cada volta como a selecionada. */
+function sessionScreen(gs: GoldenSession) {
+  let anyRepaired = false;
+  const laps = gs.laps.map((l) => {
+    const p = prepareLap(l);
+    if (p.repaired) anyRepaired = true;
+    return p.lap;
+  });
+  let reference = gs.layout;
+  if (reference && reference.samples.length >= 2) {
+    const { samples, repaired } = repairDegenerateTimestamps(reference.samples, reference.durationMs);
+    if (repaired) {
+      anyRepaired = true;
+      reference = { ...reference, samples };
+    }
+  }
+  const saved: Record<string, GpsSample[]> = {};
+  for (const l of gs.laps) saved[l.id] = sectorLapSamples(l);
+
+  const sessionBest = laps.reduce((b, l) => (l.durationMs < b.durationMs ? l : b), laps[0]);
+  const useExternalRef = reference !== null;
+  const refSamples = useExternalRef ? reference!.samples : sessionBest.samples;
+  const refDurationMs = useExternalRef ? reference!.durationMs : sessionBest.durationMs;
+  const refLap = buildReferenceLap(refSamples, { lat: refSamples[0].lat, lng: refSamples[0].lng });
+  const corners = detectCorners(refLap);
+  const matchedRef = matchLapToReference(
+    { id: 'ref', sessionId: 'ref', startedAt: 0, durationMs: refDurationMs, samples: refSamples },
+    refLap,
+  );
+  const bestSaved = saved[sessionBest.id] ?? sessionBest.samples;
+  const sectorRef = (useExternalRef ? referenceFromLayout(reference!.samples) : null) ?? referenceFromLap({ samples: bestSaved });
+  const refSplits = sectorSplits(useExternalRef ? reference!.samples : bestSaved, sectorRef);
+
+  const perLap = laps.map((selected) => {
+    if (refSamples.length < 5 || selected.samples.length < 5) return { id: selected.id, kind: 'too-short' };
+    const isSelectedReference = !useExternalRef && selected.id === sessionBest.id;
+    const matchedCurrent = matchLapToReference(selected, refLap);
+    const analysis = !isSelectedReference ? analyzeLap(matchedCurrent, matchedRef, 20) : null;
+    const cornerMetrics = analyzeCorners(corners, refLap, matchedCurrent, isSelectedReference ? null : matchedRef);
+    const splits = sectorSplits(saved[selected.id] ?? selected.samples, sectorRef);
+    const peak = peakSpeedMs(selected.samples);
+    return {
+      id: selected.id,
+      kind: 'ok',
+      isSelectedReference,
+      matchedCurrent: matchedSummary(matchedCurrent),
+      analysis,
+      sectorPeaksKmh: (analysis?.sectors ?? []).map((sec) => msToKmh(peakSpeedInSectorMs(matchedCurrent, sec.sStart, sec.sEnd))),
+      cornerMetrics,
+      sectorSplits: splits,
+      peakSpeedMs: peak,
+      peakSpeedKmh: peakSpeedKmh(selected.samples),
+      hardestBraking: hardestBraking(selected.samples),
+      speedColorRange: speedColorRange(selected.samples),
+    };
+  });
+
+  return {
+    approxTimestamps: anyRepaired,
+    sessionBestId: sessionBest.id,
+    useExternalRef,
+    refDurationMs,
+    refPeakKmh: peakSpeedKmh(refSamples),
+    refLap: refSummary(refLap),
+    corners,
+    matchedReference: matchedSummary(matchedRef),
+    refSectorSplits: refSplits,
+    laps: perLap,
+  };
+}
+
+/** O mapa detalhado (`app/track-map.tsx`): só existe com traçado. */
+function trackMapScreen(laps: LapRecord[], layout: TrackLayout) {
+  const cleanedRef = cleanSamples(layout.samples, 10);
+  const { samples: refSamples } = repairDegenerateTimestamps(cleanedRef, layout.durationMs);
+  const refLap = buildReferenceLap(refSamples, { lat: refSamples[0].lat, lng: refSamples[0].lng });
+  const corners = detectCorners(refLap);
+  const sectorRef = referenceFromLayout(layout.samples);
+  return laps.map((lap) => {
+    const { lap: prepared } = prepareLap(lap);
+    const matched = matchLapToReference(prepared, refLap);
+    return {
+      id: lap.id,
+      corners,
+      cornerSpeeds: minSpeedPerCorner(corners, matched),
+      sectorSplits: sectorRef ? sectorSplits(sectorLapSamples(lap), sectorRef) : null,
+      thirdPeaksKmh: [0, 1, 2].map((i) =>
+        msToKmh(peakSpeedInSectorMs(matched, (i * refLap.totalLength) / 3, ((i + 1) * refLap.totalLength) / 3)),
+      ),
+    };
+  });
+}
+
+/** A comparação de voltas (`app/lap-compare.tsx`), que exige traçado. */
+function lapCompareScreen(savedA: LapRecord, savedB: LapRecord, layout: TrackLayout) {
+  const { samples: refSamples } = repairDegenerateTimestamps(layout.samples, layout.durationMs);
+  const refLap = buildReferenceLap(refSamples, { lat: refSamples[0].lat, lng: refSamples[0].lng });
+  const corners = detectCorners(refLap);
+  const result = compareLaps(prepareLap(savedA).lap, prepareLap(savedB).lap, refLap, corners, { a: savedA, b: savedB });
+  return { a: savedA.id, b: savedB.id, result: compareSummary(result) };
+}
+
+async function coachContexts(gs: GoldenSession) {
+  db.sessions = [gs.session];
+  db.laps = gs.laps;
+  db.layouts = gs.layout ? [gs.layout] : [];
+  const out = [];
+  for (const lap of gs.laps) {
+    const r = await loadCoachContext(gs.session.id, lap.id);
+    if (r.kind !== 'ok') {
+      out.push({ id: lap.id, kind: r.kind });
+      continue;
+    }
+    const c = r.context;
+    out.push({
+      id: lap.id,
+      kind: r.kind,
+      lapSampleCount: c.lap.samples.length,
+      lapSamples: gpsSeries(c.lap.samples),
+      refDurationMs: c.refDurationMs,
+      analysis: c.analysis,
+      cornerMetrics: c.cornerMetrics,
+      trackName: c.trackName,
+      pilot: c.pilot,
+      history: c.history,
+    });
+  }
+  return out;
+}
+
+function sessionRow(id: string, trackName: string, startedAt: number, layoutId: string | null): Session {
+  return {
+    id,
+    trackName,
+    kart: null,
+    notes: null,
+    startedAt,
+    weather: 'dry',
+    trackId: null,
+    mode: 'race',
+    layoutId,
+    kartSetupId: null,
+    recovered: false,
+  };
+}
+
+function detectionSummary(samples: GpsSample[], line: StartLine | null) {
+  const d = detectLaps(samples, { line });
+  return {
+    movingStartIdx: d.movingStartIdx,
+    startFinishLine: d.startFinishLine,
+    laps: d.laps,
+    openCross: d.openCross,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Tudo
+// ---------------------------------------------------------------------------
+
+const DEMO_NOW = T0 + 20_000_000;
+
+export type GoldenOutput = Record<string, Record<string, unknown>>;
+
+export async function runGolden(): Promise<GoldenOutput> {
+  const s1 = session1();
+  const s2 = session2();
+  const layout = session3();
+  const legacy = session4();
+  const layoutLine = lineFromLayout(layout.samples);
+  const layoutRef = referenceFromLayout(layout.samples);
+
+  // Captura: os mesmos lotes que a tarefa de localização recebe.
+  const s1Gps = await captureGps(s1.batches);
+  const s1Imu = pairImu(s1.imuEvents);
+  const s2Gps = await captureGps(s2.batches);
+
+  // Voltas salvas: sliceLaps + toLapRecord, como no "Encerrar".
+  const s1Laps = sliceLaps(s1Gps, s1Imu, null).map((l, i) => toLapRecord(l, 'session_golden_s1', i));
+  const s1LayoutLaps = sliceLaps(s1Gps, s1Imu, layoutLine).map((l, i) => toLapRecord(l, 'session_golden_s1_layout', i));
+  const s2Laps = sliceLaps(s2Gps, [], null).map((l, i) => toLapRecord(l, 'session_golden_s2', i));
+
+  // Sessão demo pelo caminho real do seed, com o relógio congelado.
+  db.savedLaps = [];
+  const realNow = Date.now;
+  Date.now = () => DEMO_NOW;
+  try {
+    await seedDemoSession();
+  } finally {
+    Date.now = realNow;
+  }
+  const demoLaps = db.savedLaps.slice();
+
+  const sessions: GoldenSession[] = [
+    { name: 's1', session: sessionRow('session_golden_s1', 'Golden', T0, null), laps: s1Laps, layout: null },
+    {
+      name: 's1Layout',
+      session: sessionRow('session_golden_s1_layout', 'Golden', T0, layout.id),
+      laps: s1LayoutLaps,
+      layout,
+    },
+    { name: 's2', session: sessionRow('session_golden_s2', 'Leandro Merlo', s2.t0, null), laps: s2Laps, layout: null },
+    { name: 'demo', session: sessionRow('session_demo', 'Leandro Merlo', DEMO_NOW, null), laps: demoLaps, layout: null },
+    { name: 's4', session: sessionRow(legacy.sessionId, 'Golden', legacy.startedAt, null), laps: [legacy], layout: null },
+  ];
+  const byName = (n: string) => sessions.find((s) => s.name === n)!;
+
+  const out: GoldenOutput = {};
+  const put = (consumer: string, session: string, value: unknown) => {
+    out[consumer] ??= {};
+    out[consumer][session] = value;
+  };
+
+  // Captura e detecção.
+  put('handleLocations', 's1', gpsSeries(s1Gps));
+  put('handleLocations', 's2', gpsSeries(s2Gps));
+  put('handleLocations', 's1HeadTimesMs', s1Gps.slice(0, 300).map((p) => p.t));
+  put('imuPairing', 's1', imuSeries(s1Imu));
+  put('detectLaps', 's1', detectionSummary(s1Gps, null));
+  put('detectLaps', 's1Layout', detectionSummary(s1Gps, layoutLine));
+  put('detectLaps', 's2', detectionSummary(s2Gps, null));
+
+  for (const gs of sessions) {
+    put('lapRecords', gs.name, gs.laps.map(lapSummary));
+    put('sessionScreen', gs.name, sessionScreen(gs));
+    put('peakSpeedMsOfLaps', gs.name, peakSpeedMsOfLaps(gs.laps));
+    put('buildLapInsight', gs.name, (() => {
+      const r = buildLapInsight(gs.laps);
+      return r && { ...r, best: { id: r.best.id, durationMs: r.best.durationMs, sampleCount: r.best.samples.length } };
+    })());
+    put('detectSpins', gs.name, gs.laps.map((l) => detectSpins(l.samples, l.imuSamples)));
+    put('buildPilotDna', gs.name, buildPilotDna([{ trackName: gs.session.trackName, startedAt: gs.session.startedAt, laps: gs.laps }]));
+    put('coachContext', gs.name, await coachContexts(gs));
+    const bestLap = gs.laps.reduce((b, l) => (l.durationMs < b.durationMs ? l : b), gs.laps[0]);
+    put('countCorners', gs.name, countCorners(bestLap.samples));
+    put('samplesToSilhouette', gs.name, samplesToSilhouette(bestLap.samples));
+    put('polylineLength', gs.name, gs.laps.map((l) => polylineLength(l.samples)));
+  }
+
+  const dnaInputs: DnaSessionInput[] = ['demo', 's2', 's1', 's4'].map((n) => {
+    const gs = byName(n);
+    return { trackName: gs.session.trackName, startedAt: gs.session.startedAt, laps: gs.laps };
+  });
+  put('buildPilotDna', 'all', buildPilotDna(dnaInputs));
+
+  // Traçado (sessão 3): linha, régua, curvas, silhueta, e o traçado novo que
+  // o "Encerrar" de uma gravação de referência salvaria a partir da sessão 1.
+  put('lineFromLayout', 's3', layoutLine);
+  put('referenceFromLayout', 's3', layoutRef && refSummary(layoutRef));
+  put('countCorners', 's3', countCorners(layout.samples));
+  put('samplesToSilhouette', 's3', samplesToSilhouette(layout.samples));
+  put('polylineLength', 's3', polylineLength(layout.samples));
+  put('sectorSplits', 's3', layoutRef && sectorSplits(layout.samples, layoutRef));
+  const savedLayouts: TrackLayout[] = [];
+  const newLayout = await saveReferenceLayout(
+    {
+      recordingId: 'golden_s1',
+      trackId: 'golden-track',
+      layoutName: null,
+      laps: sliceLaps(s1Gps, s1Imu, null),
+      recordedAt: s1.phases.end,
+    },
+    { listLayoutsForTrack: async () => [], saveLayout: async (l) => void savedLayouts.push(l) },
+  );
+  put('saveReferenceLayout', 's1', { ...newLayout, samples: gpsSeries(newLayout.samples) });
+
+  // Mapa detalhado e comparação: só com traçado.
+  put('trackMapScreen', 's1Layout', trackMapScreen(s1LayoutLaps, layout));
+  put('trackMapScreen', 's4', trackMapScreen([legacy], layout));
+  const sorted = [...s1LayoutLaps].sort((a, b) => a.durationMs - b.durationMs);
+  const spinLap = s1LayoutLaps[3];
+  put('compareLaps', 's1Layout', [
+    lapCompareScreen(sorted[1], sorted[0], layout),
+    lapCompareScreen(spinLap, sorted[0], layout),
+  ]);
+  put('compareLaps', 's4', [lapCompareScreen(legacy, sorted[0], layout)]);
+
+  // Ao vivo: a sequência do DeltaTracker e o payload de live_samples.
+  put('livePoll', 's1', await livePoll(s1, null, null));
+  put('livePoll', 's1Layout', await livePoll(s1, layoutLine, layoutRef));
+  put('livePoll', 's2', await livePoll(s2, null, null));
+
+  return out;
+}
+
+/** O que vai para o JSON: undefined some, como no arquivo gravado. */
+export function toJson(value: unknown): unknown {
+  return JSON.parse(JSON.stringify(value));
+}
