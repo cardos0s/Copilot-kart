@@ -1,6 +1,6 @@
 /**
  * Comparador do golden (TF-14, T5), pela regra "Mesmos números" da spec:
- * inteiros e textos iguais; tempo (`t`, `*Ms`, `*At`, `tMs`) até 0,001; os
+ * inteiros e textos iguais; tempo (`t`, `*Ms`, `*_ms`, `*At`, `tMs`) até 0,001; os
  * demais reais até 1e-9. A falha traz o caminho da primeira diferença.
  */
 import { test } from 'node:test';
@@ -23,6 +23,13 @@ test('goldenCompare: as chaves t, tMs e *At também são tempo', () => {
   // Elemento de array herda a chave do array.
   assert.equal(goldenCompare({ lapsMs: [1, 2] }, { lapsMs: [1, 2.0005] }), null);
   assert.equal(goldenCompare({ lapsMs: [1, 2] }, { lapsMs: [1, 2.002] })?.path, 'lapsMs[1]');
+});
+
+test('goldenCompare: coluna snake_case terminada em _ms (live_samples) também é tempo', () => {
+  assert.equal(goldenCompare({ lap_elapsed_ms: 1000 }, { lap_elapsed_ms: 1000.0009 }), null);
+  const diff = goldenCompare({ row: { lap_elapsed_ms: 1000 } }, { row: { lap_elapsed_ms: 1000.0011 } });
+  assert.ok(diff);
+  assert.equal(diff.path, 'row.lap_elapsed_ms');
 });
 
 test('goldenCompare: real que não é tempo aceita até 1e-9', () => {

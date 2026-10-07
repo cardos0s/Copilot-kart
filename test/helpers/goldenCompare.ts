@@ -2,7 +2,7 @@
  * Comparação de referência pela regra de tolerância da spec ("Mesmos números",
  * TF-14):
  * - inteiros, textos, booleanos e null: iguais;
- * - grandezas de tempo (chave `t`, `tMs`, terminada em `Ms` ou em `At`): até 0,001;
+ * - grandezas de tempo (chave `t`, `tMs`, terminada em `Ms`, `_ms` ou `At`): até 0,001;
  * - os demais números reais: até 1e-9.
  *
  * Elemento de array herda a chave do array (`lapsMs[2]` é tempo). Devolve a
@@ -16,7 +16,7 @@ export type GoldenDiff = { path: string; reason: string };
 
 export function isTimeKey(key: string | null): boolean {
   if (key === null) return false;
-  return key === 't' || key === 'tMs' || key.endsWith('Ms') || key.endsWith('At');
+  return key === 't' || key === 'tMs' || key.endsWith('Ms') || key.endsWith('_ms') || key.endsWith('At');
 }
 
 function describe(v: unknown): string {
