@@ -17,7 +17,11 @@ import {
 } from './finishSession';
 import type { RecordingJournal } from './journal';
 
-/** Abaixo disso não houve dado para uma sessão, e o diário é descartado com as séries. */
+/**
+ * Pontos de GPS (os de análise, ≤ 30 m) abaixo dos quais não houve dado para uma
+ * sessão: a gravação, inclusive a sem nenhuma fix e só com IMU, é descartada com
+ * todo o bruto, como antes desta feature (edge ajustado em 07/10).
+ */
 export const MIN_SAMPLES = 30;
 
 export type FinishRecordingMeta = Omit<RecordedSessionInput, 'laps' | 'recovered'>;

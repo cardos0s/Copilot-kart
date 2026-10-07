@@ -97,16 +97,25 @@ export function normalizeId(v: string | null | undefined): string | null {
   return v ? v : null;
 }
 
+/**
+ * A volta como vai para o banco: a janela sobre o bruto (o que `laps` guarda),
+ * mais os frames dela para quem consome a volta logo depois do "Encerrar"
+ * (pós-salvamento, traçado). Os frames não são copiados: as séries já são da sessão.
+ */
 export function toLapRecord(lap: RecordedLap, sessionId: string, index: number): LapRecord {
-  return {
+  const record: LapRecord = {
     id: `${sessionId}_lap_${index + 1}`,
     sessionId,
     samples: lap.samples,
     startedAt: lap.startedAt,
     durationMs: lap.durationMs,
-    // IMU vazia (sensor falhou, app sem foreground) não é gravada.
+    // IMU vazia (sensor falhou, app sem foreground) fica de fora.
     imuSamples: lap.imuSamples.length > 0 ? lap.imuSamples : undefined,
   };
+  if (lap.window) record.window = lap.window;
+  if (lap.gps) record.gps = lap.gps;
+  if (lap.imu && lap.imu.length > 0) record.imu = lap.imu;
+  return record;
 }
 
 export type RecordedSessionRow = Session & { recovered: boolean };

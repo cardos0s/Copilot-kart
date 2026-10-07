@@ -32,6 +32,14 @@ export type LapRecord = {
    *  GPS samples. Opcional pra retro-compatibilidade — voltas antigas
    *  gravadas sem IMU ficam undefined. */
   imuSamples?: import('./geometry').ImuSample[];
+  /**
+   * A janela da volta sobre o bruto da sessão (AD-007) e os frames dela. Ausentes
+   * nas voltas lidas do formato antigo (até a T22). Transição (até a T46):
+   * `samples` e `imuSamples` apontam para os mesmos arrays de `gps` e `imu`.
+   */
+  window?: import('../telemetry/frame').LapWindow;
+  gps?: import('../telemetry/frame').GpsFrame[];
+  imu?: import('../telemetry/frame').ImuFrame[];
 };
 
 export type MatchedLap = {

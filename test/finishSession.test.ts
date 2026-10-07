@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import type { GpsSample, ImuSample } from '../src/lib/geometry';
+import type { GpsFrame } from '../src/telemetry/frame';
 import { detectLaps } from '../src/lib/lapDetector';
 import { lineFromLayout } from '../src/lib/startLine';
 import {
@@ -20,13 +21,21 @@ import { generateLapSamples, generateTimedLaps } from './helpers/syntheticTrack'
 
 const T0 = 1_700_000_000_000;
 
+/** Voltas como o `stop()` devolve desde a T19: a janela e os frames dela. */
 function fakeLaps(n: number): RecordedLap[] {
-  return Array.from({ length: n }, (_, i) => ({
-    samples: [{ t: T0 + i * 60_000, lat: -14.86, lng: -40.84, speed: 12, accuracy: 4 }],
-    imuSamples: [],
-    durationMs: 55_000 + i,
-    startedAt: T0 + i * 60_000,
-  }));
+  return Array.from({ length: n }, (_, i) => {
+    const cross = (t: number) => ({ t, lat: -14.86, lng: -40.84, speed: 12, accuracy: 4 });
+    const gps: GpsFrame[] = [{ kind: 'gps', source: 'PHONE', t: i * 60_000, lat: -14.86, lng: -40.84, speed: 12, accuracy: 4, fix: 'unknown' }];
+    return {
+      window: { kind: 'cross' as const, start: cross(i * 60_000), end: cross(i * 60_000 + 55_000 + i) },
+      gps,
+      imu: [],
+      samples: gps as GpsSample[],
+      imuSamples: [],
+      durationMs: 55_000 + i,
+      startedAt: T0 + i * 60_000,
+    };
+  });
 }
 
 function input(over: Partial<RecordedSessionInput> = {}): RecordedSessionInput {
@@ -60,6 +69,8 @@ test('saveRecordedSession: salvar duas vezes com o mesmo recordingId deixa 1 ses
   assert.equal(repo.sessions[0].id, 'session_rec_1_abc');
   assert.equal(repo.laps.length, 4);
   assert.ok(repo.laps.every((l) => l.sessionId === 'session_rec_1_abc'));
+  // Desde a T20 a volta salva leva a janela sobre o bruto (TF-11).
+  assert.deepEqual(repo.laps.map((l) => l.window), input().laps.map((l) => l.window));
   assert.equal(first.session.id, 'session_rec_1_abc');
   assert.equal(second.session.id, 'session_rec_1_abc');
 });

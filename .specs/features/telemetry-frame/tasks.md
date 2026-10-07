@@ -661,10 +661,10 @@ A simulação passa a emitir `GpsFrame` pelo `sessionClock`, com `t` estritament
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste (sql.js): uma gravação de 3 voltas salva 3 linhas em `laps` com `start_*`/`end_*`, e o número de frames das séries é o mesmo de antes do "Encerrar", incluindo paddock e box.
-- [ ] Teste (sql.js): uma gravação só com IMU e sem nenhuma fix, e outra com 29 pontos de GPS, terminam sem sessão salva e sem nenhuma linha em `telemetry_series`/`telemetry_blocks`; com 30 pontos, a sessão é salva.
-- [ ] `test/finishSession.test.ts`, `test/finishRecording.test.ts` e `test/helpers/fakeSessionRepo.ts` migrados, com as mesmas asserções de comportamento.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste (sql.js): uma gravação de 3 voltas salva 3 linhas em `laps` com `start_*`/`end_*`, e o número de frames das séries é o mesmo de antes do "Encerrar", incluindo paddock e box.
+- [x] Teste (sql.js): uma gravação só com IMU e sem nenhuma fix, e outra com 29 pontos de GPS, terminam sem sessão salva e sem nenhuma linha em `telemetry_series`/`telemetry_blocks`; com 30 pontos, a sessão é salva.
+- [x] `test/finishSession.test.ts`, `test/finishRecording.test.ts` e `test/helpers/fakeSessionRepo.ts` migrados, com as mesmas asserções de comportamento (o `fakeSessionRepo` não precisou de mudança: ele guarda o `LapRecord` como vem).
+- [x] Gate: `npm test`, contagem registrada: 225 testes (223 + 2).
 
 **Tests**: integration
 **Gate**: full
