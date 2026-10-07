@@ -761,9 +761,10 @@ A simulação passa a emitir `GpsFrame` pelo `sessionClock`, com `t` estritament
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste (sql.js): depois de excluir, não sobra nenhuma linha em `laps`, `telemetry_series` nem `telemetry_blocks` daquela sessão, e os de outra sessão ficam intactos.
-- [ ] Teste: uma falha no meio desfaz a exclusão inteira.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste (sql.js): depois de excluir, não sobra nenhuma linha em `laps`, `telemetry_series` nem `telemetry_blocks` daquela sessão, e os de outra sessão ficam intactos.
+- [x] Teste: uma falha no meio desfaz a exclusão inteira.
+- [x] O SQL fica em `sqlSessionRepo.deleteSessionOn` (testável no sql.js); `db.ts` `deleteSession` delega (teste estático).
+- [x] Gate: `npm test`, contagem registrada: 241 testes (238 + 3).
 
 **Tests**: integration
 **Gate**: full

@@ -10,6 +10,8 @@
 import type { LapRecord } from '../lib/analysis';
 import type { RecordedSessionRow, SessionRepo, SessionRepoTx } from '../recording/finishSession';
 import type { BoundaryCross, LapWindow } from '../telemetry/frame';
+import { deleteOwner } from '../telemetry/telemetryStore';
+import { sessionOwner } from './lapRepo';
 import type { SqlConn, SqlTx, SqlValue } from './sqlConn';
 
 /** Versão do formato das voltas que a sessão gravada aqui já tem (v5: janelas). */
@@ -83,4 +85,18 @@ export function sqlSessionRepo(conn: () => Promise<SqlConn>): SessionRepo {
       });
     },
   };
+}
+
+/**
+ * Exclui a sessão com o bruto dela (TF-09): voltas, séries e blocos, e a própria
+ * sessão, numa transação exclusiva. As foreign keys estão desligadas neste banco,
+ * então nada sai em cascata: cada tabela é apagada aqui. PB, chat e conquistas
+ * referenciam a sessão por texto e ficam, como antes.
+ */
+export async function deleteSessionOn(conn: SqlConn, sessionId: string): Promise<void> {
+  await conn.withExclusiveTransactionAsync(async (tx) => {
+    await tx.runAsync('DELETE FROM laps WHERE session_id = ?', sessionId);
+    await deleteOwner(tx, sessionOwner(sessionId));
+    await tx.runAsync('DELETE FROM sessions WHERE id = ?', sessionId);
+  });
 }

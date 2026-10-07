@@ -8,6 +8,7 @@ import * as layoutRepo from './layoutRepo';
 import type { TrackLayout } from './layoutRepo';
 import { migrateV4, migrateV5Schema, migrationExecutorFrom } from './migrations';
 import { expoSqlConn } from './sqlConn';
+import { deleteSessionOn } from './sqlSessionRepo';
 
 // A promise da inicialização é memoizada: chamadas simultâneas na abertura
 // esperam o schema e as migrações, e ninguém recebe o banco pela metade.
@@ -448,15 +449,9 @@ export async function getLayoutStats(trackId: string): Promise<Map<string, Layou
   return map;
 }
 
+/** Voltas, séries, blocos e a sessão numa transação exclusiva (`sqlSessionRepo.deleteSessionOn`). */
 export async function deleteSession(id: string): Promise<void> {
-  const d = await db();
-  // FK ON DELETE CASCADE existe no schema, mas PRAGMA foreign_keys não tá
-  // explicitamente ON neste DB — então deletes em cascade NÃO disparam
-  // automaticamente. Deletamos manualmente em ordem (filhos antes do pai)
-  // pra garantir que não fica lap órfã. PBs/achievements referenciam por
-  // string session_id e ficam — não impactam o histórico visível.
-  await d.runAsync('DELETE FROM laps WHERE session_id = ?', id);
-  await d.runAsync('DELETE FROM sessions WHERE id = ?', id);
+  await deleteSessionOn(await appSqlConn(), id);
 }
 
 // =========================
