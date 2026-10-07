@@ -735,11 +735,13 @@ A simulação passa a emitir `GpsFrame` pelo `sessionClock`, com `t` estritament
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste (sql.js): um traçado salvo a partir de uma volta devolve frames com `frames[0]` sintético, e `lineFromLayout` dá a mesma linha que dava com as amostras da volta.
-- [ ] Teste (sql.js): "ATUALIZAR REFERÊNCIA" cria o traçado novo com séries próprias e herda o PB na mesma transação.
-- [ ] Teste: excluir a sessão de origem não muda os frames do traçado.
-- [ ] `test/promoteReferenceLayout.test.ts` reescrito como teste de integração no sql.js, no lugar do regex sobre o fonte, conferindo as mesmas três escritas na mesma transação.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste (sql.js): um traçado salvo a partir de uma volta devolve frames com `frames[0]` sintético, e `lineFromLayout` dá a mesma linha que dava com as amostras da volta.
+- [x] Teste (sql.js): "ATUALIZAR REFERÊNCIA" cria o traçado novo com séries próprias e herda o PB na mesma transação.
+- [x] Teste: excluir a sessão de origem não muda os frames do traçado.
+- [x] `test/promoteReferenceLayout.test.ts` reescrito como teste de integração no sql.js, no lugar do regex sobre o fonte, conferindo as mesmas três escritas na mesma transação (uma falha no PB desfaz as outras duas). O cabeçalho nomeia a asserção que ele substitui.
+- [x] `deleteLayout` apaga também a série do traçado. `track_references` é lido do dono `reference:<track_id>`. O traçado sem janela e a referência sem série saem do JSON: fallback transitório até a v5b/v5c (T43/T44).
+- [x] Golden: o `saveReferenceLayout` do harness grava pelo `layoutRepo` no sql.js e lê de volta da série do traçado; o `expected.json` não mudou.
+- [x] Gate: `npm test`, contagem registrada: 238 testes (232 + 5 de `layoutRepo.test.ts` + 2 de `promoteReferenceLayout.test.ts` − 1 estático substituído).
 
 **Tests**: integration
 **Gate**: full

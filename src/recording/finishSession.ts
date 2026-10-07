@@ -225,6 +225,11 @@ export async function saveReferenceLayout(
     recordedAt: input.recordedAt,
     isDefault: isFirst,
   };
+  // A janela e os frames da volta: o repositório copia os frames para a série do traçado (TF-19).
+  if (best.window && best.gps) {
+    layout.window = best.window;
+    layout.gps = best.gps;
+  }
   await repo.saveLayout(layout);
   return layout;
 }

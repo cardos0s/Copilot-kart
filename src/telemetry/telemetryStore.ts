@@ -65,19 +65,22 @@ export async function createSeries(conn: SqlTx, meta: SeriesMeta): Promise<void>
 
 /** Grava os blocos numa transação só: ou entram todos, ou nenhum. */
 export async function appendBlocks(conn: SqlConn, blocks: BlockRow[]): Promise<void> {
-  await conn.withExclusiveTransactionAsync(async (tx) => {
-    for (const b of blocks) {
-      await tx.runAsync(
-        'INSERT INTO telemetry_blocks (series_id, seq, n, t_first, t_last, payload) VALUES (?, ?, ?, ?, ?, ?)',
-        b.seriesId,
-        b.seq,
-        b.n,
-        b.tFirst,
-        b.tLast,
-        b.payload
-      );
-    }
-  });
+  await conn.withExclusiveTransactionAsync((tx) => insertBlocks(tx, blocks));
+}
+
+/** Grava os blocos dentro da transação de quem chama. */
+export async function insertBlocks(tx: SqlTx, blocks: BlockRow[]): Promise<void> {
+  for (const b of blocks) {
+    await tx.runAsync(
+      'INSERT INTO telemetry_blocks (series_id, seq, n, t_first, t_last, payload) VALUES (?, ?, ?, ?, ?, ?)',
+      b.seriesId,
+      b.seq,
+      b.n,
+      b.tFirst,
+      b.tLast,
+      b.payload
+    );
+  }
 }
 
 type SeriesRow = {

@@ -20,11 +20,8 @@ export type LapSummary = { id: string; startedAt: number; durationMs: number };
 
 export type LoadLapsOptions = { imu?: boolean };
 
-type LapRow = {
-  id: string;
-  session_id: string;
-  started_at: number;
-  duration_ms: number;
+/** As colunas de janela, como `laps` e `track_layouts` guardam. */
+export type WindowRow = {
   window_kind: 'cross' | 'index' | 'none' | null;
   from_idx: number | null;
   to_idx: number | null;
@@ -38,6 +35,13 @@ type LapRow = {
   end_lng: number | null;
   end_speed: number | null;
   end_acc: number | null;
+};
+
+type LapRow = WindowRow & {
+  id: string;
+  session_id: string;
+  started_at: number;
+  duration_ms: number;
   samples_json: string;
   imu_samples_json: string | null;
 };
@@ -51,7 +55,8 @@ function cross(t: number | null, lat: number | null, lng: number | null, speed: 
   return { t: t!, lat: lat!, lng: lng!, speed: speed!, accuracy: acc! };
 }
 
-function windowOf(r: LapRow): LapWindow | null {
+/** A janela guardada na linha; `null` quando ainda não há janela (formato antigo, até a v5b). */
+export function windowOf(r: WindowRow): LapWindow | null {
   switch (r.window_kind) {
     case 'cross':
       return {

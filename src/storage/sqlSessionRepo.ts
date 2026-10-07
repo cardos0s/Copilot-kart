@@ -25,7 +25,8 @@ function crossColumns(c: BoundaryCross | null): SqlValue[] {
   return c ? [c.t, c.lat, c.lng, c.speed, c.accuracy] : [null, null, null, null, null];
 }
 
-function windowColumns(w: LapWindow | undefined): SqlValue[] {
+/** As colunas de janela (`window_kind` … `end_acc`), na ordem de `laps` e `track_layouts`. Sem janela, tudo nulo. */
+export function windowColumns(w: LapWindow | undefined): SqlValue[] {
   if (!w) return [null, null, null, ...crossColumns(null), ...crossColumns(null)];
   if (w.kind === 'cross') return ['cross', null, null, ...crossColumns(w.start), ...crossColumns(w.end)];
   if (w.kind === 'index') return ['index', w.from, w.to, ...crossColumns(null), ...crossColumns(null)];

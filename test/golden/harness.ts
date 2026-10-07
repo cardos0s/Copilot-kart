@@ -16,6 +16,8 @@
  * Node. Tudo passa pelo código do app: a captura (`handleLocations` com o relógio
  * da sessão e `createImuCapture`), as voltas (`sliceLapWindows` e `lapFrames`) e
  * o poll de 500 ms do ao vivo (`createLivePoll`, o mesmo do hook de gravação).
+ * O traçado novo do "Encerrar" de um reconhecimento passa pelo banco (sql.js): é
+ * gravado e lido de volta da série dele pelo `layoutRepo`.
  */
 import {
   analyzeLap,
@@ -54,7 +56,13 @@ import { detectSpins } from '../../src/lib/spinDetector';
 import { lineFromLayout, type CrossPoint, type StartLine } from '../../src/lib/startLine';
 import { samplesToSilhouette } from '../../src/lib/trackSilhouette';
 import { countCorners } from '../../src/lib/trackShapeStats';
-import { saveReferenceLayout, sliceLaps, toLapRecord, type RecordedLap } from '../../src/recording/finishSession';
+import {
+  recordedLaps as stopLaps,
+  saveReferenceLayout,
+  sliceLaps,
+  toLapRecord,
+  type RecordedLap,
+} from '../../src/recording/finishSession';
 import { createLivePoll } from '../../src/recording/livePoll';
 import { handleLocations } from '../../src/recording/locationHandler';
 import { createImuCapture } from '../../src/recording/imuCapture';
@@ -63,6 +71,8 @@ import { G, type GpsFrame, type ImuFrame, type SeriesMeta } from '../../src/tele
 import { analysisGps, lapFrames, sliceLapWindows } from '../../src/telemetry/laps';
 import { gpsSeriesOf, imuSeriesOf } from '../../src/telemetry/series';
 import type { Session, TrackLayout } from '../../src/storage/db';
+import { getLayout, sqlLayoutRepo } from '../../src/storage/layoutRepo';
+import { openV5Database } from '../helpers/v5Database';
 import {
   session1,
   session2,
@@ -679,18 +689,45 @@ export async function runGolden(): Promise<GoldenOutput> {
   put('samplesToSilhouette', 's3', samplesToSilhouette(layout.samples));
   put('polylineLength', 's3', polylineLength(layout.samples));
   put('sectorSplits', 's3', layoutRef && sectorSplits(layout.samples, layoutRef));
-  const savedLayouts: TrackLayout[] = [];
-  const newLayout = await saveReferenceLayout(
+  // As voltas como o `stop()` as devolve (janelas e frames, `recordedLaps` do app),
+  // o traçado gravado no banco (sql.js) pelo `layoutRepo` com a série dele e lido
+  // de volta dessa série. Na visão antiga para o resumo.
+  const seriesMeta = (kind: 'gps' | 'imu'): SeriesMeta => ({
+    id: `golden_${kind}`,
+    owner: { kind: 'session', id: 'golden' },
+    source: 'PHONE',
+    kind,
+    t0Utc: s1.t0,
+    legacy: false,
+  });
+  const s1StopLaps = stopLaps(
+    sliceLapWindows(s1Frames, null),
+    gpsSeriesOf(seriesMeta('gps'), s1Frames),
+    imuSeriesOf(seriesMeta('imu'), s1ImuFrames),
+    s1.t0,
+  );
+  const layoutDb = await openV5Database();
+  const created = await saveReferenceLayout(
     {
       recordingId: 'golden_s1',
       trackId: 'golden-track',
       layoutName: null,
-      laps: s1Recorded,
+      laps: s1StopLaps,
       recordedAt: s1.phases.end,
     },
-    { listLayoutsForTrack: async () => [], saveLayout: async (l) => void savedLayouts.push(l) },
+    sqlLayoutRepo(async () => layoutDb.conn),
   );
-  put('saveReferenceLayout', 's1', { ...newLayout, samples: gpsSeries(newLayout.samples) });
+  const newLayout = (await getLayout(layoutDb.conn, created.id))!;
+  put('saveReferenceLayout', 's1', {
+    id: newLayout.id,
+    trackId: newLayout.trackId,
+    name: newLayout.name,
+    samples: gpsSeries(newLayout.gps!.map((f) => legacyFrame(f, s1.t0))),
+    durationMs: newLayout.durationMs,
+    lengthM: newLayout.lengthM,
+    recordedAt: newLayout.recordedAt,
+    isDefault: newLayout.isDefault,
+  });
 
   // Mapa detalhado e comparação: só com traçado.
   put('trackMapScreen', 's1Layout', trackMapScreen(s1LayoutLaps, layout));

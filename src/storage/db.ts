@@ -2,7 +2,10 @@ import * as SQLite from 'expo-sqlite';
 import { GpsSample } from '../lib/geometry';
 import { LapRecord } from '../lib/analysis';
 import { once } from '../lib/once';
+import type { GpsFrame } from '../telemetry/frame';
 import { loadLaps } from './lapRepo';
+import * as layoutRepo from './layoutRepo';
+import type { TrackLayout } from './layoutRepo';
 import { migrateV4, migrateV5Schema, migrationExecutorFrom } from './migrations';
 import { expoSqlConn } from './sqlConn';
 
@@ -502,27 +505,14 @@ export type TrackReference = {
   recordedAt: number;
   sourceSessionId?: string;
   sourceLapId?: string;
+  /** Os frames da série `reference:<track_id>`; ausentes até a v5b. Transição: `samples` é o mesmo array. */
+  gps?: GpsFrame[];
 };
 
 export async function getTrackReference(
   trackId: string
 ): Promise<TrackReference | null> {
-  const d = await db();
-  const row = await d.getFirstAsync<any>(
-    'SELECT * FROM track_references WHERE track_id = ?',
-    trackId
-  );
-  if (!row) return null;
-  return {
-    trackId: row.track_id,
-    trackName: row.track_name,
-    samples: JSON.parse(row.samples_json),
-    durationMs: row.duration_ms,
-    lengthM: row.length_m,
-    recordedAt: row.recorded_at,
-    sourceSessionId: row.source_session_id ?? undefined,
-    sourceLapId: row.source_lap_id ?? undefined,
-  };
+  return layoutRepo.getTrackReference(await appSqlConn(), trackId);
 }
 
 export async function saveTrackReference(ref: TrackReference): Promise<void> {
@@ -547,21 +537,9 @@ export async function deleteTrackReference(trackId: string): Promise<void> {
   await d.runAsync('DELETE FROM track_references WHERE track_id = ?', trackId);
 }
 
+/** Lida do dono `reference:<track_id>` (`layoutRepo`), com o JSON até a v5b. */
 export async function listTrackReferences(): Promise<TrackReference[]> {
-  const d = await db();
-  const rows = await d.getAllAsync<any>(
-    'SELECT * FROM track_references ORDER BY recorded_at DESC'
-  );
-  return rows.map((row) => ({
-    trackId: row.track_id,
-    trackName: row.track_name,
-    samples: JSON.parse(row.samples_json),
-    durationMs: row.duration_ms,
-    lengthM: row.length_m,
-    recordedAt: row.recorded_at,
-    sourceSessionId: row.source_session_id ?? undefined,
-    sourceLapId: row.source_lap_id ?? undefined,
-  }));
+  return layoutRepo.listTrackReferences(await appSqlConn());
 }
 // =========================
 // AI chat threads
@@ -702,121 +680,34 @@ export async function listAiChatThreads(limit: number = 30): Promise<AiChatThrea
 // Track layouts (múltiplos traçados por pista)
 // =========================
 
-/**
- * Cada layout é uma referência gravada da pista numa configuração específica
- * (ex: "Layout principal", "Layout curto", "Inverso", "Configuração corrida").
- *
- * Uma pista pode ter N layouts. Sessão referencia o layout escolhido via
- * `session.layoutId`. Quando o piloto cria sessão sem escolher (sessões
- * legadas ou app sem múltiplos layouts), usa o `is_default`.
- */
-export type TrackLayout = {
-  id: string;
-  trackId: string;
-  name: string;
-  samples: GpsSample[];
-  durationMs: number;
-  lengthM: number;
-  recordedAt: number;
-  sourceSessionId?: string;
-  sourceLapId?: string;
-  isDefault: boolean;
-};
+export type { TrackLayout } from './layoutRepo';
 
-function rowToLayout(row: any): TrackLayout {
-  return {
-    id: row.id,
-    trackId: row.track_id,
-    name: row.name,
-    samples: JSON.parse(row.samples_json),
-    durationMs: row.duration_ms,
-    lengthM: row.length_m,
-    recordedAt: row.recorded_at,
-    sourceSessionId: row.source_session_id ?? undefined,
-    sourceLapId: row.source_lap_id ?? undefined,
-    isDefault: Boolean(row.is_default),
-  };
-}
+// Os traçados vivem em `layoutRepo.ts`, sobre séries (TF-19). Estas funções só
+// passam o banco do app.
 
 export async function listLayoutsForTrack(trackId: string): Promise<TrackLayout[]> {
-  const d = await db();
-  const rows = await d.getAllAsync<any>(
-    'SELECT * FROM track_layouts WHERE track_id = ? ORDER BY is_default DESC, recorded_at DESC',
-    trackId
-  );
-  return rows.map(rowToLayout);
+  return layoutRepo.listLayoutsForTrack(await appSqlConn(), trackId);
 }
 
 export async function getLayout(id: string): Promise<TrackLayout | null> {
-  const d = await db();
-  const row = await d.getFirstAsync<any>('SELECT * FROM track_layouts WHERE id = ?', id);
-  return row ? rowToLayout(row) : null;
+  return layoutRepo.getLayout(await appSqlConn(), id);
 }
 
-export async function getDefaultLayoutForTrack(
-  trackId: string
-): Promise<TrackLayout | null> {
-  const d = await db();
-  // Tenta o default explícito; se ninguém tá marcado, pega o mais recente.
-  const row =
-    (await d.getFirstAsync<any>(
-      'SELECT * FROM track_layouts WHERE track_id = ? AND is_default = 1 LIMIT 1',
-      trackId
-    )) ??
-    (await d.getFirstAsync<any>(
-      'SELECT * FROM track_layouts WHERE track_id = ? ORDER BY recorded_at DESC LIMIT 1',
-      trackId
-    ));
-  return row ? rowToLayout(row) : null;
+export async function getDefaultLayoutForTrack(trackId: string): Promise<TrackLayout | null> {
+  return layoutRepo.getDefaultLayoutForTrack(await appSqlConn(), trackId);
 }
 
 export async function saveLayout(layout: TrackLayout): Promise<void> {
-  await saveLayoutOn(await db(), layout);
-}
-
-/** O INSERT do traçado numa conexão dada: a principal ou o `txn` de uma transação. */
-async function saveLayoutOn(d: SQLite.SQLiteDatabase, layout: TrackLayout): Promise<void> {
-  await d.runAsync(
-    `INSERT OR REPLACE INTO track_layouts
-     (id, track_id, name, samples_json, duration_ms, length_m, recorded_at, source_session_id, source_lap_id, is_default)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    layout.id,
-    layout.trackId,
-    layout.name,
-    JSON.stringify(layout.samples),
-    layout.durationMs,
-    layout.lengthM,
-    layout.recordedAt,
-    layout.sourceSessionId ?? null,
-    layout.sourceLapId ?? null,
-    layout.isDefault ? 1 : 0
-  );
+  await layoutRepo.saveLayout(await appSqlConn(), layout);
 }
 
 export async function deleteLayout(id: string): Promise<void> {
-  const d = await db();
-  await d.runAsync('DELETE FROM track_layouts WHERE id = ?', id);
+  await layoutRepo.deleteLayout(await appSqlConn(), id);
 }
 
-/**
- * Marca um layout como default e desmarca os outros da mesma pista numa
- * transação simples (2 statements consecutivos — risco baixo de race em
- * app single-user).
- */
+/** Marca um layout como default e desmarca os outros da mesma pista. */
 export async function setDefaultLayout(trackId: string, layoutId: string): Promise<void> {
-  await setDefaultLayoutOn(await db(), trackId, layoutId);
-}
-
-async function setDefaultLayoutOn(
-  d: SQLite.SQLiteDatabase,
-  trackId: string,
-  layoutId: string
-): Promise<void> {
-  await d.runAsync(
-    'UPDATE track_layouts SET is_default = 0 WHERE track_id = ?',
-    trackId
-  );
-  await d.runAsync('UPDATE track_layouts SET is_default = 1 WHERE id = ?', layoutId);
+  await layoutRepo.setDefaultLayout(await appSqlConn(), trackId, layoutId);
 }
 
 /**
@@ -825,18 +716,7 @@ async function setDefaultLayoutOn(
  * sem precisar de N+1 queries.
  */
 export async function listAllLayoutsGrouped(): Promise<Map<string, TrackLayout[]>> {
-  const d = await db();
-  const rows = await d.getAllAsync<any>(
-    'SELECT * FROM track_layouts ORDER BY track_id, is_default DESC, recorded_at DESC'
-  );
-  const out = new Map<string, TrackLayout[]>();
-  for (const row of rows) {
-    const layout = rowToLayout(row);
-    const list = out.get(layout.trackId) ?? [];
-    list.push(layout);
-    out.set(layout.trackId, list);
-  }
-  return out;
+  return layoutRepo.listAllLayoutsGrouped(await appSqlConn());
 }
 
 // =========================
@@ -1058,40 +938,18 @@ export async function getCurrentPb(
 }
 
 export async function savePbRecord(rec: PbRecord): Promise<void> {
-  await savePbRecordOn(await db(), rec);
-}
-
-async function savePbRecordOn(d: SQLite.SQLiteDatabase, rec: PbRecord): Promise<void> {
-  await d.runAsync(
-    `INSERT INTO pb_records (id, track_id, layout_id, session_id, lap_id, duration_ms, celebrated, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    rec.id,
-    rec.trackId,
-    rec.layoutId,
-    rec.sessionId,
-    rec.lapId,
-    rec.durationMs,
-    rec.celebrated ? 1 : 0,
-    rec.createdAt
-  );
+  await layoutRepo.insertPbRecord(await appSqlConn(), rec);
 }
 
 /**
- * "ATUALIZAR REFERÊNCIA": grava o traçado novo, torna-o o padrão da pista
- * (desmarcando os outros) e grava o PB herdado, numa transação só. Se o app
- * morrer no meio, a pista não fica com dois padrões nem com o traçado novo
- * sem o recorde.
+ * "ATUALIZAR REFERÊNCIA": o traçado novo com a série dele, o padrão e o PB
+ * herdado numa transação só (`layoutRepo.promoteReferenceLayout`).
  */
 export async function promoteReferenceLayout(
   layout: TrackLayout,
   pb: PbRecord | null
 ): Promise<void> {
-  const d = await db();
-  await d.withExclusiveTransactionAsync(async (txn) => {
-    await saveLayoutOn(txn, layout);
-    await setDefaultLayoutOn(txn, layout.trackId, layout.id);
-    if (pb) await savePbRecordOn(txn, pb);
-  });
+  await layoutRepo.promoteReferenceLayout(await appSqlConn(), layout, pb);
 }
 
 export async function markPbCelebrated(id: string): Promise<void> {

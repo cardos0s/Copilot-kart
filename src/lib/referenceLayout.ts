@@ -25,7 +25,7 @@ function ddmm(now: number): string {
 
 /**
  * O traçado novo a partir da melhor volta. Os pontos são os da volta como foi
- * salva, com as fronteiras sintéticas na linha (AD-006). O id sai da volta,
+ * salva, com as fronteiras sintéticas na linha (AD-006), e a janela dela. O id sai da volta,
  * então gravar de novo o mesmo traçado não cria um segundo.
  */
 export function nextReferenceLayout(
@@ -35,7 +35,7 @@ export function nextReferenceLayout(
   now: number
 ): TrackLayout {
   const baseName = reference.name.replace(DATE_SUFFIX, '');
-  return {
+  const layout: TrackLayout = {
     id: `layout_${best.id}`,
     trackId: reference.trackId,
     name: `${baseName} · ${ddmm(now)}`,
@@ -47,6 +47,15 @@ export function nextReferenceLayout(
     sourceLapId: best.id,
     isDefault: true,
   };
+  // A janela e os frames da volta: o `promoteReferenceLayout` os copia para a série
+  // do traçado novo (TF-19). A volta ainda em JSON (até a v5b) não tem janela.
+  if (best.window && best.gps) {
+    layout.window = best.window;
+    layout.gps = [...best.gps];
+    // Transição (até a T46): `samples` é o mesmo array de `gps`.
+    layout.samples = layout.gps as typeof layout.samples;
+  }
+  return layout;
 }
 
 /**
