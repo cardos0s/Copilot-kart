@@ -2,6 +2,7 @@ import * as SQLite from 'expo-sqlite';
 import { GpsSample } from '../lib/geometry';
 import { LapRecord } from '../lib/analysis';
 import { once } from '../lib/once';
+import { loadLaps } from './lapRepo';
 import { migrateV4, migrateV5Schema, migrationExecutorFrom } from './migrations';
 import { expoSqlConn } from './sqlConn';
 
@@ -220,6 +221,9 @@ export const db = once(async () => {
   await migrateV5Schema(migrationExecutorFrom(expoSqlConn(dbInstance)));
   return dbInstance;
 });
+
+/** O banco do app como `SqlConn`, para os repositórios que rodam também sobre o sql.js. */
+export const appSqlConn = once(async () => expoSqlConn(await db()));
 
 // =========================
 // Sessions
@@ -477,28 +481,12 @@ export async function saveLap(lap: LapRecord): Promise<void> {
   );
 }
 
+/**
+ * As voltas da sessão com a IMU, pelo repositório de voltas (`lapRepo.loadLaps`):
+ * frames da janela sobre o bruto e, até a v5b, o JSON das voltas não convertidas.
+ */
 export async function getLapsForSession(sessionId: string): Promise<LapRecord[]> {
-  const d = await db();
-  const rows = await d.getAllAsync<any>(
-    `SELECT id,
-            session_id as sessionId,
-            started_at as startedAt,
-            duration_ms as durationMs,
-            samples_json,
-            imu_samples_json
-     FROM laps
-     WHERE session_id = ?
-     ORDER BY started_at ASC`,
-    sessionId
-  );
-  return rows.map((r) => ({
-    id: r.id,
-    sessionId: r.sessionId,
-    startedAt: r.startedAt,
-    durationMs: r.durationMs,
-    samples: JSON.parse(r.samples_json) as GpsSample[],
-    imuSamples: r.imu_samples_json ? JSON.parse(r.imu_samples_json) : undefined,
-  }));
+  return loadLaps(await appSqlConn(), sessionId, { imu: true });
 }
 
 // =========================
