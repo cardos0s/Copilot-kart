@@ -107,12 +107,19 @@ test('deltaReferenceLap: a referência do delta começa e termina em pontos synt
   }
 });
 
+// Desde a T19 o poll do hook está em `src/recording/livePoll.ts` (puro): as
+// asserções leem esse arquivo, com o import relativo de lá (substitui a leitura
+// do hook e o import '../recording/liveLapClock').
+const HOOK = () => readFileSync(join(__dirname, '..', 'src', 'hooks', 'useLapRecorder.ts'), 'utf8');
+const POLL = () => readFileSync(join(__dirname, '..', 'src', 'recording', 'livePoll.ts'), 'utf8');
+
 test('useLapRecorder: usa liveLapClock e deltaReferenceLap, e não calcula mais o início da volta por endIdx + 1', () => {
-  const src = readFileSync(join(__dirname, '..', 'src', 'hooks', 'useLapRecorder.ts'), 'utf8');
-  assert.ok(/import\s*\{[^}]*\bliveLapClock\b[^}]*\}\s*from\s*'\.\.\/recording\/liveLapClock'/.test(src));
+  const src = POLL();
+  assert.ok(/import\s*\{[^}]*\bliveLapClock\b[^}]*\}\s*from\s*'\.\/liveLapClock'/.test(src));
   assert.ok(/liveLapClock\(detection,\s*all,/.test(src), 'o poll chama liveLapClock');
   assert.ok(/deltaReferenceLap\(all,\s*line,/.test(src), 'a referência do tracker vem de deltaReferenceLap');
   assert.equal(/endIdx\s*\+\s*1/.test(src), false);
+  assert.equal(/endIdx\s*\+\s*1/.test(HOOK()), false);
 });
 
 /**
@@ -168,10 +175,11 @@ test('Depois de um box de 200 s passando pela linha, openCross é o cruzamento d
 });
 
 test('useLapRecorder: currentLapSamples (setores ao vivo) usa openCross, e não o endCross da última volta fechada', () => {
-  const src = readFileSync(join(__dirname, '..', 'src', 'hooks', 'useLapRecorder.ts'), 'utf8');
+  const src = POLL();
   assert.ok(/function currentLapSamples\(\s*all: GpsSample\[\],\s*openCross: OpenCross \| null\s*\)/.test(src));
   assert.ok(/currentLapSamples\(all,\s*detection\.openCross\)/.test(src), 'o poll passa detection.openCross');
-  assert.equal(/\.endCross\b/.test(src), false, 'o hook não abre a volta pelo endCross');
+  assert.equal(/\.endCross\b/.test(src), false, 'o poll não abre a volta pelo endCross');
+  assert.equal(/\.endCross\b/.test(HOOK()), false, 'o hook não abre a volta pelo endCross');
 });
 
 /**
@@ -246,8 +254,9 @@ test('DeltaTracker nos polls do hook: o 1º poll depois da abertura pós-box cas
 });
 
 test('useLapRecorder: chama tracker.resetLap() sob lapOpened, e só ali', () => {
-  const src = readFileSync(join(__dirname, '..', 'src', 'hooks', 'useLapRecorder.ts'), 'utf8');
-  assert.ok(/import\s*\{[^}]*\blapOpened\b[^}]*\}\s*from\s*'\.\.\/recording\/liveLapClock'/.test(src));
+  const src = POLL();
+  assert.ok(/import\s*\{[^}]*\blapOpened\b[^}]*\}\s*from\s*'\.\/liveLapClock'/.test(src));
   assert.ok(/if\s*\(\s*lapOpened\([^)]*detection\.openCross\s*\)\s*\)\s*\{?\s*tracker\.resetLap\(\)/.test(src), 'resetLap sob lapOpened');
   assert.equal(src.match(/\.resetLap\(\)/g)?.length, 1, 'nenhum outro resetLap fora do lapOpened');
+  assert.equal(/\.resetLap\(\)/.test(HOOK()), false, 'o hook não chama resetLap por conta própria');
 });

@@ -13,10 +13,9 @@
  * Os módulos que importam o banco, o perfil, o Supabase e o id do aparelho
  * (nativos) entram como stubs no `require.cache` antes do `require`: assim o
  * `loadCoachContext`, o `seedDemoSession` e o `publishSample` reais rodam em
- * Node. A captura passa pelo código do app: `handleLocations` com o relógio da
- * sessão e `createImuCapture`. Um trecho do hook de gravação, que é React e não
- * roda em Node, está reproduzido aqui: o poll de 500 ms que monta o `info` do
- * ao vivo (`useLapRecorder.ts:456-668`).
+ * Node. Tudo passa pelo código do app: a captura (`handleLocations` com o relógio
+ * da sessão e `createImuCapture`), as voltas (`sliceLapWindows` e `lapFrames`) e
+ * o poll de 500 ms do ao vivo (`createLivePoll`, o mesmo do hook de gravação).
  */
 import {
   analyzeLap,
@@ -56,7 +55,7 @@ import { lineFromLayout, type CrossPoint, type StartLine } from '../../src/lib/s
 import { samplesToSilhouette } from '../../src/lib/trackSilhouette';
 import { countCorners } from '../../src/lib/trackShapeStats';
 import { saveReferenceLayout, sliceLaps, toLapRecord, type RecordedLap } from '../../src/recording/finishSession';
-import { deltaReferenceLap, lapOpened, liveLapClock } from '../../src/recording/liveLapClock';
+import { createLivePoll } from '../../src/recording/livePoll';
 import { handleLocations } from '../../src/recording/locationHandler';
 import { createImuCapture } from '../../src/recording/imuCapture';
 import { createSessionClock } from '../../src/recording/sessionClock';
@@ -327,35 +326,14 @@ function captureImu(events: ImuEvent[], t0Utc: number): ImuFrame[] {
 }
 
 // ---------------------------------------------------------------------------
-// O poll do ao vivo (useLapRecorder.ts), em modo de referência 'best'
+// O poll do ao vivo (`createLivePoll`, o mesmo do hook), em modo de referência 'best'
 // ---------------------------------------------------------------------------
-
-/** `crossSample` + `currentLapSamples` do hook (privados lá). */
-function currentLapSamples(all: GpsSample[], openCross: OpenCross | null): GpsSample[] | null {
-  if (!openCross) return null;
-  const t0 = openCross.t;
-  const cross: CrossPoint = openCross;
-  const first: GpsSample = {
-    t: cross.t,
-    lat: cross.lat,
-    lng: cross.lng,
-    speed: cross.speed,
-    accuracy: all[openCross.idx].accuracy,
-    synthetic: true,
-  };
-  return [first, ...all.slice(openCross.idx).filter((p) => p.t > t0)];
-}
 
 async function livePoll(input: RecordedSessionInput, line: StartLine | null, sectorRef: ReferenceLap | null) {
   const buf = { samples: [] as GpsFrame[] };
   const clock = { trustsRaw: false, session: createSessionClock(input.t0) };
-  const all: GpsSample[] = [];
-  const tracker = new DeltaTracker();
-  let lastOpen: OpenCross | null = null;
-  let lastLapCount = 0;
-  let loadedLapIdx: number | null = null;
-  let lastClosedLapSectors: SectorSplits | null = null;
-  const best: { s1: number | null; s2: number | null; s3: number | null } = { s1: null, s2: null, s3: null };
+  const frames: GpsFrame[] = [];
+  const poll = createLivePoll(line, () => sectorRef);
   const polls: unknown[] = [];
   const payloads: Record<string, unknown>[] = [];
   let pollCount = 0;
@@ -376,112 +354,46 @@ async function livePoll(input: RecordedSessionInput, line: StartLine | null, sec
       bi++;
     }
     if (buf.samples.length > 0) {
-      all.push(...legacyGps(buf.samples, input.t0));
+      frames.push(...buf.samples);
       buf.samples = [];
     }
-    const last = all[all.length - 1];
-    const detection = detectLaps(all, { line });
-
-    let bestLapMs: number | null = null;
-    let bestLapIdx = -1;
-    for (let i = 0; i < detection.laps.length; i++) {
-      if (bestLapMs === null || detection.laps[i].durationMs < bestLapMs) {
-        bestLapMs = detection.laps[i].durationMs;
-        bestLapIdx = i;
-      }
-    }
-
-    if (lapOpened(lastOpen, detection.openCross)) tracker.resetLap();
-    lastOpen = detection.openCross;
-
-    if (detection.laps.length > lastLapCount) {
-      if (sectorRef) {
-        const sliced = sliceLaps(all, [], line);
-        const splits = sectorSplits(sliced[sliced.length - 1].samples, sectorRef);
-        lastClosedLapSectors = splits;
-        const { s1Ms: s1, s2Ms: s2, s3Ms: s3 } = splits;
-        if (s1 !== null && s2 !== null && s3 !== null) {
-          if (best.s1 === null || s1 < best.s1) best.s1 = s1;
-          if (best.s2 === null || s2 < best.s2) best.s2 = s2;
-          if (best.s3 === null || s3 < best.s3) best.s3 = s3;
-        }
-      }
-      loadedLapIdx = null;
-    }
-    lastLapCount = detection.laps.length;
-
-    if (bestLapIdx >= 0 && loadedLapIdx !== bestLapIdx) {
-      const refLap = deltaReferenceLap(all, line, bestLapIdx);
-      if (refLap) tracker.setReference(refLap.samples, refLap.durationMs);
-      loadedLapIdx = bestLapIdx;
-    } else if (bestLapIdx < 0 && tracker.hasReference()) {
-      tracker.clear();
-      loadedLapIdx = null;
-    }
-
-    const lapClock = last ? liveLapClock(detection, all, last.t, line) : null;
-    const currentLapElapsedMs = lapClock ? lapClock.elapsedMs : null;
-    const reading = last && currentLapElapsedMs !== null && tracker.hasReference()
-      ? tracker.compute(last, currentLapElapsedMs)
-      : null;
-
-    let currentSectorIdx: 0 | 1 | 2 | null = null;
-    let currentSectorElapsedMs: number | null = null;
-    let currentSectors: SectorSplits = { s1Ms: null, s2Ms: null, s3Ms: null };
-    if (last && line && sectorRef) {
-      const lapSamples = currentLapSamples(all, detection.openCross);
-      if (lapSamples) {
-        const splits = sectorSplits(lapSamples, sectorRef);
-        currentSectors = { s1Ms: splits.s1Ms, s2Ms: splits.s2Ms, s3Ms: null };
-        const lapStartT = lapSamples[0].t;
-        if (splits.s1Ms === null) {
-          currentSectorIdx = 0;
-          currentSectorElapsedMs = last.t - lapStartT;
-        } else if (splits.s2Ms === null) {
-          currentSectorIdx = 1;
-          currentSectorElapsedMs = last.t - (lapStartT + splits.s1Ms);
-        } else {
-          currentSectorIdx = 2;
-          currentSectorElapsedMs = last.t - (lapStartT + splits.s1Ms + splits.s2Ms);
-        }
-      }
-    }
+    const r = poll.step(frames, { nowMs: pollAt, mode: 'best' });
 
     pollCount++;
-    if (reading && reading.deltaMs !== null) liveDeltaCount++;
+    if (r.reading && r.reading.deltaMs !== null) liveDeltaCount++;
     if ((pollCount - 1) % POLL_K !== 0) continue;
     polls.push({
       pollAt,
-      sampleCount: all.length,
-      lapsCompleted: detection.laps.length,
-      bestLapMs,
-      currentLapElapsedMs,
-      liveDeltaMs: reading ? reading.deltaMs : null,
-      reading,
-      currentSectorIdx,
-      currentSectorElapsedMs,
-      currentSectors,
-      lastClosedLapSectors,
-      bestSectors: { s1Ms: best.s1, s2Ms: best.s2, s3Ms: best.s3 },
+      sampleCount: r.all.length,
+      lapsCompleted: r.detection.laps.length,
+      bestLapMs: r.bestLapMs,
+      currentLapElapsedMs: r.currentLapElapsedMs,
+      liveDeltaMs: r.liveDeltaMs,
+      reading: r.reading,
+      currentSectorIdx: r.currentSectorIdx,
+      currentSectorElapsedMs: r.currentSectorElapsedMs,
+      currentSectors: r.currentSectors,
+      lastClosedLapSectors: r.lastClosedLapSectors,
+      bestSectors: r.bestSectors,
     });
 
     // O que `app/recording.tsx` publica para o ponto, com o `info` deste poll.
-    if (last) {
+    if (r.last) {
       liveRows.length = 0;
       await publishSample(
         'golden-live',
         toLiveSample(
-          last,
+          r.last,
           {
-            lapsCompleted: detection.laps.length,
-            currentLapElapsedMs,
-            bestLapMs,
-            liveDeltaMs: reading ? reading.deltaMs : null,
-            currentSectorIdx,
-            currentSectorElapsedMs,
-            currentSectors,
+            lapsCompleted: r.detection.laps.length,
+            currentLapElapsedMs: r.currentLapElapsedMs,
+            bestLapMs: r.bestLapMs,
+            liveDeltaMs: r.liveDeltaMs,
+            currentSectorIdx: r.currentSectorIdx,
+            currentSectorElapsedMs: r.currentSectorElapsedMs,
+            currentSectors: r.currentSectors,
           },
-          0,
+          input.t0,
         ),
       );
       payloads.push(...liveRows);

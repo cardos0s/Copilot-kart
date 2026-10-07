@@ -133,6 +133,7 @@ export default function Recording() {
     state,
     info,
     liveSamples,
+    t0Utc,
     start,
     stop,
     setReferenceMode,
@@ -310,9 +311,8 @@ export default function Recording() {
     // Fire-and-forget — não bloqueia se network engasgar
     (async () => {
       for (const s of toSend) {
-        // T19: o hook passa a entregar frames e o t0Utc da sessão; até lá o
-        // ponto ainda tem o tempo absoluto, e o t0Utc é 0.
-        publishSample(live.id, toLiveSample(s, info, 0)).catch(() => {
+        // O frame está no relógio da sessão; o ponto vai com o instante absoluto.
+        publishSample(live.id, toLiveSample(s, info, t0Utc)).catch(() => {
           /* engole — não pode quebrar gravação se realtime falhar */
         });
       }
@@ -320,6 +320,7 @@ export default function Recording() {
   }, [
     live,
     liveSamples,
+    t0Utc,
     info.lapsCompleted,
     info.elapsedMs,
     info.currentLapElapsedMs,

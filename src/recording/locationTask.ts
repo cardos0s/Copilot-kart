@@ -5,14 +5,13 @@
  */
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
-import type { ImuSample } from '../lib/geometry';
-import type { GpsFrame } from '../telemetry/frame';
+import type { GpsFrame, ImuFrame } from '../telemetry/frame';
 import { handleLocations, type LocationTaskDeps } from './locationHandler';
 import { createSessionClock } from './sessionClock';
 
 export const BG_TASK = 'KARTLAP_BG_LOCATION';
 
-type Buffer = { samples: GpsFrame[]; imu: ImuSample[] };
+type Buffer = { samples: GpsFrame[]; imu: ImuFrame[] };
 
 /** Buffer que a UI drena a cada poll. Global para sobreviver a reload em dev. */
 export const buf: Buffer = (globalThis as any).__kartlapBuf ?? { samples: [], imu: [] };

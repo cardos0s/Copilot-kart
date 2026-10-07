@@ -10,14 +10,52 @@ import { polylineLength, type GpsSample, type ImuSample } from '../lib/geometry'
 import { detectLaps } from '../lib/lapDetector';
 import type { CrossPoint, StartLine } from '../lib/startLine';
 import type { Session, SessionMode, TrackLayout } from '../storage/db';
+import type { GpsFrame, GpsSeries, ImuFrame, ImuSeries } from '../telemetry/frame';
+import { lapFrames, type AnalysisGpsFrame, type CrossWindow, type LapWindowRecord } from '../telemetry/laps';
 
 export type RecordedLap = {
   samples: GpsSample[];
   /** IMU recortada para a mesma janela de tempo da volta. Vazia se a IMU falhou. */
   imuSamples: ImuSample[];
   durationMs: number;
+  /** Início da volta, em epoch ms. */
   startedAt: number;
+  /**
+   * A janela sobre o bruto da sessão (AD-007) e os frames dela (`lapFrames`).
+   * Ausentes só no recorte antigo (`sliceLaps`), que a recuperação usa até a T21.
+   * Transição: `samples` e `imuSamples` apontam para os mesmos arrays de `gps` e `imu`.
+   */
+  window?: CrossWindow;
+  gps?: GpsFrame[];
+  imu?: ImuFrame[];
 };
+
+/**
+ * As voltas detectadas como `RecordedLap`: a janela, os frames dela com as
+ * fronteiras geradas na leitura e o início em epoch ms (`t0Utc + startT`).
+ */
+export function recordedLaps(
+  windows: LapWindowRecord[],
+  gps: GpsSeries,
+  imu: ImuSeries | undefined,
+  t0Utc: number
+): RecordedLap[] {
+  return windows.map((w) => {
+    const frames = lapFrames(w.window, gps, imu);
+    return {
+      window: w.window,
+      gps: frames.gps,
+      imu: frames.imu,
+      // Transição (até a T46): a janela por cruzamento só tem frames com precisão
+      // (≤ 30 m e as fronteiras). O frame de IMU sem par não tem um dos sensores;
+      // o `spinDetector` passa a ler `imu` na T30.
+      samples: frames.gps as AnalysisGpsFrame[],
+      imuSamples: frames.imu as unknown as ImuSample[],
+      durationMs: w.durationMs,
+      startedAt: t0Utc + w.startT,
+    };
+  });
+}
 
 /**
  * Ponto de fronteira da volta, no cruzamento interpolado da linha. `idx` é o

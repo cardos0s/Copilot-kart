@@ -183,6 +183,8 @@ export type LiveSampleInfo = {
  * partir de um frame no relógio da sessão. `t0Utc + frame.t` é o instante
  * absoluto que `live_samples.t` recebe.
  */
+// SPEC_DEVIATION: a design tem `toLiveSample(frame, info)`; aqui entra também o `t0Utc`.
+// Reason: o frame só tem o `t` desde o início da sessão, e o payload leva o instante absoluto.
 export function toLiveSample(frame: LiveFrame, info: LiveSampleInfo, t0Utc: number): LiveSample {
   return {
     t: t0Utc + frame.t,

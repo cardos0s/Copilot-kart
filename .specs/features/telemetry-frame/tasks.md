@@ -639,9 +639,9 @@ A simulação passa a emitir `GpsFrame` pelo `sessionClock`, com `t` estritament
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste estático (`test/lapRecorderHook.test.ts`): o regex `sliceLaps(allSamples, allImuSamples, line)` é substituído por `sliceLapWindows(analysisGps(`, com nota de qual asserção ele substitui; o hook não chama mais `Date.now()` para a IMU.
-- [ ] Teste: o gerador da simulação (extraído para função pura) nunca repete `t` quando o laço reinicia.
-- [ ] Gate: `npm test && npm run typecheck`, contagem registrada, baseline de 8 erros.
+- [x] Teste estático (`test/lapRecorderHook.test.ts`): o regex `sliceLaps(allSamples, allImuSamples, line)` é substituído por `sliceLapWindows(analysisGps(`, com nota de qual asserção ele substitui; o hook não chama mais `Date.now()` para a IMU.
+- [x] Teste: o gerador da simulação (extraído para função pura) nunca repete `t` quando o laço reinicia.
+- [x] Gate: `npm test && npm run typecheck`, contagem registrada: 223 testes (219 + 1 do comparador, bc9d4e1, + 3), baseline de 8 erros.
 
 **Tests**: unit
 **Gate**: build
