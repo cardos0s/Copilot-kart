@@ -807,12 +807,13 @@ A simulação passa a emitir `GpsFrame` pelo `sessionClock`, com `t` estritament
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: medianas de 3 m, 5 m, 8 m, 10 m e 15 m dão boa, boa, média, média e ruim.
-- [ ] Teste: os pontos `synthetic` não entram na mediana.
-- [ ] Teste: sem nenhuma precisão, sai "desconhecida" sem metros.
-- [ ] Teste: sem volta, usa todos os frames.
-- [ ] Teste: `PHONE` dá "Celular" e `MYCHRON` dá "MyChron"; `badgeText` devolve "Celular · GPS boa (4 m)".
-- [ ] Gate: `npm test && npm run typecheck`, contagem registrada, baseline de 8 erros.
+- [x] Teste: medianas de 3 m, 5 m, 8 m, 10 m e 15 m dão boa, boa, média, média e ruim.
+- [x] Teste: os pontos `synthetic` não entram na mediana.
+- [x] Teste: sem nenhuma precisão, sai "desconhecida" sem metros.
+- [x] Teste: sem volta, usa todos os frames.
+- [x] Teste: `PHONE` dá "Celular" e `MYCHRON` dá "MyChron"; `badgeText` devolve "Celular · GPS boa (4 m)".
+- [x] A fonte do `sessionBadge` é `PHONE | MYCHRON` (SPEC_DEVIATION no código): `ALFANO` e `GOPRO` ainda não têm rótulo, e o compilador recusa.
+- [x] Gate: `npm test && npm run typecheck`, contagem registrada: 247 testes (242 + 5), baseline de 8 erros. Fim da fase.
 
 **Tests**: unit
 **Gate**: build
