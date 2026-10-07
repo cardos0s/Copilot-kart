@@ -712,7 +712,7 @@ A simulação passa a emitir `GpsFrame` pelo `sessionClock`, com `t` estritament
 **Done when**:
 - [x] Teste (sql.js): as voltas lidas têm as fronteiras geradas e os frames internos esperados.
 - [x] Teste: sem `imu: true`, nenhum bloco de IMU é decodificado.
-- [x] Teste (TF-16): uma sessão de 20 min (GPS a 10 Hz, IMU a 50 Hz, 20 voltas) é lida com `imu: true` e montada em ≤ 200 ms no Node (mediana de 5 execuções, depois de 1 aquecimento). Medido: cerca de 30 ms.
+- [x] Teste (TF-16): uma sessão de 20 min (GPS a 10 Hz, IMU a 50 Hz, 20 voltas) é lida com `imu: true` e montada em ≤ 200 ms no Node (mediana de 5 execuções, depois de 1 aquecimento). Medido pelo tempo de CPU do processo (SPEC_DEVIATION no teste): com o `npm test` rodando 8 arquivos em paralelo, a mediana pelo relógio variou de 30 ms (sozinho) a 355 ms (suíte), por espera de CPU; a de CPU ficou entre 30 e 115 ms. O relógio sai no diagnóstico do teste.
 - [x] Teste: `loadLapSummaries` devolve id, `startedAt` e `durationMs` sem decodificar nenhum bloco.
 - [x] `getLapsForSession` delega para `loadLaps(…, { imu: true })` (teste estático). A volta sem janela (ainda em JSON) sai do JSON como antes: fallback transitório até a v5b/v5c (T43/T44).
 - [x] Gate: `npm test`, contagem registrada: 232 testes (226 + 6).

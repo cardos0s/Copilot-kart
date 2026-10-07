@@ -13,6 +13,7 @@ import type { GpsFrame, ImuFrame, Series } from '../../src/telemetry/frame';
 import { sliceLapWindows, type LapWindowRecord } from '../../src/telemetry/laps';
 import { gpsSeriesOf, imuSeriesOf } from '../../src/telemetry/series';
 import { appendBlocks, createSeries, type BlockRow } from '../../src/telemetry/telemetryStore';
+import { generateTimedLaps } from './syntheticTrack';
 
 export const BLOCK_MS = 5_000;
 
@@ -67,4 +68,31 @@ export async function sessionOnDb(
     sqlSessionRepo(async () => conn)
   );
   return { sessionId: saved.session.id, windows, saved, gpsSeriesId: metas.gps.id, imuSeriesId: metas.imu.id };
+}
+
+/**
+ * Pista sintética em frames (t desde t0Utc), GPS a 10 Hz: fixes boas de 3 a 7 m, uma
+ * a cada 9 com 45 m (deslocada 40 m) e uma a cada 13 sem precisão.
+ */
+export function trackFrames(laps: number, lapDurationMs = 37_699, t0Utc = 1_790_000_000_000): GpsFrame[] {
+  const { samples } = generateTimedLaps({ lapDurationMs, sampleRateHz: 10, startPhase: 0.37, laps, warmupS: 3, t0: t0Utc });
+  return samples.map((s, i) => {
+    const f: GpsFrame = { kind: 'gps', source: 'PHONE', t: s.t - t0Utc, lat: s.lat, lng: s.lng, speed: s.speed, fix: 'unknown' };
+    if (i % 9 === 4) {
+      f.accuracy = 45;
+      f.lat += 0.00036;
+    } else if (i % 13 !== 6) {
+      f.accuracy = 3 + (i % 5);
+    }
+    return f;
+  });
+}
+
+/** IMU a 50 Hz do primeiro ao último instante do GPS. */
+export function imuFrames(gps: GpsFrame[]): ImuFrame[] {
+  const out: ImuFrame[] = [];
+  for (let t = 0; t <= gps[gps.length - 1].t; t += 20) {
+    out.push({ kind: 'imu', source: 'PHONE', t, accel: { x: 0.1, y: -0.2, z: 9.8 }, gyro: { x: 0, y: 0, z: t / 1e6 } });
+  }
+  return out;
 }
