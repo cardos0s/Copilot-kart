@@ -1,13 +1,14 @@
 /**
  * Checagem na abertura: REC-09 AC 1 (tarefa de GPS órfã) e REC-02 (gravação
- * interrompida vira oferta de recuperação).
+ * interrompida vira oferta de recuperação). Desde a T21 o diário fica nas séries
+ * da sessão: a sessão já salva mantém o bruto (TF-07, TF-08).
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { runBootCheck, type BootCheckDeps } from '../src/recording/bootCheck';
 import { RecordingJournal, type RecordingMetaInput } from '../src/recording/journal';
-import { asFrames, fakeJournalStore, persistedSeries, type FakeJournalStore } from './helpers/fakeJournalStore';
+import { asFrames, fakeJournalStore, persistedGps, persistedSeries, type FakeJournalStore } from './helpers/fakeJournalStore';
 import { generateLapSamples } from './helpers/syntheticTrack';
 
 const T0 = 1_700_000_000_000;
@@ -71,16 +72,21 @@ test('bootCheck: tarefa registrada e diário ativo para a tarefa e devolve inter
   assert.notEqual(store.active, null); // o diário fica até o piloto decidir
 });
 
-test('bootCheck: sessão já salva devolve already-saved e apaga o diário', async () => {
+// Desde a T21 a sessão já salva é dona das séries (TF-07): a abertura apaga só o
+// registro ativo e mantém o bruto. Substitui "apaga o diário" (séries vazias).
+test('bootCheck: sessão já salva devolve already-saved, apaga o registro ativo e mantém as séries', async () => {
   const store = await fakeJournalStore();
   const id = await activeJournal(store);
+  const before = persistedGps(store, id);
+  assert.ok(before.length > 0);
   const { d } = bootDeps(store, { taskRunning: false, savedSessions: [`session_${id}`] });
 
   const r = await runBootCheck(d);
 
   assert.deepEqual(r, { kind: 'already-saved' });
   assert.equal(store.active, null);
-  assert.deepEqual(persistedSeries(store, id), []);
+  assert.deepEqual(persistedSeries(store, id).map((m) => m.kind), ['gps', 'imu']);
+  assert.deepEqual(persistedGps(store, id), before);
 });
 
 test('bootCheck: diário ilegível devolve unreadable e apaga', async () => {

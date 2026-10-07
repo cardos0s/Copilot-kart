@@ -684,11 +684,11 @@ A simulação passa a emitir `GpsFrame` pelo `sessionClock`, com `t` estritament
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste (sql.js): uma gravação interrompida depois de 4 blocos é recuperada com todos os frames desses 4 blocos e com as voltas que eles fecham.
-- [ ] Teste: `bootCheck` com a sessão já salva mantém as séries.
-- [ ] Teste: descartar a recuperação apaga as séries.
-- [ ] `test/recovery.test.ts` e `test/bootCheck.test.ts` migrados.
-- [ ] Gate: `npm test && npm run typecheck`, contagem registrada, baseline de 8 erros.
+- [x] Teste (sql.js): uma gravação interrompida depois de 4 blocos é recuperada com todos os frames desses 4 blocos e com as voltas que eles fecham.
+- [x] Teste: `bootCheck` com a sessão já salva mantém as séries.
+- [x] Teste: descartar a recuperação apaga as séries.
+- [x] `test/recovery.test.ts` e `test/bootCheck.test.ts` migrados.
+- [x] Gate: `npm test && npm run typecheck`, contagem registrada: 226 testes (225 + 1), baseline de 8 erros. Fim da fase.
 
 **Tests**: integration
 **Gate**: build

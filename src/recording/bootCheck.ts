@@ -33,10 +33,10 @@ export async function runBootCheck(deps: BootCheckDeps): Promise<BootResult> {
   const active = await deps.store.readActive();
   if (!active) return { kind: 'none' };
 
-  // Crash entre o commit da sessão e a limpeza: já está salva, só limpa.
-  // Transição (T16 → T21): apaga o diário inteiro, como antes; a T21 mantém as séries.
+  // Crash entre o commit da sessão e a limpeza: já está salva, e as séries são
+  // o bruto dela. Só o registro ativo sai.
   if (await deps.sessionExists(sessionIdFor(active.id))) {
-    await deps.store.discardRecording(active.id);
+    await deps.store.deleteActive(active.id);
     return { kind: 'already-saved' };
   }
 

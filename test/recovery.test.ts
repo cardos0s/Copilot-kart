@@ -1,6 +1,8 @@
 /**
  * Recuperação: REC-02 (oferta, zero voltas, ilegível), REC-03 (recuperar
- * com a meta original, sem duplicar) e REC-04 (descartar apaga).
+ * com a meta original, sem duplicar) e REC-04 (descartar apaga). Desde a T21
+ * a recuperação lê as séries do diário e salva as voltas como janelas sobre
+ * elas, sem copiar frames (TF-08, edge "sessão recuperada").
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,15 +14,20 @@ import type { TrackLayout } from '../src/storage/db';
 import { sliceLaps, type LayoutRepo } from '../src/recording/finishSession';
 import { RecordingJournal, type RecordingMetaInput } from '../src/recording/journal';
 import { discard, recover, summarize, type RecoveryDeps } from '../src/recording/recovery';
+import { sqlSessionRepo } from '../src/storage/sqlSessionRepo';
+import type { ImuFrame } from '../src/telemetry/frame';
+import { analysisGps } from '../src/telemetry/laps';
 import {
   asFrames,
   fakeJournalStore,
   persistedGps,
+  persistedImu,
   persistedSeries,
   type FakeJournalStore,
 } from './helpers/fakeJournalStore';
 import { fakeSessionRepo, type FakeSessionRepo } from './helpers/fakeSessionRepo';
 import { generateLapSamples, generateTimedLaps } from './helpers/syntheticTrack';
+import { openV5Database, rowsOf } from './helpers/v5Database';
 
 const T0 = 1_700_000_000_000;
 
@@ -109,23 +116,27 @@ test('recover (corrida): cria a sessão com pista, traçado, setup e modo da met
   );
   assert.ok('sessionId' in r && r.sessionId === `session_${id}`);
 
+  // Desde a T21 a sessão recuperada fica com as séries do diário como bruto
+  // (edge "sessão recuperada", sem copiar): só o registro ativo sai.
+  // Substitui "apaga o diário" (séries vazias).
   assert.equal(store.active, null);
-  assert.deepEqual(persistedSeries(store, id), []);
+  assert.equal(persistedGps(store, id).length, samples.length);
 });
 
 test('recover: se morre depois do commit e antes de apagar, rodar de novo não duplica', async () => {
   const { store, id } = await journalWith(RACE, 3);
   const { d, sessions } = deps(store);
 
-  const realDelete = store.discardRecording;
-  store.discardRecording = async () => {
+  // Desde a T21 a limpeza da corrida recuperada é o `deleteActive` (as séries ficam).
+  const realDelete = store.deleteActive;
+  store.deleteActive = async () => {
     throw new Error('processo morto');
   };
   await assert.rejects(recover(id, d), /processo morto/);
   assert.equal(sessions.sessions.length, 1);
   assert.notEqual(store.active, null); // o diário continua lá
 
-  store.discardRecording = realDelete;
+  store.deleteActive = realDelete;
   await recover(id, d);
   assert.equal(sessions.sessions.length, 1);
   assert.equal(sessions.laps.length, 3);
@@ -138,7 +149,9 @@ test('recover (reconhecimento): cria o layout com o nome da meta a partir da mel
 
   const r = await recover(id, d);
 
-  const laps = sliceLaps(samples, []);
+  // O oráculo no relógio dos frames do diário (t desde o início da sessão): desde
+  // a T21 a volta sai das séries, e os pontos do traçado são os frames dela.
+  const laps = sliceLaps(analysisGps(asFrames(samples, T0)), []);
   const best = laps.reduce((b, l) => (l.durationMs < b.durationMs ? l : b), laps[0]);
   assert.equal(sessions.sessions.length, 0);
   assert.equal(layouts.layouts.length, 1);
@@ -146,9 +159,12 @@ test('recover (reconhecimento): cria o layout com o nome da meta a partir da mel
   assert.equal(layout.name, 'Traçado invertido');
   assert.equal(layout.trackId, 'track_1');
   assert.equal(layout.durationMs, best.durationMs);
-  assert.deepEqual(layout.samples, best.samples);
+  const pts = (ps: GpsSample[]) => ps.map((p) => [p.t, p.lat, p.lng, p.speed, p.accuracy, p.synthetic]);
+  assert.deepEqual(pts(layout.samples), pts(best.samples));
   assert.ok('layoutId' in r && r.layoutId === layout.id);
   assert.equal(store.active, null);
+  // Nenhuma sessão é dona das séries do reconhecimento: o diário sai inteiro.
+  assert.deepEqual(persistedSeries(store, id), []);
 });
 
 test('summarize: sem volta completa dá laps = 0', async () => {
@@ -285,4 +301,60 @@ test('recover: diário antigo sem line continua legível e recupera com a linha 
     sessions.laps.map((l) => [l.startedAt, l.durationMs]),
     inferred.map((l) => [l.startedAt, l.durationMs]),
   );
+});
+
+// ---------------------------------------------------------------------------
+// T21: a recuperação lê as séries do diário e não copia frames (SQL real).
+// ---------------------------------------------------------------------------
+
+test('recover (sql.js): gravação interrompida depois de 4 blocos volta com todos os frames desses blocos e as voltas que eles fecham', async () => {
+  const db = await openV5Database();
+  const { samples } = generateTimedLaps({ lapDurationMs: 37_699, sampleRateHz: 10, startPhase: 0.37, laps: 5, warmupS: 3, t0: T0 });
+  const frames = asFrames(samples, T0);
+  const imu: ImuFrame[] = frames.map((f) => ({ kind: 'imu', source: 'PHONE', t: f.t + 5, accel: { x: 0, y: 0, z: 9.8 }, gyro: { x: 0, y: 0, z: 0.1 } }));
+
+  // O app grava 4 blocos (a cada ~35 s) e morre com o resto ainda em memória.
+  const journal = new RecordingJournal(db.store, () => T0);
+  const id = await journal.begin(RACE);
+  const perBlock = 350;
+  for (let b = 0; b < 4; b++) {
+    journal.appendGps(frames.slice(b * perBlock, (b + 1) * perBlock));
+    journal.appendImu(imu.slice(b * perBlock, (b + 1) * perBlock));
+    await journal.flush();
+  }
+  journal.appendGps(frames.slice(4 * perBlock)); // perdido no crash
+  const saved = frames.slice(0, 4 * perBlock);
+  assert.ok(frames.length > saved.length);
+
+  // Processo novo: só o banco sobrou.
+  const sessions = sqlSessionRepo(async () => db.conn);
+  await recover(id, { store: db.store, sessions, layouts: fakeLayouts(), now: () => T0 + 999_000 });
+
+  const sessionId = `session_${id}`;
+  // Todos os frames dos 4 blocos, como estavam, e nenhum além deles.
+  assert.deepEqual(persistedGps(db.store, id), saved);
+  assert.equal(persistedImu(db.store, id).length, 4 * perBlock);
+  // Sem cópia: as séries continuam as do diário, com os mesmos 4 blocos.
+  assert.deepEqual(rowsOf(db.conn, 'SELECT owner_id, kind FROM telemetry_series ORDER BY kind'), [
+    { owner_id: sessionId, kind: 'gps' },
+    { owner_id: sessionId, kind: 'imu' },
+  ]);
+  assert.equal(rowsOf<{ c: number }>(db.conn, 'SELECT COUNT(*) AS c FROM telemetry_blocks')[0].c, 8);
+  assert.equal(db.store.active, null);
+
+  // As voltas são as que os frames gravados fecham (o oráculo: detectLaps sobre eles).
+  const expected = detectLaps(saved as GpsSample[]).laps;
+  assert.ok(expected.length >= 2 && expected.length < detectLaps(frames as GpsSample[]).laps.length);
+  const laps = rowsOf<{ window_kind: string; start_t: number; end_t: number; duration_ms: number; started_at: number }>(
+    db.conn,
+    'SELECT window_kind, start_t, end_t, duration_ms, started_at FROM laps WHERE session_id = ? ORDER BY started_at',
+    [sessionId],
+  );
+  assert.deepEqual(
+    laps.map((l) => [l.window_kind, l.start_t, l.end_t, l.duration_ms, l.started_at]),
+    expected.map((l) => ['cross', l.startCross.t, l.endCross.t, l.durationMs, T0 + l.startedAt]),
+  );
+  assert.deepEqual(rowsOf(db.conn, 'SELECT recovered, frames_version FROM sessions WHERE id = ?', [sessionId]), [
+    { recovered: 1, frames_version: 5 },
+  ]);
 });

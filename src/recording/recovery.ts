@@ -2,25 +2,28 @@
  * Recuperação de uma gravação interrompida: resumo para a tela, "Recuperar"
  * e "Descartar". Puro, com o armazenamento injetado.
  *
+ * O bruto da gravação já está nas séries da sessão (`session:session_<id>`),
+ * até o último bloco gravado (TF-08):
  * - corrida vira sessão com `recovered: true`, pelo mesmo `saveRecordedSession`
- *   do "Encerrar", então rodar de novo não duplica;
- * - reconhecimento vira layout de referência;
- * - meta com `version` desconhecida ou JSON quebrado é `unreadable`.
+ *   do "Encerrar" (rodar de novo não duplica). As voltas são janelas sobre
+ *   essas séries, sem copiar frames, e só o registro ativo sai;
+ * - reconhecimento vira layout de referência, e o diário sai inteiro (nenhuma
+ *   sessão fica dona das séries);
+ * - meta com `version` desconhecida, JSON quebrado ou bloco ilegível é `unreadable`.
  */
-import type { GpsSample, ImuSample } from '../lib/geometry';
-import { detectLaps } from '../lib/lapDetector';
-import type { GpsSeries, ImuSeries } from '../telemetry/frame';
-import { gpsFramesOf, imuFramesOf } from '../telemetry/series';
+import type { GpsFrame, GpsSeries, ImuSeries } from '../telemetry/frame';
+import { sliceLapWindows } from '../telemetry/laps';
+import { gpsFramesOf, gpsSeriesOf } from '../telemetry/series';
 import type { ReadResult } from '../telemetry/telemetryStore';
 import {
+  recordedLaps,
   saveRecordedSession,
   saveReferenceLayout,
-  sliceLaps,
   type LayoutRepo,
   type SavedSession,
   type SessionRepo,
 } from './finishSession';
-import type { ActiveRecording, JournalStore, RecordingMeta } from './journal';
+import { recordingSeries, type ActiveRecording, type JournalStore, type RecordingMeta } from './journal';
 
 export type RecoverySummary = {
   recordingId: string;
@@ -31,38 +34,26 @@ export type RecoverySummary = {
   laps: number;
 };
 
-type ParsedJournal = { meta: RecordingMeta; gps: GpsSample[]; imu: ImuSample[] };
+type ParsedJournal = {
+  meta: RecordingMeta;
+  t0Utc: number;
+  gpsSeries: GpsSeries;
+  imuSeries: ImuSeries | undefined;
+  gps: GpsFrame[];
+};
 
-/**
- * Meta e frames do diário. Bloco ilegível torna o diário `unreadable`, como o
- * pedaço de JSON quebrado tornava.
- *
- * Transição (T16 → T21): os frames voltam à visão de antes (`t` absoluto, só as
- * fixes com precisão ≤ 30 m) para o recorte por `sliceLaps`. A T21 troca isso
- * pelas janelas sobre as séries.
- */
+/** Meta e séries do diário. Bloco ilegível torna o diário `unreadable`, como o pedaço de JSON quebrado tornava. */
 function parseJournal(active: ActiveRecording, read: ReadResult): ParsedJournal | 'unreadable' {
   try {
     const meta = JSON.parse(active.metaJson) as RecordingMeta;
     if (!meta || meta.version !== 1) return 'unreadable';
     if (meta.mode !== 'race' && meta.mode !== 'reference') return 'unreadable';
     if (read.skipped > 0) return 'unreadable';
-    const gpsSeries = read.series.find((s) => s.meta.kind === 'gps') as GpsSeries | undefined;
+    const found = read.series.find((s) => s.meta.kind === 'gps') as GpsSeries | undefined;
     const imuSeries = read.series.find((s) => s.meta.kind === 'imu') as ImuSeries | undefined;
-    const t0 = gpsSeries?.meta.t0Utc ?? meta.startedAt;
-    const gps: GpsSample[] = (gpsSeries ? gpsFramesOf(gpsSeries) : [])
-      .filter((f) => f.accuracy !== undefined && f.accuracy <= 30)
-      .map((f) => {
-        const g: GpsSample = { t: t0 + f.t, lat: f.lat, lng: f.lng, speed: f.speed, accuracy: f.accuracy! };
-        if (f.heading !== undefined) g.heading = f.heading;
-        if (f.altitude !== undefined) g.altitude = f.altitude;
-        if (f.altitudeAccuracy !== undefined) g.altitudeAccuracy = f.altitudeAccuracy;
-        return g;
-      });
-    const imu: ImuSample[] = (imuSeries ? imuFramesOf(imuSeries) : [])
-      .filter((f) => f.accel && f.gyro)
-      .map((f) => ({ t: t0 + f.t, accel: f.accel!, gyro: f.gyro! }));
-    return { meta, gps, imu };
+    const t0Utc = found?.meta.t0Utc ?? meta.startedAt;
+    const gpsSeries = found ?? gpsSeriesOf(recordingSeries(meta.recordingId, t0Utc).gps, []);
+    return { meta, t0Utc, gpsSeries, imuSeries, gps: gpsFramesOf(gpsSeries) };
   } catch {
     return 'unreadable';
   }
@@ -76,7 +67,7 @@ export function summarize(active: ActiveRecording, read: ReadResult): RecoverySu
     mode: parsed.meta.mode,
     trackName: parsed.meta.trackName,
     startedAt: parsed.meta.startedAt,
-    laps: detectLaps(parsed.gps, { line: parsed.meta.line ?? null }).laps.length,
+    laps: sliceLapWindows(parsed.gps, parsed.meta.line ?? null).length,
   };
 }
 
@@ -104,8 +95,10 @@ export async function recover(recordingId: string, deps: RecoveryDeps): Promise<
 
   const { meta } = parsed;
   // A mesma linha da gravação (TMP-06); sem ela (diário antigo), a inferida.
-  const laps = sliceLaps(parsed.gps, parsed.imu, meta.line ?? null);
-  if (laps.length === 0) throw new Error('Nenhuma volta completa para recuperar');
+  // As voltas são janelas sobre as séries do diário, sobre os frames ≤ 30 m (TF-12).
+  const windows = sliceLapWindows(parsed.gps, meta.line ?? null);
+  if (windows.length === 0) throw new Error('Nenhuma volta completa para recuperar');
+  const laps = recordedLaps(windows, parsed.gpsSeries, parsed.imuSeries, parsed.t0Utc);
 
   let result: RecoverResult;
   if (meta.mode === 'reference') {
@@ -121,6 +114,9 @@ export async function recover(recordingId: string, deps: RecoveryDeps): Promise<
       deps.layouts
     );
     result = { layoutId: layout.id };
+    // O traçado guarda os pontos dele; nenhuma sessão fica dona das séries.
+    await deps.store.discardRecording(recordingId);
+    return result;
   } else {
     const saved = await saveRecordedSession(
       {
@@ -139,9 +135,9 @@ export async function recover(recordingId: string, deps: RecoveryDeps): Promise<
     result = { sessionId: saved.session.id, saved };
   }
 
-  // Transição (T16 → T21): as voltas foram salvas com os pontos, então o diário
-  // sai inteiro, como antes. A T21 mantém as séries da sessão recuperada.
-  await deps.store.discardRecording(recordingId);
+  // As séries são o bruto da sessão recuperada (edge "sessão recuperada"): só o
+  // registro ativo sai.
+  await deps.store.deleteActive(recordingId);
   return result;
 }
 
