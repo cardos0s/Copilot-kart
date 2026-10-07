@@ -64,6 +64,7 @@ coisa para a nuvem.
 | Unidades | Cada canal declara a unidade a partir de um catálogo fixo (SI, mais rpm e °C). A conversão acontece no adaptador da fonte, e o frame guarda o valor convertido | O spike mostrou unidades do logger (g, deg/s, km/h, mV). O consumidor não pode ter de saber de onde o valor veio | y |
 | Traçados (`track_layouts`) | Guardam uma cópia própria dos frames do traçado, convertida na migração. Não dependem da sessão de origem | A sessão de origem pode ser excluída, e o traçado precisa continuar existindo | y |
 | Migração em etapas | Uma transação por sessão e por traçado, com retomada; as colunas antigas saem só no fim | Uma transação única pode levar minutos para quem tem muito histórico e ser morta pelo sistema na abertura, repetindo para sempre. Ajuste de TF-20 aprovado pela Julia em 06/10, no Design | y |
+| Gravação com menos de 30 pontos de GPS (inclusive nenhum) | É descartada, junto com todo o bruto, como hoje | A regra anterior (salvar só com IMU quando não há nenhuma fix) criava sessão vazia no histórico para quem aperta Iniciar e Encerrar sem sinal. Decidido pela Julia em 07/10, na execução | y |
 | Lap com JSON ilegível na conversão | A volta continua listada com o tempo salvo e sem trajetória, e a sessão abre. A conversão registra quantas voltas pulou | Perder a sessão inteira por uma volta corrompida é pior que perder a trajetória dessa volta | y |
 | Espaço | Uma sessão de 20 min com GPS a 10 Hz e IMU a 50 Hz ocupa no máximo 5 MB no aparelho | Em JSON, como hoje, daria cerca de 9 MB. O limite obriga a um formato compacto em blocos (§6 do documento), sem fixar qual | y |
 | Tempo de leitura | Ler o bruto de uma sessão de 20 min e montar as voltas leva no máximo 200 ms no Node da suíte | Só o Node é mensurável na suíte. O spike do `.xrk` mostrou que esse custo é da ordem de dezenas de ms | y |
@@ -179,7 +180,7 @@ coisa para a nuvem.
 
 ## Edge Cases
 
-- IF a gravação termina sem nenhuma fix de GPS THEN the app SHALL salvar a sessão com os frames de IMU que houver e nenhuma volta.
+- IF a gravação termina com menos de 30 pontos de GPS, inclusive nenhum, THEN the app SHALL descartar a gravação e todo o bruto dela, como faz hoje com menos de 30 pontos. (Decidido pela Julia em 07/10: uma gravação sem GPS não vira sessão vazia no histórico.)
 - IF o par accel+gyro chega incompleto (só um dos dois) THEN the recorder SHALL gravar o frame de IMU com o canal que chegou e o outro ausente.
 - WHEN o relógio do aparelho volta no tempo durante a sessão (ajuste de hora ou fuso) THEN the recorder SHALL manter `t` estritamente crescente.
 - IF a sessão demo (`demoSession.ts`) é criada THEN the app SHALL gravá-la em frames, com o mesmo resultado que os consumidores mostram hoje.

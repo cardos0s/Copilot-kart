@@ -380,7 +380,7 @@ CREATE TABLE telemetry_blocks (
 | Unidade fora do catálogo num adaptador | `UnitError` com o canal e a unidade (TF-21) | Nesta feature, nenhum (não há adaptador externo) |
 | JSON legado ilegível na migração | A volta fica com `window: none`, mantendo tempo e `started_at`. A contagem vai para o `console.warn` da migração | A volta aparece na lista sem trajetória |
 | Falha na conversão de uma sessão (v5b) | A transação dessa sessão é desfeita. A sessão fica sem `frames_version = 5`, e a próxima abertura tenta de novo | Até converter, a sessão abre com os dados antigos, porque as colunas só saem na v5c |
-| Gravação sem nenhuma fix | A sessão é salva com as séries que houver e nenhuma volta (edge) | A sessão aparece com "0 voltas", como hoje |
+| Gravação com menos de 30 pontos de GPS, inclusive nenhum | `journal.discard`: o registro ativo e as séries são apagados (edge, decidido em 07/10) | Nada aparece no histórico, como hoje |
 
 ---
 

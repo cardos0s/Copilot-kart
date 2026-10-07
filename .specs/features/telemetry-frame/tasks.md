@@ -650,7 +650,7 @@ A simulação passa a emitir `GpsFrame` pelo `sessionClock`, com `t` estritament
 
 #### T20: Salvar a sessão com janelas
 
-**What**: Fazer `saveRecordedSession`, `sessionOps.insertLap` e `finishRecording` gravarem as voltas com as colunas de janela, sem JSON de amostra, e sem copiar frames (as séries já são da sessão). A gravação sem nenhuma fix salva a sessão sem voltas.
+**What**: Fazer `saveRecordedSession`, `sessionOps.insertLap` e `finishRecording` gravarem as voltas com as colunas de janela, sem JSON de amostra, e sem copiar frames (as séries já são da sessão). A gravação com menos de 30 pontos de GPS, inclusive nenhum, é descartada com todo o bruto (`journal.discard`), como hoje (edge ajustado pela Julia em 07/10).
 **Where**: `src/recording/finishSession.ts`
 **Depends on**: T19
 **Reuses**: `sessionRepo.ts`, a transação existente
@@ -662,7 +662,7 @@ A simulação passa a emitir `GpsFrame` pelo `sessionClock`, com `t` estritament
 
 **Done when**:
 - [ ] Teste (sql.js): uma gravação de 3 voltas salva 3 linhas em `laps` com `start_*`/`end_*`, e o número de frames das séries é o mesmo de antes do "Encerrar", incluindo paddock e box.
-- [ ] Teste: uma gravação só com IMU e sem fix salva a sessão com 0 voltas e a série de IMU intacta.
+- [ ] Teste (sql.js): uma gravação só com IMU e sem nenhuma fix, e outra com 29 pontos de GPS, terminam sem sessão salva e sem nenhuma linha em `telemetry_series`/`telemetry_blocks`; com 30 pontos, a sessão é salva.
 - [ ] `test/finishSession.test.ts`, `test/finishRecording.test.ts` e `test/helpers/fakeSessionRepo.ts` migrados, com as mesmas asserções de comportamento.
 - [ ] Gate: `npm test`, contagem registrada.
 
