@@ -17,7 +17,8 @@
  * da sessão e `createImuCapture`), as voltas (`sliceLapWindows` e `lapFrames`) e
  * o poll de 500 ms do ao vivo (`createLivePoll`, o mesmo do hook de gravação).
  * O traçado novo do "Encerrar" de um reconhecimento passa pelo banco (sql.js): é
- * gravado e lido de volta da série dele pelo `layoutRepo`.
+ * gravado e lido de volta da série dele pelo `layoutRepo`. A sessão demo também: o
+ * `seedDemoSession` grava série e janelas, e o `loadLaps` lê as voltas.
  */
 import {
   analyzeLap,
@@ -71,7 +72,9 @@ import { G, type GpsFrame, type ImuFrame, type SeriesMeta } from '../../src/tele
 import { analysisGps, lapFrames, sliceLapWindows } from '../../src/telemetry/laps';
 import { gpsSeriesOf, imuSeriesOf } from '../../src/telemetry/series';
 import type { Session, TrackLayout } from '../../src/storage/db';
+import { loadLaps, sessionOwner } from '../../src/storage/lapRepo';
 import { getLayout, sqlLayoutRepo } from '../../src/storage/layoutRepo';
+import { readSeries } from '../../src/telemetry/telemetryStore';
 import { openV5Database } from '../helpers/v5Database';
 import {
   session1,
@@ -92,10 +95,11 @@ type DbState = {
   sessions: Session[];
   laps: LapRecord[];
   layouts: TrackLayout[];
-  savedLaps: LapRecord[];
 };
 
-const db: DbState = { sessions: [], laps: [], layouts: [], savedLaps: [] };
+const db: DbState = { sessions: [], laps: [], layouts: [] };
+/** O banco (sql.js) em que o `seedDemoSession` real grava a sessão demo. */
+const demoDb = openV5Database();
 const liveRows: Record<string, unknown>[] = [];
 
 function stub(path: string, exports: Record<string, unknown>): void {
@@ -110,15 +114,25 @@ stub('../../src/storage/db', {
   getDefaultLayoutForTrack: async () => null,
   getTrackHistory: async () => [],
   listSessions: async () => [],
-  createSession: async (input: Omit<Session, 'id' | 'startedAt' | 'recovered'>) => ({
-    ...input,
-    id: 'session_demo',
-    startedAt: Date.now(),
-    recovered: false,
-  }),
-  saveLap: async (lap: LapRecord) => {
-    db.savedLaps.push(lap);
+  createSession: async (input: Omit<Session, 'id' | 'startedAt' | 'recovered'>) => {
+    const session = { ...input, id: 'session_demo', startedAt: Date.now(), recovered: false };
+    await (await demoDb).conn.runAsync(
+      `INSERT INTO sessions (id, track_name, kart, notes, started_at, weather, track_id, mode, layout_id, kart_setup_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      session.id,
+      session.trackName,
+      session.kart,
+      session.notes,
+      session.startedAt,
+      session.weather,
+      session.trackId,
+      session.mode,
+      session.layoutId,
+      session.kartSetupId,
+    );
+    return session;
   },
+  appSqlConn: async () => (await demoDb).conn,
   deleteSession: async () => {},
 });
 stub('../../src/storage/profile', { getProfile: async () => null });
@@ -618,16 +632,25 @@ export async function runGolden(): Promise<GoldenOutput> {
   );
   const s2Laps = recordedLaps(s2Frames, [], s2.t0, null).map((l, i) => toLapRecord(l, 'session_golden_s2', i));
 
-  // Sessão demo pelo caminho real do seed, com o relógio congelado.
-  db.savedLaps = [];
+  // Sessão demo pelo caminho real do seed, com o relógio congelado: gravada no
+  // banco (sql.js) em série e janelas, e lida de volta pelo `loadLaps`. Na visão antiga.
   const realNow = Date.now;
   Date.now = () => DEMO_NOW;
+  let demoId: string;
   try {
-    await seedDemoSession();
+    demoId = await seedDemoSession();
   } finally {
     Date.now = realNow;
   }
-  const demoLaps = db.savedLaps.slice();
+  const { conn: demoConn } = await demoDb;
+  const demoT0 = (await readSeries(demoConn, sessionOwner(demoId), { kinds: ['gps'] })).series[0].meta.t0Utc!;
+  const demoLaps: LapRecord[] = (await loadLaps(demoConn, demoId)).map((l) => ({
+    id: l.id,
+    sessionId: l.sessionId,
+    startedAt: l.startedAt,
+    durationMs: l.durationMs,
+    samples: l.gps!.map((f) => legacyFrame(f, demoT0)),
+  }));
 
   const sessions: GoldenSession[] = [
     { name: 's1', session: sessionRow('session_golden_s1', 'Golden', T0, null), laps: s1Laps, layout: null },

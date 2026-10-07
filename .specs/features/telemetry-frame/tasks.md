@@ -784,9 +784,10 @@ A simulação passa a emitir `GpsFrame` pelo `sessionClock`, com `t` estritament
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste (sql.js): a sessão demo tem as mesmas voltas, durações e `started_at` de antes.
-- [ ] Golden passa sem mudar o `expected.json`.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste (sql.js): a sessão demo tem as mesmas voltas, durações e `started_at` de antes.
+- [x] Golden passa sem mudar o `expected.json`: o harness roda o `seedDemoSession` real sobre o sql.js e lê as voltas pelo `loadLaps`.
+- [x] O replay vira a série GPS da sessão (`t0Utc` = início reancorado), e cada volta é uma janela por índice `from..to`; a sessão sai com `frames_version = 5`.
+- [x] Gate: `npm test`, contagem registrada: 242 testes (241 + 1).
 
 **Tests**: integration
 **Gate**: full

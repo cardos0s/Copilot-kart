@@ -59,21 +59,29 @@ function sessionOps(conn: () => Promise<SqlTx>): SessionRepoTx {
       );
     },
     async insertLap(lap: LapRecord) {
-      await (await conn()).runAsync(
-        `INSERT INTO laps (id, session_id, started_at, duration_ms, samples_json, imu_samples_json,
-           window_kind, from_idx, to_idx,
-           start_t, start_lat, start_lng, start_speed, start_acc,
-           end_t, end_lat, end_lng, end_speed, end_acc)
-         VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        lap.id,
-        lap.sessionId,
-        lap.startedAt,
-        lap.durationMs,
-        NO_SAMPLES_JSON,
-        ...windowColumns(lap.window)
-      );
+      await insertLapOn(await conn(), lap);
     },
   };
+}
+
+/** A volta como janela, sem JSON de amostra, dentro da transação de quem chama (ou fora dela). */
+export async function insertLapOn(
+  tx: SqlTx,
+  lap: Pick<LapRecord, 'id' | 'sessionId' | 'startedAt' | 'durationMs' | 'window'>
+): Promise<void> {
+  await tx.runAsync(
+    `INSERT INTO laps (id, session_id, started_at, duration_ms, samples_json, imu_samples_json,
+       window_kind, from_idx, to_idx,
+       start_t, start_lat, start_lng, start_speed, start_acc,
+       end_t, end_lat, end_lng, end_speed, end_acc)
+     VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    lap.id,
+    lap.sessionId,
+    lap.startedAt,
+    lap.durationMs,
+    NO_SAMPLES_JSON,
+    ...windowColumns(lap.window)
+  );
 }
 
 export function sqlSessionRepo(conn: () => Promise<SqlConn>): SessionRepo {
