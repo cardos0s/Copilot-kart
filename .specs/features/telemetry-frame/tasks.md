@@ -930,9 +930,9 @@ entrada.
 - Skill: NONE
 
 **Done when**:
-- [ ] `test/lapCompare.test.ts` passa com os mesmos valores.
-- [ ] Golden (curvas, métricas por curva, comparação e velocidade mínima por curva) passa sem mudar o `expected.json`.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] `test/lapCompare.test.ts` passa com os mesmos valores, lendo `gps` (e `test/cornerSpeed.test.ts` também). `corners`, `cornerAnalysis` e `cornerSpeed` só leem `ReferenceLap` (pontos `LocalGpsFrame` desde a T27) e `MatchedLap`, e `compareLaps` já lê `gps` pela T27/T28: nenhuma linha deles mudou.
+- [x] Golden (curvas, métricas por curva, comparação e velocidade mínima por curva) passa sem mudar o `expected.json`.
+- [x] Gate: `npm test`, contagem registrada: 250 testes (250 + 0).
 
 **Tests**: unit
 **Gate**: quick

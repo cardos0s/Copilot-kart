@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { cleanSamples, repairDegenerateTimestamps, type LapRecord } from '../src/lib/analysis';
-import type { GpsSample } from '../src/lib/geometry';
+import type { GpsFrame } from '../src/telemetry/frame';
 import { compareLaps } from '../src/lib/lapCompare';
 import { referenceFromLap, referenceFromLayout, sectorSplits } from '../src/lib/sectors';
 import { lineFromLayout } from '../src/lib/startLine';
@@ -19,7 +19,7 @@ const D = 37_699;
 const KEYS = ['s1Ms', 's2Ms', 's3Ms'] as const;
 
 /** Traçado como o app o salva: a melhor volta de uma sessão, com fronteiras na linha. */
-function layoutSamples(): GpsSample[] {
+function layoutSamples(): GpsFrame[] {
   const { samples } = generateTimedLaps({ lapDurationMs: D, sampleRateHz: 10, laps: 2, warmupS: 3 });
   return sliceLaps(samples, [])[0].samples;
 }
@@ -39,8 +39,8 @@ test('compareLaps: S1/S2/S3 são os de sectorSplits (± 1 ms) contra o traçado 
   const [a, b] = savedLaps(lineFromLayout(layout));
 
   const res = compareLaps(a, b, ref, []);
-  const sa = sectorSplits(a.samples, ref);
-  const sb = sectorSplits(b.samples, ref);
+  const sa = sectorSplits(a.gps, ref);
+  const sb = sectorSplits(b.gps, ref);
   assert.equal(res.sectors.length, 3);
   KEYS.forEach((k, i) => {
     const row = res.sectors[i];
@@ -74,8 +74,8 @@ test('compareLaps: sem traçado, a régua é a volta de referência da comparaç
   const [a, b] = savedLaps(null);
   const res = compareLaps(a, b, null, []);
   const ruler = referenceFromLap(b);
-  const sa = sectorSplits(a.samples, ruler);
-  const sb = sectorSplits(b.samples, ruler);
+  const sa = sectorSplits(a.gps, ruler);
+  const sb = sectorSplits(b.gps, ruler);
   assert.ok(Math.abs(res.trackLengthM - ruler.totalLength) < 1e-9);
   KEYS.forEach((k, i) => {
     assert.equal(res.sectors[i].aMs, sa[k], `S${i + 1} de A`);
@@ -93,7 +93,7 @@ const trackAt = makeCircularTrack(-14.8619, -40.8444, 120);
  * frente ao longo da pista, como costuma vir a fix imprecisa.
  */
 function withBadFixes(lap: LapRecord, fracs: number[], metros: number): LapRecord {
-  const samples = lap.samples.map((p) => ({ ...p }));
+  const samples = lap.gps.map((p) => ({ ...p }));
   const t0 = samples[0].t;
   const frac = (i: number) => (samples[i].t - t0) / lap.durationMs;
   for (const f of fracs) {
@@ -109,7 +109,7 @@ function withBadFixes(lap: LapRecord, fracs: number[], metros: number): LapRecor
 
 /** O traço do delta e o mapa da tela: pontos limpos por `cleanSamples(10)` e o reparo de timestamp. */
 function cleanedForTrace(lap: LapRecord): LapRecord {
-  const { samples } = repairDegenerateTimestamps(cleanSamples(lap.samples, 10), lap.durationMs, lap.startedAt);
+  const { samples } = repairDegenerateTimestamps(cleanSamples(lap.gps, 10), lap.durationMs, lap.startedAt);
   return { ...lap, gps: samples, samples };
 }
 
@@ -119,11 +119,11 @@ function assertSectorsFromSaved(sampleRateHz: number, metros: number) {
   const ref = referenceFromLayout(layout);
   assert.ok(ref);
   const [a, b] = savedLaps(lineFromLayout(layout), sampleRateHz).map((l) => withBadFixes(l, [1 / 3, 2 / 3], metros));
-  assert.equal(a.samples.filter((p) => p.accuracy === 15).length, 2);
+  assert.equal(a.gps.filter((p) => p.accuracy === 15).length, 2);
 
   const res = compareLaps(cleanedForTrace(a), cleanedForTrace(b), ref, [], { a, b });
-  const sa = sectorSplits(a.samples, ref);
-  const sb = sectorSplits(b.samples, ref);
+  const sa = sectorSplits(a.gps, ref);
+  const sb = sectorSplits(b.gps, ref);
   KEYS.forEach((k, i) => {
     const row = res.sectors[i];
     const ea = sa[k];

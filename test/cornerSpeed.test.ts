@@ -37,7 +37,7 @@ function corner(index: number, sStart: number, sEnd: number): Corner {
 
 test('minSpeedPerCorner: duas curvas da pista circular dão a mínima de cada uma, em km/h', () => {
   const lap = circularLap();
-  const ref = buildReferenceLap(lap.samples, lap.samples[0]);
+  const ref = buildReferenceLap(lap.gps, lap.gps[0]);
   const matched = matchLapToReference(lap, ref);
   const L = ref.totalLength;
   const corners = [corner(0, 0.1 * L, 0.2 * L), corner(1, 0.55 * L, 0.65 * L)];
@@ -55,7 +55,7 @@ test('minSpeedPerCorner: duas curvas da pista circular dão a mínima de cada um
 
 test('minSpeedPerCorner: curva sem ponto casado vale 0 km/h', () => {
   const lap = circularLap();
-  const ref = buildReferenceLap(lap.samples, lap.samples[0]);
+  const ref = buildReferenceLap(lap.gps, lap.gps[0]);
   const matched = matchLapToReference(lap, ref);
   const L = ref.totalLength;
   const out = minSpeedPerCorner([corner(0, 0.1 * L, 0.2 * L), corner(1, L + 10, L + 20)], matched);
