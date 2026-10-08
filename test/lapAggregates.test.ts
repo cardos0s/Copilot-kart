@@ -68,7 +68,13 @@ require.cache[dbPath] = {
       throw new Error('getLapsForSession lê o bruto');
     },
     listUnlockedAchievements: async () => [],
-    listDailyChallenges: async () => [challenge('laps_count', 3), challenge('sub_50', 50_000), challenge('consistency', 5)],
+    // O sub-50 vem com o alvo 50.000 que o app gravava antes da correção; o sub-60 já com o alvo 1.
+    listDailyChallenges: async () => [
+      challenge('laps_count', 3),
+      challenge('sub_50', 50_000),
+      challenge('sub_60', 1),
+      challenge('consistency', 5),
+    ],
     saveDailyChallenge: async (c: DailyChallenge) => {
       saved.push(c);
     },
@@ -77,7 +83,7 @@ require.cache[dbPath] = {
 const { buildWeeklyRecap } = require('../src/lib/recap') as typeof import('../src/lib/recap');
 const { computePreviousStreak, getStatsForAchievements } =
   require('../src/lib/gamification') as typeof import('../src/lib/gamification');
-const { refreshTodayChallenges } = require('../src/lib/challenges') as typeof import('../src/lib/challenges');
+const { getTemplate, refreshTodayChallenges } = require('../src/lib/challenges') as typeof import('../src/lib/challenges');
 
 test('agregados (estático): recap, gamification e challenges não chamam getLapsForSession(', () => {
   for (const f of ['recap.ts', 'gamification.ts', 'challenges.ts']) {
@@ -105,14 +111,30 @@ test('gamification: a sequência de PB e a contagem de voltas saem das duraçõe
   assert.deepEqual(await getStatsForAchievements('t1'), { totalLaps: 7, totalSessions: 3, sessionsOnTrack: 3 });
 });
 
-test('challenges: o progresso do dia sai das voltas de hoje (3 voltas, sub-50, 3 dentro de 1 s da média)', async () => {
+test('challenges: o progresso do dia sai das voltas de hoje (3 voltas, sub-50, sub-60, 3 dentro de 1 s da média)', async () => {
   saved.length = 0;
   await refreshTodayChallenges();
-  const byTemplate = Object.fromEntries(saved.map((c) => [c.templateId, { progress: c.progress, completed: c.completed }]));
-  // O sub-50 marca progresso 1 contra o alvo 50.000 e nunca completa: é a regra de antes, mantida aqui.
+  const byTemplate = Object.fromEntries(
+    saved.map((c) => [c.templateId, { target: c.target, progress: c.progress, completed: c.completed }])
+  );
+  // Melhor volta de hoje: 39.500 ms. O sub-50 gravado com o alvo 50.000 volta pro alvo 1 e completa.
   assert.deepEqual(byTemplate, {
-    laps_count: { progress: 3, completed: true },
-    sub_50: { progress: 1, completed: false },
-    consistency: { progress: 3, completed: false },
+    laps_count: { target: 3, progress: 3, completed: true },
+    sub_50: { target: 1, progress: 1, completed: true },
+    sub_60: { target: 1, progress: 1, completed: true },
+    consistency: { target: 5, progress: 3, completed: false },
   });
+});
+
+test('challenges: sub-50 e sub-60 completam só com volta abaixo do limite (alvo 1)', () => {
+  const day = (...ms: number[]) => [{ session: null, laps: ms.map((durationMs) => ({ durationMs })) }];
+  for (const [id, limitMs] of [['sub_50', 50_000], ['sub_60', 60_000]] as const) {
+    const tpl = getTemplate(id);
+    assert.ok(tpl);
+    assert.deepEqual(tpl.targets, [1], id);
+    assert.equal(tpl.evaluate(1, []), 0, `${id}: sem sessão`);
+    assert.equal(tpl.evaluate(1, day()), 0, `${id}: sessão sem volta`);
+    assert.equal(tpl.evaluate(1, day(limitMs + 5_000, limitMs)), 0, `${id}: no limite exato não vale`);
+    assert.equal(tpl.evaluate(1, day(limitMs + 5_000, limitMs - 1)), 1, `${id}: 1 ms abaixo completa`);
+  }
 });

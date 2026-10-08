@@ -56,22 +56,16 @@ export const CHALLENGE_TEMPLATES: ChallengeTemplate[] = [
     title: 'Sub-50 segundos',
     description: (_) => 'Bata uma volta abaixo de 50s',
     icon: '⚡',
-    targets: [50000],
-    evaluate: (target, sessions) => {
-      const best = bestLapMs(sessions);
-      return best != null && best < target ? 1 : 0;
-    },
+    targets: [1],
+    evaluate: (_, sessions) => lapUnder(50000, sessions),
   },
   {
     id: 'sub_60',
     title: 'Sub-60 segundos',
     description: (_) => 'Bata uma volta abaixo de 60s',
     icon: '⏱️',
-    targets: [60000],
-    evaluate: (target, sessions) => {
-      const best = bestLapMs(sessions);
-      return best != null && best < target ? 1 : 0;
-    },
+    targets: [1],
+    evaluate: (_, sessions) => lapUnder(60000, sessions),
   },
   {
     id: 'consistency',
@@ -96,6 +90,15 @@ export const CHALLENGE_TEMPLATES: ChallengeTemplate[] = [
       Math.floor(sessions.reduce((sum, s) => sum + s.laps.length, 0) * 0.6),
   },
 ];
+
+/**
+ * Desafio de volta abaixo de um tempo: o limite fica no template e o alvo é 1
+ * (feito ou não), pra tela mostrar "0 / 1" → "1 / 1" e não "1 / 50000".
+ */
+function lapUnder(limitMs: number, sessions: Array<{ laps: Array<{ durationMs: number }> }>): number {
+  const best = bestLapMs(sessions);
+  return best != null && best < limitMs ? 1 : 0;
+}
 
 function bestLapMs(sessions: Array<{ laps: Array<{ durationMs: number }> }>): number | null {
   let best: number | null = null;
@@ -170,11 +173,15 @@ export async function refreshTodayChallenges(): Promise<void> {
   for (const c of challenges) {
     const tpl = getTemplate(c.templateId);
     if (!tpl) continue;
-    const progress = tpl.evaluate(c.target, sessionsWithLaps);
-    const completed = progress >= c.target;
-    if (progress !== c.progress || completed !== c.completed) {
+    // Template de alvo único não sorteia: vale o do catálogo. Corrige o sub-50/
+    // sub-60 já gravado com 50000/60000, que nunca completava.
+    const target = tpl.targets.length === 1 ? tpl.targets[0] : c.target;
+    const progress = tpl.evaluate(target, sessionsWithLaps);
+    const completed = progress >= target;
+    if (target !== c.target || progress !== c.progress || completed !== c.completed) {
       await saveDailyChallenge({
         ...c,
+        target,
         progress,
         completed,
         completedAt: completed && !c.completed ? Date.now() : c.completedAt,
