@@ -86,7 +86,7 @@ export default function LapCompareScreen() {
         const forTrace = (raw: LapRecord): LapRecord => {
           const cleaned = cleanSamples(raw.samples, 10);
           const { samples } = repairDegenerateTimestamps(cleaned, raw.durationMs, raw.startedAt);
-          return { ...raw, samples };
+          return { ...raw, gps: samples, samples };
         };
         const lapARec = forTrace(savedA);
         const lapBRec = forTrace(savedB);

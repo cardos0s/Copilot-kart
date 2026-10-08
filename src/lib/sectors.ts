@@ -58,7 +58,7 @@ export function sectorSplits(lapSamples: GpsSample[], ref: ReferenceLap): Sector
   const L = ref.totalLength;
   if (lapSamples.length < 2 || L <= 0) return none;
 
-  const lap: LapRecord = { id: '', sessionId: '', samples: lapSamples, startedAt: lapSamples[0].t, durationMs: 0 };
+  const lap: LapRecord = { id: '', sessionId: '', gps: lapSamples, samples: lapSamples, startedAt: lapSamples[0].t, durationMs: 0 };
   const matched = matchLapToReference(lap, ref);
   const pts = matched.points;
   // O início da volta é a linha: s ≈ 0, ou s ≈ L quando o map matching o

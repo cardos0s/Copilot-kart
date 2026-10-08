@@ -242,7 +242,7 @@ function SessionScreenInner() {
           l.startedAt,
         );
         if (repaired) anyRepaired = true;
-        return { ...l, samples: repairedSamples };
+        return { ...l, gps: repairedSamples, samples: repairedSamples };
       });
 
       if (ref && ref.samples.length >= 2) {
@@ -330,6 +330,7 @@ function SessionScreenInner() {
           sessionId: 'ref',
           startedAt: 0,
           durationMs: refDurationMs,
+          gps: refSamples,
           samples: refSamples,
         },
         refLap

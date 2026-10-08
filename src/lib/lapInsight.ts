@@ -47,7 +47,7 @@ const MAX_LAPS = 60;
 function cleanLap(lap: LapRecord): LapRecord {
   const cleaned = cleanSamples(lap.samples, 10);
   const { samples } = repairDegenerateTimestamps(cleaned, lap.durationMs, lap.startedAt);
-  return { ...lap, samples };
+  return { ...lap, gps: samples, samples };
 }
 
 /**

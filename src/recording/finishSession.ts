@@ -106,6 +106,8 @@ export function toLapRecord(lap: RecordedLap, sessionId: string, index: number):
   const record: LapRecord = {
     id: `${sessionId}_lap_${index + 1}`,
     sessionId,
+    // Transição (até a T46): o recorte antigo (`sliceLaps`) não tem `gps`; os dois apontam para o mesmo array.
+    gps: lap.gps ?? lap.samples,
     samples: lap.samples,
     startedAt: lap.startedAt,
     durationMs: lap.durationMs,
@@ -113,8 +115,8 @@ export function toLapRecord(lap: RecordedLap, sessionId: string, index: number):
     imuSamples: lap.imuSamples.length > 0 ? lap.imuSamples : undefined,
   };
   if (lap.window) record.window = lap.window;
-  if (lap.gps) record.gps = lap.gps;
-  if (lap.imu && lap.imu.length > 0) record.imu = lap.imu;
+  const imu = lap.imu ?? lap.imuSamples;
+  if (imu.length > 0) record.imu = imu;
   return record;
 }
 

@@ -175,7 +175,12 @@ function sum(values: number[]): number {
   return s;
 }
 
-function gpsSeries(samples: GpsSample[], k = SAMPLE_K) {
+/**
+ * Resumo de frames de GPS para o `expected.json`, que guarda a visão antiga: `t` absoluto
+ * (`t0 + t`) e só as chaves de antes. `t0` é o t0Utc da série (0 quando o `t` já é o gravado).
+ */
+function gpsSeries(frames: GpsFrame[], t0: number, k = SAMPLE_K) {
+  const samples = frames.map((f) => legacyFrame(f, t0));
   return {
     ...sub(samples, k),
     first: samples[0] ?? null,
@@ -187,8 +192,10 @@ function gpsSeries(samples: GpsSample[], k = SAMPLE_K) {
   };
 }
 
-function imuSeries(imu: ImuSample[] | undefined) {
-  if (!imu) return null;
+/** Resumo da IMU para o `expected.json`, na visão antiga (`t` absoluto, accel em g). */
+function imuSeries(frames: ImuFrame[] | undefined, t0: number) {
+  if (!frames) return null;
+  const imu = frames.map((f) => legacyImu(f, t0));
   return {
     ...sub(imu, IMU_K),
     first: imu[0] ?? null,
@@ -198,13 +205,13 @@ function imuSeries(imu: ImuSample[] | undefined) {
   };
 }
 
-function lapSummary(l: LapRecord) {
+function lapSummary(l: LapRecord, t0: number) {
   return {
     id: l.id,
     startedAt: l.startedAt,
     durationMs: l.durationMs,
-    samples: gpsSeries(l.samples),
-    imu: imuSeries(l.imuSamples),
+    samples: gpsSeries(l.gps, t0),
+    imu: imuSeries(l.imu, t0),
   };
 }
 
@@ -252,10 +259,10 @@ function compareSummary(r: CompareResult) {
 // ---------------------------------------------------------------------------
 
 /**
- * Visão antiga de um frame de GPS, para os consumidores que ainda recebem
- * `GpsSample` (até a fase 5): `t` absoluto (`t0Utc + t`) e só as chaves de antes.
+ * Visão antiga de um frame de GPS: `t` absoluto (`t0Utc + t`) e só as chaves de antes.
+ * Serve ao que vai para o `expected.json` e aos consumidores ainda não migrados na fase 5.
  */
-function legacyFrame(f: GpsFrame, t0Utc: number): GpsSample {
+function legacyFrame(f: GpsFrame, t0Utc: number) {
   return {
     t: t0Utc + f.t,
     lat: f.lat,
@@ -271,11 +278,11 @@ function legacyFrame(f: GpsFrame, t0Utc: number): GpsSample {
 
 /** Os frames que a análise lê (`analysisGps`, ≤ 30 m), na visão antiga. */
 function legacyGps(frames: GpsFrame[], t0Utc: number): GpsSample[] {
-  return analysisGps(frames).map((f) => legacyFrame(f, t0Utc));
+  return analysisGps(frames).map((f) => ({ ...legacyFrame(f, t0Utc), kind: 'gps', source: f.source, fix: f.fix }));
 }
 
-/** IMU na visão antiga: `t` absoluto e o acelerômetro em g, como o sensor entrega. */
-function legacyImu(f: ImuFrame, t0Utc: number): ImuSample {
+/** IMU na visão antiga, para o `expected.json`: `t` absoluto e o acelerômetro em g, como o sensor entrega. */
+function legacyImu(f: ImuFrame, t0Utc: number) {
   return {
     t: t0Utc + f.t,
     accel: { x: f.accel!.x / G, y: f.accel!.y / G, z: f.accel!.z / G },
@@ -302,8 +309,8 @@ async function captureGps(batches: LocationBatch[], t0Utc: number): Promise<GpsF
 
 /**
  * As voltas como o app as recorta: janelas do `sliceLapWindows` sobre os frames
- * e os frames de cada uma pelo `lapFrames` (fronteiras geradas na leitura), na
- * visão antiga que o `toLapRecord` e o `saveReferenceLayout` ainda recebem.
+ * e os frames de cada uma pelo `lapFrames` (fronteiras geradas na leitura), pelo
+ * `recordedLaps` do "Encerrar". Os frames ficam no relógio da sessão.
  */
 function recordedLaps(gps: GpsFrame[], imu: ImuFrame[], t0Utc: number, line: StartLine | null): RecordedLap[] {
   const meta = (kind: 'gps' | 'imu'): SeriesMeta => ({
@@ -314,17 +321,7 @@ function recordedLaps(gps: GpsFrame[], imu: ImuFrame[], t0Utc: number, line: Sta
     t0Utc,
     legacy: false,
   });
-  const gpsSeries = gpsSeriesOf(meta('gps'), gps);
-  const imuSeries = imuSeriesOf(meta('imu'), imu);
-  return sliceLapWindows(gps, line).map((w) => {
-    const lap = lapFrames(w.window, gpsSeries, imuSeries);
-    return {
-      samples: lap.gps.map((f) => legacyFrame(f, t0Utc)),
-      imuSamples: lap.imu.map((f) => legacyImu(f, t0Utc)),
-      durationMs: w.durationMs,
-      startedAt: t0Utc + w.startT,
-    };
-  });
+  return stopLaps(sliceLapWindows(gps, line), gpsSeriesOf(meta('gps'), gps), imuSeriesOf(meta('imu'), imu), t0Utc);
 }
 
 /** O sensor conta desde o boot: o `timestamp` dos eventos é o instante de chegada menos este boot. */
@@ -435,12 +432,14 @@ type GoldenSession = {
   session: Session;
   laps: LapRecord[];
   layout: TrackLayout | null;
+  /** O t0Utc das séries da sessão; 0 na legada, cujo `t` é o gravado. Só para o resumo no `expected.json`. */
+  t0: number;
 };
 
 function prepareLap(l: LapRecord): { lap: LapRecord; repaired: boolean } {
-  const cleaned = cleanSamples(l.samples, 10);
+  const cleaned = cleanSamples(l.gps, 10);
   const { samples, repaired } = repairDegenerateTimestamps(cleaned, l.durationMs, l.startedAt);
-  return { lap: { ...l, samples }, repaired };
+  return { lap: { ...l, gps: samples, samples }, repaired };
 }
 
 /** A tela da sessão (`app/session/[id].tsx`), com cada volta como a selecionada. */
@@ -469,7 +468,7 @@ function sessionScreen(gs: GoldenSession) {
   const refLap = buildReferenceLap(refSamples, { lat: refSamples[0].lat, lng: refSamples[0].lng });
   const corners = detectCorners(refLap);
   const matchedRef = matchLapToReference(
-    { id: 'ref', sessionId: 'ref', startedAt: 0, durationMs: refDurationMs, samples: refSamples },
+    { id: 'ref', sessionId: 'ref', startedAt: 0, durationMs: refDurationMs, gps: refSamples, samples: refSamples },
     refLap,
   );
   const bestSaved = saved[sessionBest.id] ?? sessionBest.samples;
@@ -561,7 +560,7 @@ async function coachContexts(gs: GoldenSession) {
       id: lap.id,
       kind: r.kind,
       lapSampleCount: c.lap.samples.length,
-      lapSamples: gpsSeries(c.lap.samples),
+      lapSamples: gpsSeries(c.lap.gps, gs.t0),
       refDurationMs: c.refDurationMs,
       analysis: c.analysis,
       cornerMetrics: c.cornerMetrics,
@@ -619,9 +618,8 @@ export async function runGolden(): Promise<GoldenOutput> {
   const s1Frames = await captureGps(s1.batches, s1.t0);
   const s1ImuFrames = captureImu(s1.imuEvents, s1.t0);
   const s2Frames = await captureGps(s2.batches, s2.t0);
-  // Visão antiga, para a detecção e os resumos da captura.
+  // Visão antiga, para a detecção (até a T33).
   const s1Gps = legacyGps(s1Frames, s1.t0);
-  const s1Imu = s1ImuFrames.map((f) => legacyImu(f, s1.t0));
   const s2Gps = legacyGps(s2Frames, s2.t0);
 
   // Voltas salvas: janelas + lapFrames + toLapRecord, como no "Encerrar".
@@ -633,7 +631,7 @@ export async function runGolden(): Promise<GoldenOutput> {
   const s2Laps = recordedLaps(s2Frames, [], s2.t0, null).map((l, i) => toLapRecord(l, 'session_golden_s2', i));
 
   // Sessão demo pelo caminho real do seed, com o relógio congelado: gravada no
-  // banco (sql.js) em série e janelas, e lida de volta pelo `loadLaps`. Na visão antiga.
+  // banco (sql.js) em série e janelas, e lida de volta pelo `loadLaps`.
   const realNow = Date.now;
   Date.now = () => DEMO_NOW;
   let demoId: string;
@@ -644,25 +642,32 @@ export async function runGolden(): Promise<GoldenOutput> {
   }
   const { conn: demoConn } = await demoDb;
   const demoT0 = (await readSeries(demoConn, sessionOwner(demoId), { kinds: ['gps'] })).series[0].meta.t0Utc!;
-  const demoLaps: LapRecord[] = (await loadLaps(demoConn, demoId)).map((l) => ({
-    id: l.id,
-    sessionId: l.sessionId,
-    startedAt: l.startedAt,
-    durationMs: l.durationMs,
-    samples: l.gps!.map((f) => legacyFrame(f, demoT0)),
-  }));
+  const demoLaps = await loadLaps(demoConn, demoId);
 
   const sessions: GoldenSession[] = [
-    { name: 's1', session: sessionRow('session_golden_s1', 'Golden', T0, null), laps: s1Laps, layout: null },
+    { name: 's1', session: sessionRow('session_golden_s1', 'Golden', T0, null), laps: s1Laps, layout: null, t0: s1.t0 },
     {
       name: 's1Layout',
       session: sessionRow('session_golden_s1_layout', 'Golden', T0, layout.id),
       laps: s1LayoutLaps,
       layout,
+      t0: s1.t0,
     },
-    { name: 's2', session: sessionRow('session_golden_s2', 'Leandro Merlo', s2.t0, null), laps: s2Laps, layout: null },
-    { name: 'demo', session: sessionRow('session_demo', 'Leandro Merlo', DEMO_NOW, null), laps: demoLaps, layout: null },
-    { name: 's4', session: sessionRow(legacy.sessionId, 'Golden', legacy.startedAt, null), laps: [legacy], layout: null },
+    {
+      name: 's2',
+      session: sessionRow('session_golden_s2', 'Leandro Merlo', s2.t0, null),
+      laps: s2Laps,
+      layout: null,
+      t0: s2.t0,
+    },
+    {
+      name: 'demo',
+      session: sessionRow('session_demo', 'Leandro Merlo', DEMO_NOW, null),
+      laps: demoLaps,
+      layout: null,
+      t0: demoT0,
+    },
+    { name: 's4', session: sessionRow(legacy.sessionId, 'Golden', legacy.startedAt, null), laps: [legacy], layout: null, t0: 0 },
   ];
   const byName = (n: string) => sessions.find((s) => s.name === n)!;
 
@@ -673,23 +678,24 @@ export async function runGolden(): Promise<GoldenOutput> {
   };
 
   // Captura e detecção.
-  put('handleLocations', 's1', gpsSeries(s1Gps));
-  put('handleLocations', 's2', gpsSeries(s2Gps));
+  put('handleLocations', 's1', gpsSeries(analysisGps(s1Frames), s1.t0));
+  put('handleLocations', 's2', gpsSeries(analysisGps(s2Frames), s2.t0));
   put('handleLocations', 's1HeadTimesMs', s1Gps.slice(0, 300).map((p) => p.t));
-  put('imuPairing', 's1', imuSeries(s1Imu));
+  put('imuPairing', 's1', imuSeries(s1ImuFrames, s1.t0));
   put('detectLaps', 's1', detectionSummary(s1Gps, null));
   put('detectLaps', 's1Layout', detectionSummary(s1Gps, layoutLine));
   put('detectLaps', 's2', detectionSummary(s2Gps, null));
 
   for (const gs of sessions) {
-    put('lapRecords', gs.name, gs.laps.map(lapSummary));
+    put('lapRecords', gs.name, gs.laps.map((l) => lapSummary(l, gs.t0)));
     put('sessionScreen', gs.name, sessionScreen(gs));
     put('peakSpeedMsOfLaps', gs.name, peakSpeedMsOfLaps(gs.laps));
     put('buildLapInsight', gs.name, (() => {
       const r = buildLapInsight(gs.laps);
       return r && { ...r, best: { id: r.best.id, durationMs: r.best.durationMs, sampleCount: r.best.samples.length } };
     })());
-    put('detectSpins', gs.name, gs.laps.map((l) => detectSpins(l.samples, l.imuSamples)));
+    // O trompo sai no relógio da sessão; o `expected.json` guarda o instante absoluto.
+    put('detectSpins', gs.name, gs.laps.map((l) => detectSpins(l.samples, l.imuSamples).map((e) => ({ ...e, startT: gs.t0 + e.startT, endT: gs.t0 + e.endT }))));
     put('buildPilotDna', gs.name, buildPilotDna([{ trackName: gs.session.trackName, startedAt: gs.session.startedAt, laps: gs.laps }]));
     put('coachContext', gs.name, await coachContexts(gs));
     const bestLap = gs.laps.reduce((b, l) => (l.durationMs < b.durationMs ? l : b), gs.laps[0]);
@@ -745,7 +751,7 @@ export async function runGolden(): Promise<GoldenOutput> {
     id: newLayout.id,
     trackId: newLayout.trackId,
     name: newLayout.name,
-    samples: gpsSeries(newLayout.gps!.map((f) => legacyFrame(f, s1.t0))),
+    samples: gpsSeries(newLayout.gps!, s1.t0),
     durationMs: newLayout.durationMs,
     lengthM: newLayout.lengthM,
     recordedAt: newLayout.recordedAt,

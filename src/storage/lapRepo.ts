@@ -78,13 +78,19 @@ export function windowOf(r: WindowRow): LapWindow | null {
  * (`window_kind` nulo) e sai do JSON, exatamente como o `getLapsForSession` de antes.
  */
 function legacyLap(r: LapRow, imu: boolean): LapRecord {
+  // O JSON antigo vai como está (t em epoch ms, accel em g); a conversão em frames é a da v5b.
+  const samples = JSON.parse(r.samples_json) as GpsSample[];
+  const imuSamples: ImuSample[] | undefined =
+    imu && r.imu_samples_json ? JSON.parse(r.imu_samples_json) : undefined;
   return {
     id: r.id,
     sessionId: r.session_id,
     startedAt: r.started_at,
     durationMs: r.duration_ms,
-    samples: JSON.parse(r.samples_json) as GpsSample[],
-    imuSamples: imu && r.imu_samples_json ? JSON.parse(r.imu_samples_json) : undefined,
+    gps: samples,
+    samples,
+    imu: imuSamples,
+    imuSamples,
   };
 }
 

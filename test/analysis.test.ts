@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { cleanSamples } from '../src/lib/analysis';
-import type { GpsSample } from '../src/lib/geometry';
+import type { GpsFrame } from '../src/telemetry/frame';
 import { detectLaps } from '../src/lib/lapDetector';
 import { referenceFromLayout, sectorSplits } from '../src/lib/sectors';
 import { lineFromLayout } from '../src/lib/startLine';
@@ -17,7 +17,7 @@ import { generateTimedLaps } from './helpers/syntheticTrack';
 const D = 37_699;
 const BAD_M = 25;
 
-function layoutSamples(): GpsSample[] {
+function layoutSamples(): GpsFrame[] {
   const { samples } = generateTimedLaps({ lapDurationMs: D, sampleRateHz: 10, laps: 2, warmupS: 3 });
   return sliceLaps(samples, [])[0].samples;
 }
@@ -76,4 +76,22 @@ test('com a volta limpa, sectorSplits fecha s1 + s2 + s3 === durationMs (± 1 ms
       `volta ${n + 1}: ${s1Ms + s2Ms + s3Ms} × ${lap.durationMs}`
     );
   }
+});
+
+test('cleanSamples descarta o frame sem precisão, como descartava o 999 que a captura punha no lugar dela', () => {
+  const frame = (accuracy: number | undefined): GpsFrame => ({
+    kind: 'gps',
+    source: 'PHONE',
+    fix: 'unknown',
+    t: 0,
+    lat: -14.86,
+    lng: -40.84,
+    speed: 10,
+    accuracy,
+  });
+  const good = frame(4);
+  const noAccuracy = frame(undefined);
+  const old999 = frame(999);
+  assert.deepEqual(cleanSamples([good, noAccuracy], 10), [good]);
+  assert.deepEqual(cleanSamples([good, old999], 10), [good]);
 });

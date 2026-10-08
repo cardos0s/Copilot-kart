@@ -22,7 +22,8 @@
  * no golden.
  */
 import type { LapRecord } from '../../src/lib/analysis';
-import { polylineLength, type GpsSample } from '../../src/lib/geometry';
+import { polylineLength } from '../../src/lib/geometry';
+import type { GpsFrame } from '../../src/telemetry/frame';
 import type { LocationLike } from '../../src/recording/locationHandler';
 import type { TrackLayout } from '../../src/storage/db';
 import { DEMO_LAP } from '../../src/data/demoLap';
@@ -472,7 +473,11 @@ export function session3(): TrackLayout {
   const c1 = crossings[best + 1];
   const fixes = session1Fixes().filter((f) => f.accuracy <= 30 && f.at > c0.t && f.at < c1.t);
   const line = toLatLng(0, 0);
-  const inner: GpsSample[] = fixes.map((f) => ({
+  // O traçado guarda os frames com o `t` como foi gravado (epoch ms; t0Utc nulo).
+  const inner: GpsFrame[] = fixes.map((f) => ({
+    kind: 'gps',
+    source: 'PHONE',
+    fix: 'unknown',
     t: f.at,
     lat: f.lat,
     lng: f.lng,
@@ -482,7 +487,10 @@ export function session3(): TrackLayout {
     altitude: f.altitude,
     altitudeAccuracy: f.altitudeAccuracy,
   }));
-  const boundary = (c: { t: number; v: number }, acc: number): GpsSample => ({
+  const boundary = (c: { t: number; v: number }, acc: number): GpsFrame => ({
+    kind: 'gps',
+    source: 'PHONE',
+    fix: 'unknown',
     t: c.t,
     lat: line.lat,
     lng: line.lng,
@@ -515,12 +523,23 @@ export function session4(): LapRecord {
   // e sem os pontos de fronteira (anterior à AD-006).
   const c0 = crossingAt(2 * L);
   const c1 = crossingAt(3 * L);
-  const samples: GpsSample[] = session1Fixes()
+  const samples: GpsFrame[] = session1Fixes()
     .filter((f) => f.accuracy <= 30 && f.at >= c0.t && f.at <= c1.t)
-    .map((f) => ({ t: 0, lat: f.lat, lng: f.lng, speed: f.speed ?? 0, accuracy: f.accuracy, heading: f.heading ?? undefined }));
+    .map((f) => ({
+      kind: 'gps',
+      source: 'PHONE',
+      fix: 'unknown',
+      t: 0,
+      lat: f.lat,
+      lng: f.lng,
+      speed: f.speed ?? 0,
+      accuracy: f.accuracy,
+      heading: f.heading ?? undefined,
+    }));
   return {
     id: 'session_golden_legacy_lap_1',
     sessionId: 'session_golden_legacy',
+    gps: samples,
     samples,
     startedAt: Math.round(c0.t) - 86_400_000,
     durationMs: Math.round(c1.t - c0.t),

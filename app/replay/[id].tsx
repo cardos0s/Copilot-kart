@@ -760,6 +760,7 @@ function buildScene(
           sessionId: '',
           startedAt: bestLap.startedAt,
           durationMs: bestLap.durationMs,
+          gps: bestLap.samples,
           samples: bestLap.samples,
         },
         ref
@@ -807,6 +808,7 @@ function buildScene(
                 sessionId: '',
                 startedAt: lap.startedAt,
                 durationMs: lap.durationMs,
+                gps: lap.samples,
                 samples: lap.samples,
               },
               ref

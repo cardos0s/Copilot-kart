@@ -113,7 +113,7 @@ function analyzeSession(
     .map((l) => {
       const cleaned = cleanSamples(l.samples, 10);
       const { samples } = repairDegenerateTimestamps(cleaned, l.durationMs, l.startedAt);
-      return { ...l, samples };
+      return { ...l, gps: samples, samples };
     })
     .filter((l) => l.samples.length >= 10);
   if (prepared.length === 0) return null;

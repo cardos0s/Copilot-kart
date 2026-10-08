@@ -95,7 +95,10 @@ export async function computeSmartInsights(opts?: {
   const sessionData: SessionWithLaps[] = await Promise.all(
     recentSessions.map(async (sess) => {
       const lapsRaw = await getLapsForSession(sess.id);
-      const laps = lapsRaw.map((l) => ({ ...l, samples: cleanSamples(l.samples, 10) }));
+      const laps = lapsRaw.map((l) => {
+        const samples = cleanSamples(l.samples, 10);
+        return { ...l, gps: samples, samples };
+      });
       const bestLap = laps.length
         ? laps.reduce((a, b) => (a.durationMs < b.durationMs ? a : b))
         : null;
@@ -315,6 +318,7 @@ async function computeRecurringWorstSector(
       sessionId: 'ref',
       startedAt: 0,
       durationMs: ref.durationMs,
+      gps: ref.samples,
       samples: ref.samples,
     },
     refLap

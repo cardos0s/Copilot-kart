@@ -161,8 +161,9 @@ test('loadLaps (sql.js): volta ainda não convertida (sem janela, só o JSON) sa
   );
 
   const old = { id: 'old_lap_1', sessionId: 'session_old', startedAt: T0 + 1000, durationMs: 100, samples };
-  assert.deepEqual(await loadLaps(conn, 'session_old', { imu: true }), [{ ...old, imuSamples }]);
-  assert.deepEqual(await loadLaps(conn, 'session_old'), [{ ...old, imuSamples: undefined }]);
+  // `gps`/`imu` (T27) são o mesmo JSON de `samples`/`imuSamples`, até a v5b.
+  assert.deepEqual(await loadLaps(conn, 'session_old', { imu: true }), [{ ...old, gps: samples, imu: imuSamples, imuSamples }]);
+  assert.deepEqual(await loadLaps(conn, 'session_old'), [{ ...old, gps: samples, imu: undefined, imuSamples: undefined }]);
 });
 
 test('getLapsForSession (db.ts, estático): delega para loadLaps com a IMU e não lê mais o JSON de amostras', () => {

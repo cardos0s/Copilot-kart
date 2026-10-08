@@ -2,7 +2,7 @@
  * Gerador de pista sintética, portado de scripts/self-test-lap-detector.js.
  * Pista circular em lat/lng real, para reusar o haversine sem mock.
  */
-import type { GpsSample } from '../../src/lib/geometry';
+import type { GpsFrame } from '../../src/telemetry/frame';
 
 export function makeCircularTrack(baseLat: number, baseLng: number, radiusMeters = 120) {
   const metersPerDegLat = 111_320;
@@ -42,9 +42,9 @@ export function generateLapSamples({
   warmupS = 3,
   cooldownS = 0,
   startTimestamp = Date.now(),
-}: LapSamplesOptions): GpsSample[] {
+}: LapSamplesOptions): GpsFrame[] {
   const track = makeCircularTrack(baseLat, baseLng, radiusMeters);
-  const samples: GpsSample[] = [];
+  const samples: GpsFrame[] = [];
   const dt = 1000 / sampleRateHz;
   let t = startTimestamp;
 
@@ -52,6 +52,9 @@ export function generateLapSamples({
   const startPt = track(0);
   for (let i = 0; i < warmupSamples; i++) {
     samples.push({
+      kind: 'gps',
+      source: 'PHONE',
+      fix: 'unknown',
       t,
       lat: startPt.lat + (Math.random() - 0.5) * 0.00001,
       lng: startPt.lng + (Math.random() - 0.5) * 0.00001,
@@ -68,6 +71,9 @@ export function generateLapSamples({
   for (let i = 0; i < totalRaceSamples; i++) {
     const pt = track((i / samplesPerLap) % 1);
     samples.push({
+      kind: 'gps',
+      source: 'PHONE',
+      fix: 'unknown',
       t,
       lat: pt.lat,
       lng: pt.lng,
@@ -82,6 +88,9 @@ export function generateLapSamples({
   const pitPt = track(0.1);
   for (let i = 0; i < cooldownSamples; i++) {
     samples.push({
+      kind: 'gps',
+      source: 'PHONE',
+      fix: 'unknown',
       t,
       lat: pitPt.lat + (Math.random() - 0.5) * 0.00001,
       lng: pitPt.lng + (Math.random() - 0.5) * 0.00001,
@@ -111,15 +120,15 @@ export function sampleTrack(
   hz: number,
   speed: number,
   shape: TrackShape = {},
-): GpsSample[] {
+): GpsFrame[] {
   const { baseLat, baseLng, radiusMeters } = { ...DEFAULT_SHAPE, ...shape };
   const track = makeCircularTrack(baseLat, baseLng, radiusMeters);
   const dt = 1000 / hz;
-  const out: GpsSample[] = [];
+  const out: GpsFrame[] = [];
   for (let k = 0; fromT + k * dt <= toT; k++) {
     const t = fromT + k * dt;
     const pt = track(progressAt(t));
-    out.push({ t, lat: pt.lat, lng: pt.lng, speed, accuracy: 4 });
+    out.push({ kind: 'gps', source: 'PHONE', fix: 'unknown', t, lat: pt.lat, lng: pt.lng, speed, accuracy: 4 });
   }
   return out;
 }
@@ -142,7 +151,7 @@ export type TimedLapsOptions = TrackShape & {
 };
 
 export type TimedLaps = {
-  samples: GpsSample[];
+  samples: GpsFrame[];
   /** Instantes reais em que o kart passa pela linha (progresso inteiro), em ordem. */
   crossingsT: number[];
   /** Velocidade constante, m/s. */

@@ -8,43 +8,23 @@
  *    a cada frame, e com pista de <1km o erro de planificação é desprezível.
  */
 
+import type { GpsFrame, ImuFrame, LocalGpsFrame } from '../telemetry/frame';
+
 export type LatLng = { lat: number; lng: number };
 export type XY = { x: number; y: number };
 
-export type GpsSample = {
-  t: number;        // timestamp ms desde epoch
-  lat: number;
-  lng: number;
-  speed: number;    // m/s (vindo do GPS)
-  accuracy: number; // metros
-  heading?: number; // graus, 0 = norte
-  altitude?: number;         // metros sobre nível do mar (quando disponível)
-  altitudeAccuracy?: number; // precisão vertical em metros
-  /** Ponto de fronteira da volta, interpolado na linha de chegada (AD-006). O GPS não o entregou. */
-  synthetic?: true;
-};
+/** @deprecated Transição até a T46: use `GpsFrame` (`t` em ms desde o t0Utc da série). */
+export type GpsSample = GpsFrame;
 
 /**
- * Sample da IMU (Inertial Measurement Unit). Capturado pelo expo-sensors
- * a ~50Hz em paralelo com o GPS (10Hz). Frequência alta porque mudanças
- * de rotação acontecem muito mais rápido que o GPS pode capturar.
- *
- * Eixos (Android/iOS convergem com expo-sensors após calibração interna):
- *   - x: pra direita do celular
- *   - y: pra cima (na orientação portrait); em landscape vira "pra frente"
- *   - z: saindo da tela (perpendicular)
- *
- * accel: m/s². Sem subtrair gravidade — pra detectar movimento total.
- *   App pode subtrair ~9.8 do eixo apontado pra baixo se quiser linear-only.
- * gyro: rad/s (yaw rate = z na maioria das orientações de cockpit).
+ * @deprecated Transição até a T46: use `ImuFrame` (accel em m/s², gyro em rad/s, cada um pode
+ * faltar). Eixos do expo-sensors: x para a direita do celular, y para cima em retrato, z saindo
+ * da tela; o yaw rate da cabine é o gyro z.
  */
-export type ImuSample = {
-  t: number; // timestamp ms — alinhado com o relógio dos GpsSamples
-  accel: { x: number; y: number; z: number };
-  gyro: { x: number; y: number; z: number };
-};
+export type ImuSample = ImuFrame;
 
-export type LocalSample = GpsSample & { x: number; y: number };
+/** @deprecated Transição até a T46: use `LocalGpsFrame`. */
+export type LocalSample = LocalGpsFrame;
 
 const R_EARTH = 6371000; // metros
 const DEG2RAD = Math.PI / 180;
@@ -113,7 +93,7 @@ export function projectOnSegment(p: XY, a: XY, b: XY) {
 }
 
 export type ReferenceLap = {
-  points: LocalSample[];     // polyline da volta (já em coords locais)
+  points: LocalGpsFrame[];     // polyline da volta (já em coords locais)
   cumulativeDist: number[];  // distância acumulada em metros, mesmo length que points
   totalLength: number;       // comprimento total em metros
   origin: LatLng;            // origem do sistema ENU
@@ -123,9 +103,9 @@ export type ReferenceLap = {
  * Pré-processa uma volta de referência: calcula distâncias cumulativas
  * pra permitir map matching rápido depois.
  */
-export function buildReferenceLap(samples: GpsSample[], origin: LatLng): ReferenceLap {
+export function buildReferenceLap(samples: GpsFrame[], origin: LatLng): ReferenceLap {
   const proj = makeLocalProjector(origin);
-  const points: LocalSample[] = samples.map((s) => ({ ...s, ...proj.toXY(s) }));
+  const points: LocalGpsFrame[] = samples.map((s) => ({ ...s, ...proj.toXY(s) }));
   const cumulative: number[] = [0];
   for (let i = 1; i < points.length; i++) {
     const dx = points[i].x - points[i - 1].x;

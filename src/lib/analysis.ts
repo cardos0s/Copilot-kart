@@ -12,9 +12,10 @@
  * 4. Dividir a pista em N mini-setores (ex: 20 de ~40m cada) e sumarizar.
  */
 
+import type { GpsFrame, ImuFrame, LapWindow } from '../telemetry/frame';
 import {
   GpsSample,
-  LocalSample,
+  ImuSample,
   ReferenceLap,
   buildReferenceLap,
   makeLocalProjector,
@@ -25,21 +26,22 @@ import {
 export type LapRecord = {
   id: string;
   sessionId: string;
-  samples: GpsSample[];
+  /** Início da volta, em epoch ms. */
   startedAt: number;
   durationMs: number;
-  /** Samples IMU (50Hz, accel + gyro) sincronizados em timestamp com os
-   *  GPS samples. Opcional pra retro-compatibilidade — voltas antigas
-   *  gravadas sem IMU ficam undefined. */
-  imuSamples?: import('./geometry').ImuSample[];
   /**
-   * A janela da volta sobre o bruto da sessão (AD-007) e os frames dela. Ausentes
-   * nas voltas lidas do formato antigo (até a T22). Transição (até a T46):
-   * `samples` e `imuSamples` apontam para os mesmos arrays de `gps` e `imu`.
+   * A janela da volta sobre o bruto da sessão (AD-007). Ausente só na volta ainda
+   * no formato antigo (JSON), até a v5b (T43).
    */
-  window?: import('../telemetry/frame').LapWindow;
-  gps?: import('../telemetry/frame').GpsFrame[];
-  imu?: import('../telemetry/frame').ImuFrame[];
+  window?: LapWindow;
+  /** Os frames de GPS da volta, com as fronteiras quando a janela é por cruzamento. */
+  gps: GpsFrame[];
+  /** IMU da volta (50 Hz). Ausente quando a volta não tem IMU ou ela não foi pedida. */
+  imu?: ImuFrame[];
+  /** @deprecated Transição até a T46: o mesmo array de `gps`, para os consumidores ainda não migrados. */
+  samples: GpsSample[];
+  /** @deprecated Transição até a T46: o mesmo array de `imu`. */
+  imuSamples?: ImuSample[];
 };
 
 export type MatchedLap = {
@@ -52,13 +54,13 @@ export type MatchedLap = {
 /** Processa uma volta contra a referência, gerando mapping (s, t). */
 export function matchLapToReference(lap: LapRecord, ref: ReferenceLap): MatchedLap {
   const proj = makeLocalProjector(ref.origin);
-  const t0 = lap.samples[0]?.t ?? 0;
+  const t0 = lap.gps[0]?.t ?? 0;
   const totalLength = ref.totalLength;
   let hintIdx: number | undefined;
   const rawS: number[] = [];
   const meta: Array<{ tMs: number; speed: number; x: number; y: number }> = [];
 
-  for (const sample of lap.samples) {
+  for (const sample of lap.gps) {
     const xy = proj.toXY(sample);
     const match = matchToReference(xy, ref, hintIdx);
     hintIdx = match.segmentIdx;
@@ -107,7 +109,7 @@ export function matchLapToReference(lap: LapRecord, ref: ReferenceLap): MatchedL
         rawS[0] = altS;
         // Re-roda map matching dos próximos samples com hint corrigido
         let newHint = Math.floor((altS / totalLength) * (ref.points.length - 1));
-        for (let i = 1; i < lap.samples.length; i++) {
+        for (let i = 1; i < lap.gps.length; i++) {
           const xy = { x: meta[i].x, y: meta[i].y };
           const m = matchToReference(xy, ref, newHint);
           rawS[i] = m.s;
@@ -141,7 +143,7 @@ export function matchLapToReference(lap: LapRecord, ref: ReferenceLap): MatchedL
 
   return {
     points,
-    durationMs: lap.samples[lap.samples.length - 1].t - t0,
+    durationMs: lap.gps[lap.gps.length - 1].t - t0,
     referenceLength: ref.totalLength,
   };
 }
@@ -288,8 +290,8 @@ export function analyzeSession(laps: LapRecord[]) {
   const best = sorted[0];
 
   const refLap = buildReferenceLap(
-    best.samples,
-    { lat: best.samples[0].lat, lng: best.samples[0].lng }
+    best.gps,
+    { lat: best.gps[0].lat, lng: best.gps[0].lng }
   );
   const matchedBest = matchLapToReference(best, refLap);
 
@@ -310,10 +312,11 @@ export function analyzeSession(laps: LapRecord[]) {
  * Filtro simples pra remover amostras com accuracy ruim antes de analisar.
  * Os pontos de fronteira da volta (`synthetic`, AD-006) ficam sempre: são o
  * início e o fim da volta, e a precisão deles é só a herdada do par
- * interpolado.
+ * interpolado. O frame sem precisão sai, como saía o 999 que a captura punha
+ * no lugar dela.
  */
-export function cleanSamples(samples: GpsSample[], maxAccuracyM: number = 10): GpsSample[] {
-  return samples.filter((s) => s.synthetic === true || s.accuracy <= maxAccuracyM);
+export function cleanSamples(samples: GpsFrame[], maxAccuracyM: number = 10): GpsFrame[] {
+  return samples.filter((s) => s.synthetic === true || (s.accuracy !== undefined && s.accuracy <= maxAccuracyM));
 }
 
 /**
@@ -339,10 +342,10 @@ export function cleanSamples(samples: GpsSample[], maxAccuracyM: number = 10): G
  * reescrever, pra UI poder sinalizar que os tempos por setor são aproximados.
  */
 export function repairDegenerateTimestamps(
-  samples: GpsSample[],
+  samples: GpsFrame[],
   durationMs: number,
   baseT?: number
-): { samples: GpsSample[]; repaired: boolean } {
+): { samples: GpsFrame[]; repaired: boolean } {
   if (samples.length < 2 || durationMs <= 0) {
     return { samples, repaired: false };
   }

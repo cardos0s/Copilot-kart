@@ -78,7 +78,7 @@ export async function loadCoachContext(
         l.durationMs,
         l.startedAt
       );
-      return { ...l, samples };
+      return { ...l, gps: samples, samples };
     });
     const lap = preparedLaps.find((l) => l.id === lapId);
     if (!lap) return { kind: 'no-lap' };
@@ -125,6 +125,7 @@ export async function loadCoachContext(
         sessionId: 'ref',
         startedAt: 0,
         durationMs: refDurationMs,
+        gps: refSamples,
         samples: refSamples,
       },
       refLap

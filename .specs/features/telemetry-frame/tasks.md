@@ -839,10 +839,11 @@ entrada.
 - Skill: NONE
 
 **Done when**:
-- [ ] `test/analysis.test.ts` passa com fixtures de `GpsFrame`, com os mesmos valores assertados.
-- [ ] Teste: `cleanSamples` descarta um frame com `accuracy` indefinido, como descartava o 999 de antes.
-- [ ] Golden passa sem mudar o `expected.json`.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] `test/analysis.test.ts` passa com fixtures de `GpsFrame`, com os mesmos valores assertados (o `syntheticTrack` gera frames).
+- [x] Teste: `cleanSamples` descarta um frame com `accuracy` indefinido, como descartava o 999 de antes.
+- [x] Golden passa sem mudar o `expected.json`. As voltas do harness levam os frames no relógio da sessão; a visão antiga (t absoluto, accel em g) ficou só no resumo que vai para o `expected.json`, e o trompo sai deslocado pelo t0 da sessão. Com o t relativo, 63 reais derivados do tempo (velocidade média dos setores das pontas, desaceleração da frenagem B) mudaram até 8,6e-7 relativo: dentro da parte relativa aprovada em 08/10 (eff5cc1).
+- [x] Transição: `LapRecord.gps` é obrigatório e `samples` aponta para o mesmo array. Quem monta ou troca os pontos de uma volta passou a preencher os dois (`toLapRecord`, `lapRepo.legacyLap`, `sectors`, `realtimeDelta`, `lapInsight`, `pilotDna`, `coachContext`, `insights`), inclusive cinco linhas nas telas (`session/[id]` 2, `track-map`, `lap-compare`, `replay/[id]` 2): sem isso a análise leria o `gps` sem limpeza. O teste do fallback legado do `lapRepo` passa a esperar `gps`/`imu` iguais ao JSON.
+- [x] Gate: `npm test`, contagem registrada: 248 testes (247 + 1).
 
 **Tests**: unit
 **Gate**: quick
