@@ -1025,8 +1025,9 @@ substituído nomeia o que substitui.
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste estático: nenhum dos quatro importa `GpsSample` ou chama `listTrackReferences(` diretamente.
-- [ ] Gate: `npm test && npm run typecheck`, baseline de 8 erros.
+- [x] Teste estático (`test/trackComponents.test.ts`): nenhum dos quatro importa `GpsSample` ou chama `listTrackReferences(` fora do `layoutRepo`. `TrackSilhouette`, `ColoredTrackPath` e o `PaintedLap` de `analysis/parts` (antes um tipo estrutural `{ lat; lng; speed }[]`) recebem `GpsFrame[]`. `TrackShape` lê traçados e referências por `layoutRepo.listAllLayoutsGrouped(conn)`/`layoutRepo.listTrackReferences(conn)`, e o wrapper `listTrackReferences` do `db.ts`, que ficou sem uso, saiu.
+- [x] Transição (até a T46): o traçado e a referência ainda em JSON não têm `gps` (o teste de `layoutRepo` confere isso), então `layoutRepo.layoutGps(l)` devolve `l.gps ?? l.samples`. As telas e os componentes leem os frames do traçado por ela, e não por `.samples`. Os regex `samplesToSilhouette(preferred.samples)`/`(ref.samples)` viraram `samplesToSilhouette(layoutRepo.layoutGps(…))`.
+- [x] Gate: `npm test && npm run typecheck`, contagem registrada: 259 testes (255 + 4), baseline de 8 erros.
 
 **Tests**: unit
 **Gate**: build

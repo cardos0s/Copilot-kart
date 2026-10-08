@@ -1,11 +1,11 @@
 import { View } from 'react-native';
 import Svg, { Circle, G, Path, Text as SvgText } from 'react-native-svg';
-import { GpsSample } from '../lib/geometry';
+import type { GpsFrame } from '../telemetry/frame';
 import { colors } from '../theme';
 
 export type ColoredSegment = {
   /** Samples consecutivos no segmento (mínimo 2). */
-  samples: GpsSample[];
+  samples: GpsFrame[];
   color: string;
 };
 

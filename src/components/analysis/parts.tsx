@@ -171,6 +171,7 @@ const s = StyleSheet.create({
 import Svg, { Circle, Path, Text as SvgText } from 'react-native-svg';
 import { Pressable } from 'react-native';
 import type { ReferenceLap } from '../../lib/geometry';
+import type { GpsFrame } from '../../telemetry/frame';
 import type { Corner } from '../../lib/corners';
 import { makeLocalProjector } from '../../lib/geometry';
 import { speedPaint } from '../../lib/lapInsight';
@@ -296,7 +297,7 @@ export function PaintedLap({
   size,
   markSlowest = true,
 }: {
-  samples: { lat: number; lng: number; speed: number }[];
+  samples: GpsFrame[];
   minKmh: number;
   maxKmh: number;
   size: number;

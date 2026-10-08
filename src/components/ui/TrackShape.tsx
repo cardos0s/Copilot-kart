@@ -6,7 +6,8 @@ import {
   Silhouette,
   SILHOUETTE_VIEWBOX,
 } from '../../lib/trackSilhouette';
-import { listAllLayoutsGrouped, listTrackReferences } from '../../storage/db';
+import { appSqlConn } from '../../storage/db';
+import * as layoutRepo from '../../storage/layoutRepo';
 import { colors } from '../../theme';
 
 export type SilhouetteMap = Map<string, Silhouette>;
@@ -19,16 +20,17 @@ export type SilhouetteMap = Map<string, Silhouette>;
 export async function loadSilhouetteMap(): Promise<SilhouetteMap> {
   const map: SilhouetteMap = new Map();
   try {
-    const layoutsByTrack = await listAllLayoutsGrouped();
+    const conn = await appSqlConn();
+    const layoutsByTrack = await layoutRepo.listAllLayoutsGrouped(conn);
     for (const [trackId, layouts] of layoutsByTrack) {
       const preferred = layouts.find((l) => l.isDefault) ?? layouts[0];
-      const shape = preferred && samplesToSilhouette(preferred.samples);
+      const shape = preferred && samplesToSilhouette(layoutRepo.layoutGps(preferred));
       if (shape) map.set(trackId, shape);
     }
     // A volta de referência é a mais representativa da pista — sobrepõe o layout.
-    const references = await listTrackReferences();
+    const references = await layoutRepo.listTrackReferences(conn);
     for (const ref of references) {
-      const shape = samplesToSilhouette(ref.samples);
+      const shape = samplesToSilhouette(layoutRepo.layoutGps(ref));
       if (shape) map.set(ref.trackId, shape);
     }
   } catch {

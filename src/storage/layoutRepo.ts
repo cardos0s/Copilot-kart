@@ -77,6 +77,15 @@ export function referenceOwner(trackId: string): Owner {
   return { kind: 'reference', id: trackId };
 }
 
+/**
+ * Os frames de GPS de um traçado ou de uma referência, para quem desenha ou analisa.
+ * Transição (até a T46): o traçado ainda em JSON (até a v5b) não tem `gps`, e os
+ * pontos dele estão só em `samples`; com série, os dois são o mesmo array.
+ */
+export function layoutGps(layout: { gps?: GpsFrame[]; samples: GpsFrame[] }): GpsFrame[] {
+  return layout.gps ?? layout.samples;
+}
+
 /** `samples_json` é NOT NULL até a v5c (T44) remover a coluna: o traçado com janela leva um array vazio. */
 const NO_SAMPLES_JSON = '[]';
 

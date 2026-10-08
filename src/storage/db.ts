@@ -532,10 +532,6 @@ export async function deleteTrackReference(trackId: string): Promise<void> {
   await d.runAsync('DELETE FROM track_references WHERE track_id = ?', trackId);
 }
 
-/** Lida do dono `reference:<track_id>` (`layoutRepo`), com o JSON até a v5b. */
-export async function listTrackReferences(): Promise<TrackReference[]> {
-  return layoutRepo.listTrackReferences(await appSqlConn());
-}
 // =========================
 // AI chat threads
 // =========================
