@@ -3,14 +3,22 @@
  * TF-14):
  * - inteiros, textos, booleanos e null: iguais;
  * - grandezas de tempo (chave `t`, `tMs`, terminada em `Ms`, `_ms` ou `At`): até 0,001;
- * - os demais números reais: até 1e-9.
+ * - os demais números reais: até max(1e-9, 1e-5 × |esperado|) (parte relativa aprovada em 08/10).
  *
  * Elemento de array herda a chave do array (`lapsMs[2]` é tempo). Devolve a
  * primeira diferença, com o caminho exato (`laps[2].durationMs`), ou `null`.
  */
 
 export const TIME_TOLERANCE = 0.001;
+/** Piso absoluto dos reais que não são tempo. */
 export const REAL_TOLERANCE = 1e-9;
+/** Parte relativa dos reais que não são tempo, sobre o valor esperado. */
+export const REAL_RELATIVE_TOLERANCE = 1e-5;
+
+/** A tolerância de um real que não é tempo: max(1e-9, 1e-5 × |esperado|). */
+export function realTolerance(expected: number): number {
+  return Math.max(REAL_TOLERANCE, REAL_RELATIVE_TOLERANCE * Math.abs(expected));
+}
 
 export type GoldenDiff = { path: string; reason: string };
 
@@ -47,7 +55,9 @@ function compareAt(expected: unknown, actual: unknown, path: string, key: string
     if (Number.isInteger(expected) && Number.isInteger(actual)) {
       return { path, reason: `inteiro: esperado ${expected}, veio ${actual}` };
     }
-    return diff <= REAL_TOLERANCE ? null : { path, reason: `real: esperado ${expected}, veio ${actual} (diferença ${diff})` };
+    return diff <= realTolerance(expected)
+      ? null
+      : { path, reason: `real: esperado ${expected}, veio ${actual} (diferença ${diff}, relativa ${diff / Math.abs(expected)})` };
   }
 
   if (Array.isArray(expected) || Array.isArray(actual)) {

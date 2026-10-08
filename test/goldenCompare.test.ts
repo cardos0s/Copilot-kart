@@ -1,7 +1,8 @@
 /**
  * Comparador do golden (TF-14, T5), pela regra "Mesmos números" da spec:
  * inteiros e textos iguais; tempo (`t`, `*Ms`, `*_ms`, `*At`, `tMs`) até 0,001; os
- * demais reais até 1e-9. A falha traz o caminho da primeira diferença.
+ * demais reais até max(1e-9, 1e-5 × |esperado|) (parte relativa aprovada em 08/10).
+ * A falha traz o caminho da primeira diferença.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -32,11 +33,18 @@ test('goldenCompare: coluna snake_case terminada em _ms (live_samples) também �
   assert.equal(diff.path, 'row.lap_elapsed_ms');
 });
 
-test('goldenCompare: real que não é tempo aceita até 1e-9', () => {
-  const two = goldenCompare({ speed: 1 }, { speed: 1 + 2e-9 });
-  assert.ok(two);
-  assert.equal(two.path, 'speed');
-  assert.equal(goldenCompare({ speed: 1 }, { speed: 1 + 5e-10 }), null);
+// Substitui a asserção do piso fixo de 1e-9 (`{speed: 1}` contra `1 + 2e-9` falhava): pela regra
+// aprovada em 08/10, o piso de 1e-9 vale perto de zero e, longe dele, vale 1e-5 relativo.
+test('goldenCompare: real que não é tempo aceita até max(1e-9, 1e-5 × |esperado|)', () => {
+  // A desaceleração da frenagem B da T27: 8,6e-7 relativo passa.
+  assert.equal(goldenCompare({ speed: 99.43913820676195 }, { speed: 99.43922374313716 }), null);
+  // 1,1e-5 relativo falha, com o caminho.
+  const rel = goldenCompare({ s: { speed: 100 } }, { s: { speed: 100.0011 } });
+  assert.ok(rel);
+  assert.equal(rel.path, 's.speed');
+  // Com o esperado em zero, vale o piso absoluto de 1e-9.
+  assert.equal(goldenCompare({ speed: 0 }, { speed: 5e-10 }), null);
+  assert.equal(goldenCompare({ speed: 0 }, { speed: 2e-9 })?.path, 'speed');
   // Uma chave que só contém "t" no meio (`total`) não é tempo.
   assert.equal(goldenCompare({ total: 3 }, { total: 3.0005 })?.path, 'total');
 });
