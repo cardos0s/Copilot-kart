@@ -61,11 +61,11 @@ export function recordedLaps(
  * Ponto de fronteira da volta, no cruzamento interpolado da linha. `idx` é o
  * 1º ponto cru depois do cruzamento; a precisão é a pior do par interpolado.
  */
-function boundaryPoint(cross: CrossPoint, samples: GpsSample[], idx: number): GpsSample {
+function boundaryPoint(cross: CrossPoint, samples: AnalysisGpsFrame[], idx: number): AnalysisGpsFrame {
   const b = samples[idx];
   const a = samples[idx - 1];
   const accuracy = a && cross.t < b.t ? Math.max(a.accuracy, b.accuracy) : b.accuracy;
-  return { t: cross.t, lat: cross.lat, lng: cross.lng, speed: cross.speed, accuracy, synthetic: true };
+  return { kind: 'gps', source: b.source, fix: 'unknown', t: cross.t, lat: cross.lat, lng: cross.lng, speed: cross.speed, accuracy, synthetic: true };
 }
 
 /**
@@ -74,7 +74,7 @@ function boundaryPoint(cross: CrossPoint, samples: GpsSample[], idx: number): Gp
  * cruzamentos, endCross]`. A IMU é recortada por timestamp, não por índice
  * (50 Hz contra 10 Hz do GPS): entra tudo em [startCross.t, endCross.t].
  */
-export function sliceLaps(samples: GpsSample[], imu: ImuSample[], line?: StartLine | null): RecordedLap[] {
+export function sliceLaps(samples: AnalysisGpsFrame[], imu: ImuFrame[], line?: StartLine | null): RecordedLap[] {
   return detectLaps(samples, { line }).laps.map((lap) => {
     const t0 = lap.startCross.t;
     const t1 = lap.endCross.t;

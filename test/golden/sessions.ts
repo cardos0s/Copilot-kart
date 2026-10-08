@@ -24,6 +24,7 @@
 import type { LapRecord } from '../../src/lib/analysis';
 import { polylineLength } from '../../src/lib/geometry';
 import type { GpsFrame } from '../../src/telemetry/frame';
+import type { AnalysisGpsFrame } from '../../src/telemetry/laps';
 import type { LocationLike } from '../../src/recording/locationHandler';
 import type { TrackLayout } from '../../src/storage/db';
 import { DEMO_LAP } from '../../src/data/demoLap';
@@ -486,7 +487,7 @@ export function session3(): TrackLayout {
   const fixes = session1Fixes().filter((f) => f.accuracy <= 30 && f.at > c0.t && f.at < c1.t);
   const line = toLatLng(0, 0);
   // O traçado guarda os frames com o `t` como foi gravado (epoch ms; t0Utc nulo).
-  const inner: GpsFrame[] = fixes.map((f) => ({
+  const inner: AnalysisGpsFrame[] = fixes.map((f) => ({
     kind: 'gps',
     source: 'PHONE',
     fix: 'unknown',

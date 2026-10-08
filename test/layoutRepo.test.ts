@@ -105,8 +105,8 @@ test('deleteLayout (sql.js): apaga o traçado e a série dele, e o de outra pist
 test('layoutRepo (sql.js): traçado sem janela (ainda em JSON, até a v5b) é gravado e lido pelo JSON, como antes', async () => {
   const { conn } = await openV5Database();
   const samples: GpsSample[] = [
-    { t: T0 + 1000, lat: -14.86, lng: -40.84, speed: 10, accuracy: 4, synthetic: true },
-    { t: T0 + 1100, lat: -14.8601, lng: -40.8401, speed: 11, accuracy: 5 },
+    { kind: 'gps', source: 'PHONE', fix: 'unknown', t: T0 + 1000, lat: -14.86, lng: -40.84, speed: 10, accuracy: 4, synthetic: true },
+    { kind: 'gps', source: 'PHONE', fix: 'unknown', t: T0 + 1100, lat: -14.8601, lng: -40.8401, speed: 11, accuracy: 5 },
   ];
   const legacy: TrackLayout = {
     id: 'layout_old',

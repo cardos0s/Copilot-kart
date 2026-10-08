@@ -35,7 +35,7 @@ async function scenario() {
     id: 'layout_antigo',
     trackId: 'track_1',
     name: 'Layout principal',
-    samples: [{ t: T0 - 90_000, lat: -14.86, lng: -40.84, speed: 10, accuracy: 4, synthetic: true }],
+    samples: [{ kind: 'gps', source: 'PHONE', fix: 'unknown', t: T0 - 90_000, lat: -14.86, lng: -40.84, speed: 10, accuracy: 4, synthetic: true }],
     durationMs: 40_000,
     lengthM: 750,
     recordedAt: T0 - 86_400_000,

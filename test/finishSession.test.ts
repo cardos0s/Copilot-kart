@@ -85,7 +85,7 @@ test('sliceLaps: recorta a IMU pela janela de tempo de cada volta', () => {
   const tEnd = samples[samples.length - 1].t;
   const imu: ImuSample[] = [];
   for (let t = T0; t <= tEnd; t += 20) {
-    imu.push({ t, accel: { x: 0, y: 0, z: 9.8 }, gyro: { x: 0, y: 0, z: 0 } });
+    imu.push({ kind: 'imu', source: 'PHONE', t, accel: { x: 0, y: 0, z: 9.8 }, gyro: { x: 0, y: 0, z: 0 } });
   }
 
   const laps = sliceLaps(samples, imu);
@@ -158,7 +158,7 @@ function imuFor(samples: GpsSample[]): ImuSample[] {
   const imu: ImuSample[] = [];
   const tEnd = samples[samples.length - 1].t;
   for (let t = samples[0].t; t <= tEnd; t += 20) {
-    imu.push({ t, accel: { x: 0, y: 0, z: 9.8 }, gyro: { x: 0, y: 0, z: 0 } });
+    imu.push({ kind: 'imu', source: 'PHONE', t, accel: { x: 0, y: 0, z: 9.8 }, gyro: { x: 0, y: 0, z: 0 } });
   }
   return imu;
 }

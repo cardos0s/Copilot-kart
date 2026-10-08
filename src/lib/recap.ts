@@ -4,7 +4,8 @@
  * do carrossel.
  */
 
-import { getLapsForSession, listSessions, listUnlockedAchievements } from '../storage/db';
+import { appSqlConn, listSessions, listUnlockedAchievements } from '../storage/db';
+import { loadLapSummaries } from '../storage/lapRepo';
 
 export type RecapData = {
   weekLabel: string; // "Semana de 14/05 a 20/05"
@@ -44,8 +45,10 @@ export async function buildWeeklyRecap(): Promise<RecapData | null> {
   let bestTrackName: string | null = null;
   const tracksMap = new Map<string, number>();
 
+  // Só a duração das voltas importa: o resumo não lê o bruto (TF-16).
+  const conn = await appSqlConn();
   for (const s of thisWeek) {
-    const laps = await getLapsForSession(s.id);
+    const laps = await loadLapSummaries(conn, s.id);
     lapsCount += laps.length;
     for (const l of laps) {
       if (bestLapMs == null || l.durationMs < bestLapMs) {
@@ -59,7 +62,7 @@ export async function buildWeeklyRecap(): Promise<RecapData | null> {
   // Best lap da semana anterior pra comparar
   let prevBest: number | null = null;
   for (const s of prevWeek) {
-    const laps = await getLapsForSession(s.id);
+    const laps = await loadLapSummaries(conn, s.id);
     for (const l of laps) {
       if (prevBest == null || l.durationMs < prevBest) prevBest = l.durationMs;
     }

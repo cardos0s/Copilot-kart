@@ -2,7 +2,7 @@
  * Gerador de pista sintética, portado de scripts/self-test-lap-detector.js.
  * Pista circular em lat/lng real, para reusar o haversine sem mock.
  */
-import type { GpsFrame } from '../../src/telemetry/frame';
+import type { AnalysisGpsFrame } from '../../src/telemetry/laps';
 
 export function makeCircularTrack(baseLat: number, baseLng: number, radiusMeters = 120) {
   const metersPerDegLat = 111_320;
@@ -42,9 +42,9 @@ export function generateLapSamples({
   warmupS = 3,
   cooldownS = 0,
   startTimestamp = Date.now(),
-}: LapSamplesOptions): GpsFrame[] {
+}: LapSamplesOptions): AnalysisGpsFrame[] {
   const track = makeCircularTrack(baseLat, baseLng, radiusMeters);
-  const samples: GpsFrame[] = [];
+  const samples: AnalysisGpsFrame[] = [];
   const dt = 1000 / sampleRateHz;
   let t = startTimestamp;
 
@@ -120,11 +120,11 @@ export function sampleTrack(
   hz: number,
   speed: number,
   shape: TrackShape = {},
-): GpsFrame[] {
+): AnalysisGpsFrame[] {
   const { baseLat, baseLng, radiusMeters } = { ...DEFAULT_SHAPE, ...shape };
   const track = makeCircularTrack(baseLat, baseLng, radiusMeters);
   const dt = 1000 / hz;
-  const out: GpsFrame[] = [];
+  const out: AnalysisGpsFrame[] = [];
   for (let k = 0; fromT + k * dt <= toT; k++) {
     const t = fromT + k * dt;
     const pt = track(progressAt(t));
@@ -151,7 +151,7 @@ export type TimedLapsOptions = TrackShape & {
 };
 
 export type TimedLaps = {
-  samples: GpsFrame[];
+  samples: AnalysisGpsFrame[];
   /** Instantes reais em que o kart passa pela linha (progresso inteiro), em ordem. */
   crossingsT: number[];
   /** Velocidade constante, m/s. */

@@ -53,14 +53,14 @@ test('cleanSamples(10) mantém os pontos de fronteira com precisão herdada de 2
     assert.equal(first.accuracy, BAD_M);
     assert.equal(last.accuracy, BAD_M);
     const inner = lap.samples.slice(1, -1);
-    assert.ok(inner.some((s) => s.accuracy > 10), `volta ${n + 1} sem ponto cru ruim`);
+    assert.ok(inner.some((s) => s.accuracy! > 10), `volta ${n + 1} sem ponto cru ruim`);
 
     const cleaned = cleanSamples(lap.samples, 10);
     assert.deepEqual(cleaned[0], first);
     assert.equal(cleaned[0].synthetic, true);
     assert.deepEqual(cleaned[cleaned.length - 1], last);
     assert.equal(cleaned[cleaned.length - 1].synthetic, true);
-    assert.deepEqual(cleaned.slice(1, -1), inner.filter((s) => s.accuracy <= 10));
+    assert.deepEqual(cleaned.slice(1, -1), inner.filter((s) => s.accuracy! <= 10));
   }
 });
 

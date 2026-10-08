@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import type { GpsSample } from '../src/lib/geometry';
+import type { AnalysisGpsFrame } from '../src/telemetry/laps';
 import { detectLaps } from '../src/lib/lapDetector';
 import { lineFromLayout, type StartLine } from '../src/lib/startLine';
 import { sliceLaps } from '../src/recording/finishSession';
@@ -33,7 +33,7 @@ function movingStart() {
 }
 
 /** O que o poll vê quando o último ponto recebido é `samples[lastIdx]`. */
-function pollAt(samples: GpsSample[], lastIdx: number, line: StartLine | null) {
+function pollAt(samples: AnalysisGpsFrame[], lastIdx: number, line: StartLine | null) {
   const all = samples.slice(0, lastIdx + 1);
   const detection = detectLaps(all, { line });
   return { all, detection, now: all[all.length - 1].t };
@@ -188,7 +188,7 @@ test('useLapRecorder: currentLapSamples (setores ao vivo) usa openCross, e não 
  * (`deltaReferenceLap`) recarregada quando ela muda, e o delta no último ponto
  * com o relógio de `liveLapClock`.
  */
-function runPolls(samples: GpsSample[], line: StartLine) {
+function runPolls(samples: AnalysisGpsFrame[], line: StartLine) {
   const tracker = new DeltaTracker();
   let prevOpen: ReturnType<typeof detectLaps>['openCross'] = null;
   let loadedIdx = -1;

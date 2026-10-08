@@ -17,9 +17,9 @@ const SESSION = {
 };
 
 const LAPS: LapRecord[] = [
-  { id: 'session_rec_1_lap_1', sessionId: 'session_rec_1', samples: [], startedAt: 0, durationMs: 56_000 },
-  { id: 'session_rec_1_lap_2', sessionId: 'session_rec_1', samples: [], startedAt: 56_000, durationMs: 54_321 },
-  { id: 'session_rec_1_lap_3', sessionId: 'session_rec_1', samples: [], startedAt: 110_321, durationMs: 55_000 },
+  { id: 'session_rec_1_lap_1', sessionId: 'session_rec_1', gps: [], samples: [], startedAt: 0, durationMs: 56_000 },
+  { id: 'session_rec_1_lap_2', sessionId: 'session_rec_1', gps: [], samples: [], startedAt: 56_000, durationMs: 54_321 },
+  { id: 'session_rec_1_lap_3', sessionId: 'session_rec_1', gps: [], samples: [], startedAt: 110_321, durationMs: 55_000 },
 ];
 
 type Call = { name: string; args: unknown[] };
@@ -163,13 +163,16 @@ test('runPostSaveEffects: erro na gamificação é engolido e a função retorna
 /** Volta com `n` pontos a `kmh`, com a precisão dada. */
 function lapAt(id: string, durationMs: number, kmh: number, accuracy: number, n = 500): LapRecord {
   const samples = Array.from({ length: n }, (_, i) => ({
+    kind: 'gps' as const,
+    source: 'PHONE' as const,
+    fix: 'unknown' as const,
     t: i * 100,
     lat: -14.86 + i * 1e-6,
     lng: -40.84,
     speed: kmh / 3.6,
     accuracy,
   }));
-  return { id, sessionId: 'session_rec_1', samples, startedAt: 0, durationMs };
+  return { id, sessionId: 'session_rec_1', gps: samples, samples, startedAt: 0, durationMs };
 }
 
 test('runPostSaveEffects: volta sem nenhum ponto de até 10 m manda peakKmh: null ao coach', async () => {

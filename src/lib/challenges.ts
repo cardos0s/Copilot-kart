@@ -11,12 +11,13 @@
  */
 
 import {
+  appSqlConn,
   DailyChallenge,
-  getLapsForSession,
   listDailyChallenges,
   listSessions,
   saveDailyChallenge,
 } from '../storage/db';
+import { loadLapSummaries } from '../storage/lapRepo';
 
 export type ChallengeTemplate = {
   id: string;
@@ -157,11 +158,12 @@ export async function refreshTodayChallenges(): Promise<void> {
   startOfDay.setHours(0, 0, 0, 0);
   const todaySessions = allSessions.filter((s) => s.startedAt >= startOfDay.getTime());
 
-  // Pra cada sessão, carrega laps (em paralelo)
+  // Pra cada sessão, carrega a duração das voltas (em paralelo), sem ler o bruto (TF-16)
+  const conn = await appSqlConn();
   const sessionsWithLaps = await Promise.all(
     todaySessions.map(async (session) => ({
       session,
-      laps: await getLapsForSession(session.id),
+      laps: await loadLapSummaries(conn, session.id),
     }))
   );
 

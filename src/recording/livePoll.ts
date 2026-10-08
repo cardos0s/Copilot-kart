@@ -60,8 +60,18 @@ export type LivePoll = {
 };
 
 /** Ponto sintético na linha de chegada (AD-006), como o `sliceLaps` monta. */
-function crossSample(cross: CrossPoint, accuracy: number): GpsSample {
-  return { t: cross.t, lat: cross.lat, lng: cross.lng, speed: cross.speed, accuracy, synthetic: true };
+function crossSample(cross: CrossPoint, from: GpsSample): GpsSample {
+  return {
+    kind: 'gps',
+    source: from.source,
+    fix: 'unknown',
+    t: cross.t,
+    lat: cross.lat,
+    lng: cross.lng,
+    speed: cross.speed,
+    accuracy: from.accuracy,
+    synthetic: true,
+  };
 }
 
 /**
@@ -74,7 +84,7 @@ function crossSample(cross: CrossPoint, accuracy: number): GpsSample {
 function currentLapSamples(all: GpsSample[], openCross: OpenCross | null): GpsSample[] | null {
   if (!openCross) return null;
   const t0 = openCross.t;
-  return [crossSample(openCross, all[openCross.idx].accuracy), ...all.slice(openCross.idx).filter((p) => p.t > t0)];
+  return [crossSample(openCross, all[openCross.idx]), ...all.slice(openCross.idx).filter((p) => p.t > t0)];
 }
 
 /**

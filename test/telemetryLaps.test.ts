@@ -6,10 +6,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import type { GpsSample } from '../src/lib/geometry';
 import { sliceLaps } from '../src/recording/finishSession';
 import type { GpsFrame, ImuFrame, SeriesMeta } from '../src/telemetry/frame';
-import { analysisGps, lapFrames, sliceLapWindows } from '../src/telemetry/laps';
+import { analysisGps, lapFrames, sliceLapWindows, type AnalysisGpsFrame } from '../src/telemetry/laps';
 import { gpsSeriesOf, imuSeriesOf } from '../src/telemetry/series';
 import { generateTimedLaps } from './helpers/syntheticTrack';
 
@@ -57,7 +56,7 @@ test('analysisGps: só os frames com precisão definida e ≤ 30 m, na ordem', (
 test('sliceLapWindows: com fixes de 45 m, dá as mesmas voltas e cruzamentos que o sliceLaps sobre os frames filtrados em 30 m', () => {
   const frames = trackFrames();
   const windows = sliceLapWindows(frames);
-  const expected = sliceLaps(frames.filter(good) as GpsSample[], []);
+  const expected = sliceLaps(frames.filter(good) as AnalysisGpsFrame[], []);
 
   assert.ok(expected.length >= 3);
   assert.equal(windows.length, expected.length);
@@ -79,7 +78,7 @@ test('lapFrames: janela por cruzamento dá [fronteira, frames internos com ≤ 3
   const frames = trackFrames();
   const series = gpsSeriesOf(GPS_META, frames);
   const windows = sliceLapWindows(frames);
-  const expected = sliceLaps(frames.filter(good) as GpsSample[], []);
+  const expected = sliceLaps(frames.filter(good) as AnalysisGpsFrame[], []);
 
   windows.forEach(({ window }, i) => {
     const { gps } = lapFrames(window, series);

@@ -7,8 +7,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import type { GpsSample } from '../src/lib/geometry';
-import type { LiveSample, LiveSampleInfo } from '../src/lib/liveSession';
+import type { LiveFrame, LiveSample, LiveSampleInfo } from '../src/lib/liveSession';
 import type { GpsFrame } from '../src/telemetry/frame';
 
 // `publishSample` real, com o Supabase trocado por um que guarda a linha.
@@ -35,7 +34,7 @@ const { publishSample, toLiveSample } = require('../src/lib/liveSession') as typ
 const T0_UTC = 1_790_000_000_000;
 
 /** O objeto que `recording.tsx` montava antes da T18, para um `GpsSample` com tempo absoluto. */
-function todayPayload(s: GpsSample, info: LiveSampleInfo): LiveSample {
+function todayPayload(s: LiveFrame, info: LiveSampleInfo): LiveSample {
   return {
     t: s.t,
     lat: s.lat,
@@ -89,7 +88,7 @@ test('toLiveSample: o payload do frame é o mesmo de hoje para o GpsSample equiv
     fix: 'unknown',
     gnssTime: T0_UTC + 61_234,
   };
-  const sample: GpsSample = { t: T0_UTC + 61_234, lat: -25.43, lng: -49.27, speed: 18.5, heading: 91, accuracy: 4, altitude: 912, altitudeAccuracy: 3 };
+  const sample: LiveFrame = { t: T0_UTC + 61_234, lat: -25.43, lng: -49.27, speed: 18.5, heading: 91, accuracy: 4, altitude: 912, altitudeAccuracy: 3 };
 
   const got = await row(toLiveSample(frame, INFO, T0_UTC));
   assert.deepEqual(got, await row(todayPayload(sample, INFO)));
@@ -102,7 +101,7 @@ test('toLiveSample: o payload do frame é o mesmo de hoje para o GpsSample equiv
 // `recordingScreen.test.ts`: o payload agora é montado aqui (TMP-05 AC 3).
 test('toLiveSample: antes do 1º cruzamento, o tempo da volta vai null, e sem rumo nem altitude também', async () => {
   const frame: GpsFrame = { kind: 'gps', source: 'PHONE', t: 500, lat: -25.43, lng: -49.27, speed: 0, accuracy: 6, fix: 'unknown' };
-  const sample: GpsSample = { t: T0_UTC + 500, lat: -25.43, lng: -49.27, speed: 0, accuracy: 6 };
+  const sample: LiveFrame = { t: T0_UTC + 500, lat: -25.43, lng: -49.27, speed: 0, accuracy: 6 };
   const info: LiveSampleInfo = { ...INFO, lapsCompleted: 0, currentLapElapsedMs: null, currentSectorIdx: null, currentSectorElapsedMs: null };
 
   const got = await row(toLiveSample(frame, info, T0_UTC));

@@ -19,12 +19,13 @@
  */
 
 import {
-  getLapsForSession,
+  appSqlConn,
   isAchievementUnlocked,
   listSessions,
   listUnlockedAchievements,
   unlockAchievement,
 } from '../storage/db';
+import { loadLapSummaries } from '../storage/lapRepo';
 
 // ===== Níveis =====
 // Threshold = soma de XP necessária pra estar NESTE nível.
@@ -187,8 +188,10 @@ export async function computePreviousStreak(
   // relevant tá DESC (mais nova primeiro). Pra "streak crescente", a gente
   // precisa caminhar do MAIS antigo pro MAIS novo, comparando best a best.
   const inOrder = relevant.slice().reverse();
+  // Só a duração das voltas importa: o resumo não lê o bruto (TF-16).
+  const conn = await appSqlConn();
   for (const s of inOrder) {
-    const laps = await getLapsForSession(s.id);
+    const laps = await loadLapSummaries(conn, s.id);
     const best = laps.reduce(
       (b, l) => (l.durationMs < b ? l.durationMs : b),
       Infinity
@@ -358,8 +361,9 @@ export async function getStatsForAchievements(
     ? sessions.filter((s) => s.trackId === trackId).length
     : 0;
   let totalLaps = 0;
+  const conn = await appSqlConn();
   for (const s of sessions) {
-    const laps = await getLapsForSession(s.id);
+    const laps = await loadLapSummaries(conn, s.id);
     totalLaps += laps.length;
   }
   return { totalLaps, totalSessions, sessionsOnTrack };

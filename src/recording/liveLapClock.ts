@@ -9,7 +9,8 @@
  *
  * Puro: nada nativo, testado em Node.
  */
-import type { GpsSample } from '../lib/geometry';
+import type { GpsFrame } from '../telemetry/frame';
+import type { AnalysisGpsFrame } from '../telemetry/laps';
 import type { DetectLapsResult } from '../lib/lapDetector';
 import type { CrossPoint, StartLine } from '../lib/startLine';
 import { sliceLaps } from './finishSession';
@@ -34,7 +35,7 @@ export type LiveLapClock = {
  */
 export function liveLapClock(
   detection: Pick<DetectLapsResult, 'openCross'>,
-  _all: GpsSample[],
+  _all: GpsFrame[],
   nowSampleT: number,
   _line: StartLine | null
 ): LiveLapClock | null {
@@ -63,10 +64,10 @@ export function lapOpened(
  * linha. `null` se a volta não existe.
  */
 export function deltaReferenceLap(
-  all: GpsSample[],
+  all: AnalysisGpsFrame[],
   line: StartLine | null,
   lapIdx: number
-): { samples: GpsSample[]; durationMs: number } | null {
+): { samples: GpsFrame[]; durationMs: number } | null {
   const lap = sliceLaps(all, [], line)[lapIdx];
   return lap ? { samples: lap.samples, durationMs: lap.durationMs } : null;
 }

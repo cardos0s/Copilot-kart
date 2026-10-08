@@ -997,9 +997,10 @@ entrada.
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste estático: nenhum dos três chama `getLapsForSession(`.
-- [ ] Teste: com um repositório falso, XP, desafios e recap dão os mesmos valores para 3 sessões conhecidas.
-- [ ] Gate: `npm test && npm run typecheck`, contagem registrada, baseline de 8 erros.
+- [x] Teste estático (`test/lapAggregates.test.ts`): nenhum dos três chama `getLapsForSession(`, e os três chamam `loadLapSummaries(` (pela `appSqlConn`).
+- [x] Teste: com um repositório falso (sql.js, 3 sessões, `samples_json` inválido e `getLapsForSession` que lança), a sequência de PB e a contagem de voltas do XP, os desafios do dia e o recap dão os valores da regra de antes. O desafio sub-50 marca progresso 1 contra o alvo 50.000 e nunca completa: é a regra de antes, mantida e registrada no teste.
+- [x] Fim da fase, para o typecheck: o recorte antigo (`sliceLaps`, `deltaReferenceLap`) recebe `AnalysisGpsFrame` e monta a fronteira como frame; o ponto sintético do `livePoll` também (a assinatura de `currentLapSamples` fica como o teste estático do `liveLapClock` confere). Fixtures de teste fora da fase (`finishSession`, `layoutRepo`, `promoteReferenceLayout`, `postSave`, `liveSample`, `liveLapClock`, `telemetryLaps`, `golden/sessions.ts`) só trocam o tipo; o `syntheticTrack` gera `AnalysisGpsFrame`.
+- [x] Gate: `npm test && npm run typecheck`, contagem registrada: 255 testes (251 + 4), baseline de 8 erros. Fim da fase.
 
 **Tests**: unit
 **Gate**: build
