@@ -10,7 +10,8 @@ import { useCallback, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { ErrorBoundary } from '../src/components/ErrorBoundary';
-import { getLapsForSession, listSessions } from '../src/storage/db';
+import { appSqlConn, listSessions } from '../src/storage/db';
+import { loadLaps } from '../src/storage/lapRepo';
 import { getProfile } from '../src/storage/profile';
 import { DnaSessionInput, PilotDna, buildPilotDna } from '../src/lib/pilotDna';
 import { Card, ScreenHeader } from '../src/components/ui';
@@ -33,8 +34,10 @@ function PilotDnaScreenInner() {
       (async () => {
         const [sessions, profile] = await Promise.all([listSessions(), getProfile()]);
         const inputs: DnaSessionInput[] = [];
+        // Só o GPS das voltas: o Pilot DNA não usa a IMU.
+        const conn = await appSqlConn();
         for (const s of sessions) {
-          const laps = await getLapsForSession(s.id);
+          const laps = await loadLaps(conn, s.id);
           if (laps.length > 0) {
             inputs.push({ trackName: s.trackName, startedAt: s.startedAt, laps });
           }

@@ -1118,8 +1118,9 @@ substituído nomeia o que substitui.
 - Skill: NONE
 
 **Done when**:
-- [ ] `test/homeScreen.test.ts` e `test/insightsScreen.test.ts` reescritos com as mesmas regras.
-- [ ] Gate: `npm test && npm run typecheck`, baseline de 8 erros.
+- [x] `test/homeScreen.test.ts` e `test/insightsScreen.test.ts` reescritos com as mesmas regras: os regex antigos (`peakSpeedMsOfLaps(laps)`, `lapsForInsight(sessions, anchor)`) continuam, e os novos conferem `loadLaps(conn, …)` no lugar de `getLapsForSession(…)`, `setBestSamples(best.gps)` e `samples={insight.best.gps}` no lugar de `.samples`. `test/lapListScreens.test.ts` (novo) cobre a lista de sessões e o Pilot DNA, e confere que nenhuma das seis telas lê `.samples`/`.imuSamples` nem os tipos antigos.
+- [x] `index`, `sessions`, `insights` e `pilot-dna` leem as voltas por `loadLaps(conn, id)` sem a IMU, que nenhuma delas usa (TF-16): a mesma leitura do `getLapsForSession`, menos a IMU. Nenhuma das listas precisa só da duração (a de sessões desenha a silhueta da melhor volta), então nenhuma usa `loadLapSummaries`. `profile` e `coach` não leem voltas (o coach lê pelo `coachContext`, T32) e não mudaram.
+- [x] Gate: `npm test && npm run typecheck`, contagem registrada: 277 testes (272 + 1 + 1 + 3), baseline de 8 erros.
 
 **Tests**: unit
 **Gate**: build

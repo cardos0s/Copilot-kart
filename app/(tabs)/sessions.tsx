@@ -7,11 +7,13 @@ import ReanimatedSwipeable, {
 } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import Animated, { interpolate, useAnimatedStyle } from 'react-native-reanimated';
 import {
+  appSqlConn,
   listSessions,
   Session,
-  getLapsForSession,
   deleteSession,
 } from '../../src/storage/db';
+import { loadLaps } from '../../src/storage/lapRepo';
+import type { GpsFrame } from '../../src/telemetry/frame';
 import { findTrackById } from '../../src/data/tracks';
 import { TrackSilhouette } from '../../src/components/TrackSilhouette';
 import { RecoveredBadge } from '../../src/components/RecoveredBadge';
@@ -30,7 +32,7 @@ type Row =
 type SessionWithStats = Session & {
   bestLapMs: number | null;
   lapCount: number;
-  bestSamples: any[] | null;
+  bestSamples: GpsFrame[] | null;
 };
 
 /** Tempo curto: "42.999" (<1min) ou "1:02.500". */
@@ -90,15 +92,17 @@ export default function Sessions() {
 
   const load = useCallback(async () => {
     const list = await listSessions();
+    // Só o GPS das voltas (a silhueta da melhor): a lista não usa a IMU.
+    const conn = await appSqlConn();
     const enriched = await Promise.all(
       list.map(async (sess) => {
-        const laps = await getLapsForSession(sess.id);
+        const laps = await loadLaps(conn, sess.id);
         const best = laps.length ? laps.reduce((a, b) => (a.durationMs < b.durationMs ? a : b)) : null;
         return {
           ...sess,
           bestLapMs: best?.durationMs ?? null,
           lapCount: laps.length,
-          bestSamples: best?.samples ?? null,
+          bestSamples: best?.gps ?? null,
         };
       })
     );

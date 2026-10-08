@@ -2,7 +2,8 @@ import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { listSessions, Session, getLapsForSession } from '../../src/storage/db';
+import { appSqlConn, listSessions, Session } from '../../src/storage/db';
+import { loadLaps } from '../../src/storage/lapRepo';
 import { getProfile, PilotProfile } from '../../src/storage/profile';
 import { findTrackById } from '../../src/data/tracks';
 import { TrackSilhouette } from '../../src/components/TrackSilhouette';
@@ -11,6 +12,7 @@ import { SennaQuoteLine } from '../../src/components/SennaQuoteCard';
 import { formatLapPlain } from '../../src/lib/format';
 import { peakSpeedMsOfLaps, msToKmh } from '../../src/lib/speed';
 import { LapRecord } from '../../src/lib/analysis';
+import type { GpsFrame } from '../../src/telemetry/frame';
 import { colors, fonts, spacing, radius } from '../../src/theme';
 import { getPilotType, type PilotType } from '../../src/storage/pilotType';
 import { IndoorHome } from '../../src/components/IndoorHome';
@@ -69,9 +71,11 @@ export default function Home() {
     const [prof, list, pt] = await Promise.all([getProfile(), listSessions(), getPilotType()]);
     setProfile(prof);
     setPilotTypeState(pt);
+    // Só o GPS das voltas: a home não usa a IMU.
+    const conn = await appSqlConn();
     const enriched = await Promise.all(
       list.map(async (sess) => {
-        const laps = await getLapsForSession(sess.id);
+        const laps = await loadLaps(conn, sess.id);
         const lapMsList = laps.map((l) => l.durationMs);
         const bestLapMs = lapMsList.length ? Math.min(...lapMsList) : null;
         const peakMs = peakSpeedMsOfLaps(laps);
@@ -257,15 +261,15 @@ function LastSessionSilhouette({
   color?: string;
   strokeWidth?: number;
 }) {
-  const [bestSamples, setBestSamples] = useState<any[]>([]);
+  const [bestSamples, setBestSamples] = useState<GpsFrame[]>([]);
 
   useFocusEffect(
     useCallback(() => {
       (async () => {
-        const laps = await getLapsForSession(sessionId);
+        const laps = await loadLaps(await appSqlConn(), sessionId);
         if (laps.length === 0) return;
         const best = laps.reduce((a, b) => (a.durationMs < b.durationMs ? a : b));
-        setBestSamples(best.samples);
+        setBestSamples(best.gps);
       })();
     }, [sessionId])
   );

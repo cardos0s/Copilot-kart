@@ -22,10 +22,11 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   AiChatThreadSummary,
-  getLapsForSession,
+  appSqlConn,
   listAiChatThreads,
   listSessions,
 } from '../../src/storage/db';
+import { loadLaps } from '../../src/storage/lapRepo';
 import { refreshAiEnabled } from '../../src/lib/aiAnalysis';
 import { findTrackById } from '../../src/data/tracks';
 import { buildLapInsight, LapInsight, lapsForInsight, speedPaint } from '../../src/lib/lapInsight';
@@ -69,7 +70,9 @@ export default function Insights() {
       // não se comparam.
       const sameTrack = lapsForInsight(sessions, anchor).slice(0, SESSION_WINDOW);
 
-      const laps = (await Promise.all(sameTrack.map((x) => getLapsForSession(x.id)))).flat();
+      // Só o GPS das voltas: o insight não usa a IMU.
+      const conn = await appSqlConn();
+      const laps = (await Promise.all(sameTrack.map((x) => loadLaps(conn, x.id)))).flat();
       setInsight(buildLapInsight(laps));
 
       setThreads(await listAiChatThreads(6).catch(() => []));
@@ -116,7 +119,7 @@ export default function Insights() {
 
             <View style={s.mapWrap}>
               <PaintedLap
-                samples={insight.best.samples}
+                samples={insight.best.gps}
                 minKmh={insight.minKmh}
                 maxKmh={insight.maxKmh}
                 size={mapSize}

@@ -1,6 +1,8 @@
 /**
  * Invariantes estáticas de `app/(tabs)/index.tsx`, lendo o fonte:
  * TMP-11 AC 3 e 4 (a home usa o pico p99 e mostra "—" quando ele é null).
+ * Desde a T39 (TF-13, TF-16): as voltas vêm do `loadLaps`, sem a IMU, e a silhueta
+ * da melhor volta é desenhada pelos frames (`best.gps`).
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -27,4 +29,16 @@ test('home: o pico sai de peakSpeedMsOfLaps sem ponte para 0, e null chega à UI
   const fmtKmh = loadFunction('fmtKmh');
   assert.equal(fmtKmh(null), '—');
   assert.equal(fmtKmh(80.26), '80,3');
+});
+
+test('home (T39): o pico e a silhueta saem das voltas do loadLaps, sem IMU e sem .samples', () => {
+  assert.ok(SRC.includes("import { loadLaps } from '../../src/storage/lapRepo';"));
+  // Substitui `getLapsForSession(sess.id)`: a mesma leitura, sem a IMU que a home não usa.
+  assert.ok(/const laps = await loadLaps\(conn, sess\.id\);[\s\S]*?const peakMs = peakSpeedMsOfLaps\(laps\);/.test(SRC));
+  // Substitui `getLapsForSession(sessionId)` e `setBestSamples(best.samples)` da silhueta.
+  assert.ok(/const laps = await loadLaps\(await appSqlConn\(\), sessionId\);/.test(SRC));
+  assert.ok(SRC.includes('setBestSamples(best.gps);'));
+  assert.equal(SRC.includes('getLapsForSession('), false);
+  assert.equal(/loadLaps\([^)]*imu/.test(SRC), false, 'sem imu: true');
+  assert.equal(/\.samples\b/.test(SRC), false);
 });
