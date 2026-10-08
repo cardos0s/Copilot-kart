@@ -952,9 +952,10 @@ entrada.
 - Skill: NONE
 
 **Done when**:
-- [ ] Golden (Pilot DNA, parte pura do contexto do coach, km totais) passa sem mudar o `expected.json`.
-- [ ] Teste: `pilotStats` com um repositório falso de 3 sessões soma os km pela mesma regra de antes.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Golden (Pilot DNA, parte pura do contexto do coach, km totais) passa sem mudar o `expected.json`.
+- [x] Teste (`test/pilotStats.test.ts`): `pilotStats` com um repositório falso de 3 sessões soma os km pela mesma regra de antes (comprimento dos frames de cada volta, fronteiras inclusive), e o import morto de `listTrackReferences` saiu.
+- [x] `coachContext` e `pilotStats` continuam lendo pelo `getLapsForSession`, que desde a T22 é o `loadLaps` do `lapRepo`. A leitura direta pela conexão mudaria o stub do banco no harness do golden e fica para quando o golden ler pelo banco (T45).
+- [x] Gate: `npm test`, contagem registrada: 251 testes (250 + 1).
 
 **Tests**: unit
 **Gate**: quick

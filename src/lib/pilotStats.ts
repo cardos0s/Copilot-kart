@@ -1,4 +1,4 @@
-import { listSessions, getLapsForSession, listTrackReferences, Session } from '../storage/db';
+import { listSessions, getLapsForSession, Session } from '../storage/db';
 import { LapRecord } from './analysis';
 import { polylineLength } from './geometry';
 import { findTrackById } from '../data/tracks';
@@ -66,7 +66,7 @@ export async function computePilotStats(opts?: {
     sessionLaps.set(sess.id, laps);
     for (const lap of laps) {
       allLaps.push({ ...lap, trackId: sess.trackId, trackName: sess.trackName });
-      totalKm += polylineLength(lap.samples) / 1000;
+      totalKm += polylineLength(lap.gps) / 1000;
       totalTimeMs += lap.durationMs;
     }
   }

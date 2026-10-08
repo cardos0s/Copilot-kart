@@ -36,7 +36,7 @@ import { PilotContext } from './analysisPrompt';
 export type CoachContext = {
   /** Sessão da volta. */
   session: Session;
-  /** A volta selecionada, já com samples reparadas. */
+  /** A volta selecionada, já com os frames (`gps`) limpos e reparados. */
   lap: LapRecord;
   /** Tempo da referência usada (saved track ref ou melhor volta da sessão). */
   refDurationMs: number;
@@ -72,12 +72,13 @@ export async function loadCoachContext(
 
     // Mesma pipeline da tela de sessão: limpa accuracy + repara timestamps.
     const preparedLaps = allLaps.map((l) => {
-      const cleaned = cleanSamples(l.samples, 10);
+      const cleaned = cleanSamples(l.gps, 10);
       const { samples } = repairDegenerateTimestamps(
         cleaned,
         l.durationMs,
         l.startedAt
       );
+      // Transição (até a T46): `samples` é o mesmo array.
       return { ...l, gps: samples, samples };
     });
     const lap = preparedLaps.find((l) => l.id === lapId);
@@ -93,7 +94,7 @@ export async function loadCoachContext(
       layout = await getDefaultLayoutForTrack(session.trackId);
     }
 
-    let refSamples = lap.samples;
+    let refSamples = lap.gps;
     let refDurationMs = lap.durationMs;
     if (layout && layout.samples.length >= 5) {
       const { samples: repaired } = repairDegenerateTimestamps(
@@ -107,11 +108,11 @@ export async function loadCoachContext(
         (b, l) => (l.durationMs < b.durationMs ? l : b),
         preparedLaps[0]
       );
-      refSamples = best.samples;
+      refSamples = best.gps;
       refDurationMs = best.durationMs;
     }
 
-    if (refSamples.length < 5 || lap.samples.length < 5) {
+    if (refSamples.length < 5 || lap.gps.length < 5) {
       return { kind: 'too-short' };
     }
 

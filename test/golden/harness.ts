@@ -559,7 +559,7 @@ async function coachContexts(gs: GoldenSession) {
     out.push({
       id: lap.id,
       kind: r.kind,
-      lapSampleCount: c.lap.samples.length,
+      lapSampleCount: c.lap.gps.length,
       lapSamples: gpsSeries(c.lap.gps, gs.t0),
       refDurationMs: c.refDurationMs,
       analysis: c.analysis,

@@ -111,11 +111,12 @@ function analyzeSession(
 ): SessionAnalysis | null {
   const prepared = laps
     .map((l) => {
-      const cleaned = cleanSamples(l.samples, 10);
+      const cleaned = cleanSamples(l.gps, 10);
       const { samples } = repairDegenerateTimestamps(cleaned, l.durationMs, l.startedAt);
+      // Transição (até a T46): `samples` é o mesmo array.
       return { ...l, gps: samples, samples };
     })
-    .filter((l) => l.samples.length >= 10);
+    .filter((l) => l.gps.length >= 10);
   if (prepared.length === 0) return null;
 
   const best = prepared.reduce((b, l) => (l.durationMs < b.durationMs ? l : b));
@@ -130,9 +131,9 @@ function analyzeSession(
   };
 
   try {
-    const ref = buildReferenceLap(best.samples, {
-      lat: best.samples[0].lat,
-      lng: best.samples[0].lng,
+    const ref = buildReferenceLap(best.gps, {
+      lat: best.gps[0].lat,
+      lng: best.gps[0].lng,
     });
     const corners = detectCorners(ref);
     if (corners.length === 0) return result;
