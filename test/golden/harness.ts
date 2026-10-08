@@ -695,7 +695,7 @@ export async function runGolden(): Promise<GoldenOutput> {
       return r && { ...r, best: { id: r.best.id, durationMs: r.best.durationMs, sampleCount: r.best.gps.length } };
     })());
     // O trompo sai no relógio da sessão; o `expected.json` guarda o instante absoluto.
-    put('detectSpins', gs.name, gs.laps.map((l) => detectSpins(l.samples, l.imuSamples).map((e) => ({ ...e, startT: gs.t0 + e.startT, endT: gs.t0 + e.endT }))));
+    put('detectSpins', gs.name, gs.laps.map((l) => detectSpins(l.gps, l.imu).map((e) => ({ ...e, startT: gs.t0 + e.startT, endT: gs.t0 + e.endT }))));
     put('buildPilotDna', gs.name, buildPilotDna([{ trackName: gs.session.trackName, startedAt: gs.session.startedAt, laps: gs.laps }]));
     put('coachContext', gs.name, await coachContexts(gs));
     const bestLap = gs.laps.reduce((b, l) => (l.durationMs < b.durationMs ? l : b), gs.laps[0]);

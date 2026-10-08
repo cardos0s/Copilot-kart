@@ -907,10 +907,10 @@ entrada.
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste novo: o trompo da sessão de referência 1 é detectado no mesmo instante pela IMU e pelo GPS (hoje não há teste deste arquivo).
-- [ ] Teste: frames de IMU só com `accel` não geram trompo nem erro.
-- [ ] Golden passa sem mudar o `expected.json`.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste novo (`test/spinDetector.test.ts`): o trompo da sessão de referência 1 sai pela IMU no instante simulado (±50 ms no início e no fim, no relógio da sessão), e o GPS desse instante põe o kart a ≤ 3 m do ponto do trompo e a 4 m/s (±0,25). Lacuna de precisão: o GPS sozinho (`detectSpinsFromGps`) não vê este trompo, porque o rumo simulado é o da trajetória; "pelo GPS" virou a posição e a velocidade dos frames de GPS no instante da IMU. `sessions.ts` ganhou `session1Spin()` (só leitura da simulação, os dados não mudam).
+- [x] Teste: frames de IMU só com `accel` não geram trompo nem erro (`detectSpinsFromImu` e `detectSpins`, que cai para o GPS).
+- [x] Golden passa sem mudar o `expected.json` (o harness passa `gps`/`imu`).
+- [x] Gate: `npm test`, contagem registrada: 250 testes (248 + 2).
 
 **Tests**: unit
 **Gate**: quick

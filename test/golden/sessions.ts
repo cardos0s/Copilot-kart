@@ -217,6 +217,8 @@ const BOX_MS = 15_000;
 type Sim = {
   states: State[];
   phases: Session1['phases'];
+  /** Início do trompo (ms desde o início da simulação). */
+  spinStart: number;
 };
 
 let simCache: Sim | null = null;
@@ -281,7 +283,7 @@ function simulate(): Sim {
   const boxStart = t;
   hold(BOX_MS);
   const end = t;
-  return { states, phases: { paddockEnd, queueStart, queueEnd, boxStart, end } };
+  return { states, phases: { paddockEnd, queueStart, queueEnd, boxStart, end }, spinStart: spinStartT! };
 }
 
 function sim(): Sim {
@@ -398,6 +400,16 @@ function session1Imu(): ImuEvent[] {
     out.push({ kind: 'gyro', at: at + 7, x: n(), y: n(), z: st.v * tp.curvature + st.yawExtra + n() });
   }
   return out;
+}
+
+/**
+ * O trompo da sessão 1 como foi simulado: início em epoch ms (o giro extra sobe em
+ * 100 ms até 5,5 rad/s, fica, e desce nos últimos 100 ms), duração, o ponto da
+ * pista e a velocidade em que o kart está nele.
+ */
+export function session1Spin(): { startAt: number; durationMs: number; point: { lat: number; lng: number }; speedMs: number } {
+  const p = trackAt(S_SPIN);
+  return { startAt: T0 + sim().spinStart, durationMs: SPIN_MS, point: toLatLng(p.x, p.y), speedMs: 4 };
 }
 
 export function session1(): Session1 {

@@ -28,10 +28,18 @@
  * perdeu vs uma referência.
  */
 
-import type { GpsSample, ImuSample } from './geometry';
+import type { GpsFrame, ImuFrame, Vec3 } from '../telemetry/frame';
+
+/** Frame de IMU com o giroscópio: o único que a detecção por IMU lê. */
+type GyroFrame = ImuFrame & { gyro: Vec3 };
+
+/** Os frames com giroscópio; o frame só com acelerômetro (par incompleto) é ignorado. */
+function withGyro(imu: ImuFrame[]): GyroFrame[] {
+  return imu.filter((s): s is GyroFrame => s.gyro !== undefined);
+}
 
 export type SpinEvent = {
-  /** Timestamp do início do spin (ms desde epoch). */
+  /** Instante do início do spin, no relógio dos frames (ms desde o t0Utc da série). */
   startT: number;
   /** Timestamp do fim do spin. */
   endT: number;
@@ -67,9 +75,10 @@ const MAX_GAP_BETWEEN_SAMPLES_MS = 200; // gap > isso quebra a continuidade
  * Retorna spins ordenados por startT.
  */
 export function detectSpinsFromImu(
-  imuSamples: ImuSample[],
-  gpsSamples: GpsSample[]
+  imu: ImuFrame[],
+  gpsSamples: GpsFrame[]
 ): SpinEvent[] {
+  const imuSamples = withGyro(imu);
   if (imuSamples.length < 10) return [];
 
   // Decide qual eixo é o yaw — pegamos a magnitude média dos 3 eixos no
@@ -95,8 +104,8 @@ export function detectSpinsFromImu(
 }
 
 function detectOnAxis(
-  imuSamples: ImuSample[],
-  gpsSamples: GpsSample[],
+  imuSamples: GyroFrame[],
+  gpsSamples: GpsFrame[],
   axis: 'x' | 'y' | 'z'
 ): SpinEvent[] {
   const events: SpinEvent[] = [];
@@ -163,7 +172,7 @@ function detectOnAxis(
  * janela de 2s. Menos preciso que IMU; pode missar spins onde o kart
  * mantém momento mas roda, ou flagar pit-stop como spin.
  */
-export function detectSpinsFromGps(gpsSamples: GpsSample[]): SpinEvent[] {
+export function detectSpinsFromGps(gpsSamples: GpsFrame[]): SpinEvent[] {
   if (gpsSamples.length < 5) return [];
   const events: SpinEvent[] = [];
   const WINDOW_MS = 2000;
@@ -204,12 +213,16 @@ export function detectSpinsFromGps(gpsSamples: GpsSample[]): SpinEvent[] {
   return events;
 }
 
-/** Detecta spins automaticamente — prefere IMU se houver, senão cai pro GPS. */
+/**
+ * Detecta spins automaticamente — prefere IMU se houver, senão cai pro GPS.
+ * Só os frames de IMU com giroscópio contam.
+ */
 export function detectSpins(
-  gpsSamples: GpsSample[],
-  imuSamples: ImuSample[] | undefined
+  gpsSamples: GpsFrame[],
+  imu: ImuFrame[] | undefined
 ): SpinEvent[] {
-  if (imuSamples && imuSamples.length >= 10) {
+  const imuSamples = imu ? withGyro(imu) : [];
+  if (imuSamples.length >= 10) {
     return detectSpinsFromImu(imuSamples, gpsSamples);
   }
   return detectSpinsFromGps(gpsSamples);
@@ -220,7 +233,7 @@ export function detectSpins(
 // ============================================================================
 
 function interpolateGpsAt(
-  samples: GpsSample[],
+  samples: GpsFrame[],
   startT: number,
   endT: number,
   targetT: number
