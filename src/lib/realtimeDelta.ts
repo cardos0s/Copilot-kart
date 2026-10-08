@@ -30,8 +30,8 @@
  * pôr o hint no início do traçado.
  */
 
+import type { GpsFrame } from '../telemetry/frame';
 import {
-  GpsSample,
   ReferenceLap,
   buildReferenceLap,
   makeLocalProjector,
@@ -91,7 +91,7 @@ export class DeltaTracker {
    * Custo: O(n) onde n = samples da referência (tipicamente 200-600).
    * Roda em <5ms num device médio.
    */
-  setReference(samples: GpsSample[], durationMs: number): void {
+  setReference(samples: GpsFrame[], durationMs: number): void {
     if (samples.length < 5 || durationMs <= 0) {
       this.clear();
       return;
@@ -153,7 +153,7 @@ export class DeltaTracker {
    *     piloto fora da pista, ou referência incompatível)
    *   - Map matching falhou
    */
-  compute(sample: GpsSample, lapElapsedMs: number): DeltaReading {
+  compute(sample: GpsFrame, lapElapsedMs: number): DeltaReading {
     if (!this.ref || !this.matchedRef) return EMPTY;
     const proj = makeLocalProjector(this.ref.origin);
     const xy = proj.toXY(sample);

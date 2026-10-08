@@ -10,7 +10,8 @@
 
 import { analyzeCorners } from './cornerAnalysis';
 import { detectCorners } from './corners';
-import { buildReferenceLap, GpsSample } from './geometry';
+import type { GpsFrame } from '../telemetry/frame';
+import { buildReferenceLap } from './geometry';
 import { LapRecord, cleanSamples, matchLapToReference, repairDegenerateTimestamps } from './analysis';
 import { msToKmh, peakSpeedMs } from './speed';
 import type { Session } from '../storage/db';
@@ -45,8 +46,9 @@ const MAX_LAPS = 60;
 
 /** Mesmas defesas da análise da sessão: fix de até 10 m e timestamp reparado. */
 function cleanLap(lap: LapRecord): LapRecord {
-  const cleaned = cleanSamples(lap.samples, 10);
+  const cleaned = cleanSamples(lap.gps, 10);
   const { samples } = repairDegenerateTimestamps(cleaned, lap.durationMs, lap.startedAt);
+  // Transição (até a T46): `samples` é o mesmo array, para a tela que ainda o lê.
   return { ...lap, gps: samples, samples };
 }
 
@@ -61,16 +63,16 @@ export function lapsForInsight(sessions: Session[], anchor: Session): Session[] 
 }
 
 export function buildLapInsight(laps: LapRecord[]): LapInsight | null {
-  const usable = laps.filter((l) => l.samples).map(cleanLap).filter((l) => l.samples.length > 20);
+  const usable = laps.filter((l) => l.gps).map(cleanLap).filter((l) => l.gps.length > 20);
   if (usable.length === 0) return null;
 
   const best = usable.reduce((b, l) => (l.durationMs < b.durationMs ? l : b));
 
-  const speeds = best.samples.map((p: GpsSample) => p.speed * 3.6).filter((v) => isFinite(v));
+  const speeds = best.gps.map((p: GpsFrame) => p.speed * 3.6).filter((v) => isFinite(v));
   const minKmh = speeds.length ? Math.min(...speeds) : 0;
   // Topo da escala pelo pico honesto (p99, TMP-11): uma fix ruim isolada não
   // achata a pintura da volta inteira.
-  const peak = peakSpeedMs(best.samples);
+  const peak = peakSpeedMs(best.gps);
   const maxKmh = peak === null ? 0 : msToKmh(peak);
 
   const empty: LapInsight = {
@@ -78,9 +80,9 @@ export function buildLapInsight(laps: LapRecord[]): LapInsight | null {
   };
 
   try {
-    const ref = buildReferenceLap(best.samples, {
-      lat: best.samples[0].lat,
-      lng: best.samples[0].lng,
+    const ref = buildReferenceLap(best.gps, {
+      lat: best.gps[0].lat,
+      lng: best.gps[0].lng,
     });
     const corners = detectCorners(ref);
     if (corners.length === 0) return empty;

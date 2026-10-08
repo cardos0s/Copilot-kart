@@ -7,7 +7,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import type { LapRecord } from '../src/lib/analysis';
-import { makeLocalProjector, type GpsSample, type XY } from '../src/lib/geometry';
+import { makeLocalProjector, type XY } from '../src/lib/geometry';
+import type { GpsFrame } from '../src/telemetry/frame';
 import { buildLapInsight, lapsForInsight } from '../src/lib/lapInsight';
 import type { Session } from '../src/storage/db';
 
@@ -54,7 +55,7 @@ let lapSeq = 0;
 function makeLap(c2Speed: number, stopS = 0): LapRecord {
   const t0 = 1_700_000_000_000 + lapSeq * 1_000_000;
   const id = `lap_${++lapSeq}`;
-  const samples: GpsSample[] = [];
+  const samples: GpsFrame[] = [];
   let s = 0;
   let t = t0;
   let stopLeft = stopS;
@@ -62,13 +63,13 @@ function makeLap(c2Speed: number, stopS = 0): LapRecord {
     const inC2 = s >= C2_START && s < C2_END;
     const v = inC2 ? c2Speed : 15;
     const { lat, lng } = proj.toLatLng(xyAt(s));
-    samples.push({ t, lat, lng, speed: v, accuracy: 4 });
+    samples.push({ kind: 'gps', source: 'PHONE', fix: 'unknown', t, lat, lng, speed: v, accuracy: 4 });
     if (s >= P) break;
     if (stopLeft > 0 && s >= (C2_START + C2_END) / 2) stopLeft -= 0.1;
     else s += v * 0.1;
     t += 100;
   }
-  return { id, sessionId: 's1', samples, startedAt: t0, durationMs: t - t0 };
+  return { id, sessionId: 's1', gps: samples, samples, startedAt: t0, durationMs: t - t0 };
 }
 
 const best = makeLap(15);
@@ -98,7 +99,8 @@ test('buildLapInsight: 3 voltas boas e 1 com a curva 2 inválida dão, na curva 
 });
 
 test('buildLapInsight: volta com timestamps degenerados é reparada antes de entrar (± 20 ms na perda da curva)', () => {
-  const degenerate: LapRecord = { ...g3, samples: g3.samples.map((p) => ({ ...p, t: g3.startedAt })) };
+  const degenerated = g3.gps.map((p) => ({ ...p, t: g3.startedAt }));
+  const degenerate: LapRecord = { ...g3, gps: degenerated, samples: degenerated };
   const expected = c2Loss([best, g1, g2, g3]);
   const loss = c2Loss([best, g1, g2, degenerate]);
   assert.ok(Math.abs(loss - expected) <= 20, `curva 2: ${loss} ms com a volta reparada, ${expected} ms com a original`);
@@ -107,19 +109,18 @@ test('buildLapInsight: volta com timestamps degenerados é reparada antes de ent
 test('buildLapInsight: fixes com precisão acima de 10 m não entram', () => {
   // Cinco fixes ruins no meio da curva 2, jogados 60 m para dentro do retângulo.
   const bad = new Set<number>();
-  const g2Bad: LapRecord = {
-    ...g2,
-    samples: g2.samples.map((p, i) => {
+  const g2BadFrames = g2.gps.map((p, i) => {
       const s = (i * 0.1 - (C2_START / 15)) * 11 + C2_START;
       if (s < C2_START + 5 || bad.size >= 5) return p;
       bad.add(i);
       const xy = proj.toXY(p);
       const { lat, lng } = proj.toLatLng({ x: xy.x - 60, y: xy.y - 10 });
       return { ...p, lat, lng, accuracy: 30 };
-    }),
-  };
+  });
+  const g2Bad: LapRecord = { ...g2, gps: g2BadFrames, samples: g2BadFrames };
   assert.equal(bad.size, 5);
-  const g2Without: LapRecord = { ...g2, samples: g2.samples.filter((_, i) => !bad.has(i)) };
+  const g2WithoutFrames = g2.gps.filter((_, i) => !bad.has(i));
+  const g2Without: LapRecord = { ...g2, gps: g2WithoutFrames, samples: g2WithoutFrames };
 
   const withBad = buildLapInsight([best, g1, g2Bad, g3]);
   const without = buildLapInsight([best, g1, g2Without, g3]);
@@ -158,12 +159,12 @@ test('buildLapInsight: numa melhor volta a ~80 km/h com um único ponto a 150 km
   // 500 pontos a 10 Hz, na pista de retângulo, a 80 km/h (±0,5); o ponto 250 salta para 150 km/h.
   const v = 80 / 3.6;
   const t0 = 1_700_000_000_000 + 999 * 1_000_000;
-  const samples: GpsSample[] = Array.from({ length: 500 }, (_, i) => {
+  const samples: GpsFrame[] = Array.from({ length: 500 }, (_, i) => {
     const { lat, lng } = proj.toLatLng(xyAt(i * v * 0.1));
-    return { t: t0 + i * 100, lat, lng, speed: v + ((i % 3) - 1) * 0.1, accuracy: 4 };
+    return { kind: 'gps', source: 'PHONE', fix: 'unknown', t: t0 + i * 100, lat, lng, speed: v + ((i % 3) - 1) * 0.1, accuracy: 4 };
   });
   samples[250] = { ...samples[250], speed: 150 / 3.6 };
-  const best: LapRecord = { id: 'lap_pico', sessionId: 's_pico', samples, startedAt: t0, durationMs: 49_900 };
+  const best: LapRecord = { id: 'lap_pico', sessionId: 's_pico', gps: samples, samples, startedAt: t0, durationMs: 49_900 };
 
   const insight = buildLapInsight([best]);
   assert.ok(insight);

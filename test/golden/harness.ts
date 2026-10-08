@@ -692,7 +692,7 @@ export async function runGolden(): Promise<GoldenOutput> {
     put('peakSpeedMsOfLaps', gs.name, peakSpeedMsOfLaps(gs.laps));
     put('buildLapInsight', gs.name, (() => {
       const r = buildLapInsight(gs.laps);
-      return r && { ...r, best: { id: r.best.id, durationMs: r.best.durationMs, sampleCount: r.best.samples.length } };
+      return r && { ...r, best: { id: r.best.id, durationMs: r.best.durationMs, sampleCount: r.best.gps.length } };
     })());
     // O trompo sai no relógio da sessão; o `expected.json` guarda o instante absoluto.
     put('detectSpins', gs.name, gs.laps.map((l) => detectSpins(l.samples, l.imuSamples).map((e) => ({ ...e, startT: gs.t0 + e.startT, endT: gs.t0 + e.endT }))));

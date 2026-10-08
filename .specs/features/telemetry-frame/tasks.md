@@ -885,9 +885,9 @@ entrada.
 - Skill: NONE
 
 **Done when**:
-- [ ] `test/realtimeDelta.test.ts` e `test/lapInsight.test.ts` passam com os mesmos valores.
-- [ ] Golden passa sem mudar o `expected.json`.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] `test/realtimeDelta.test.ts` e `test/lapInsight.test.ts` passam com os mesmos valores. As voltas de `lapInsight.test.ts` são frames, e as modificadas (timestamps degenerados, fixes ruins) preenchem `gps` junto com `samples`.
+- [x] Golden passa sem mudar o `expected.json`.
+- [x] Gate: `npm test`, contagem registrada: 248 testes (248 + 0).
 
 **Tests**: unit
 **Gate**: quick
