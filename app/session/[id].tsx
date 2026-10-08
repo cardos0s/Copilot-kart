@@ -353,7 +353,7 @@ function SessionScreenInner() {
       const bestSamples = sectorSamples[sessionBest.id] ?? sessionBest.samples;
       const sectorRef =
         (useExternalRef ? referenceFromLayout(reference!.samples) : null) ??
-        referenceFromLap({ samples: bestSamples });
+        referenceFromLap({ gps: bestSamples });
       const thirds = sectorThirds(
         sectorSplits(sectorSamples[selected.id] ?? selected.samples, sectorRef),
         sectorSplits(useExternalRef ? reference!.samples : bestSamples, sectorRef),

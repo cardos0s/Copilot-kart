@@ -863,9 +863,9 @@ entrada.
 - Skill: NONE
 
 **Done when**:
-- [ ] `test/sectors.test.ts` e `test/speed.test.ts` passam com fixtures de `GpsFrame` e os mesmos valores.
-- [ ] Golden passa sem mudar o `expected.json`.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] `test/sectors.test.ts` e `test/speed.test.ts` passam com fixtures de `GpsFrame` e os mesmos valores. `referenceFromLap` recebe `{ gps }` e `sectorLapSamples` lê `gps`: o teste da régua sem traçado passa `{ gps: best.samples }`, e as voltas modificadas de `test/lapCompare.test.ts` preenchem `gps` junto com `samples` (mesmo array). Na tela da sessão, `referenceFromLap({ gps: bestSamples })` (uma linha).
+- [x] Golden passa sem mudar o `expected.json`.
+- [x] Gate: `npm test`, contagem registrada: 248 testes (248 + 0).
 
 **Tests**: unit
 **Gate**: quick

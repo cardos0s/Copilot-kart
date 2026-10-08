@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import type { GpsSample } from '../src/lib/geometry';
+import type { GpsFrame } from '../src/telemetry/frame';
 import { detectLaps } from '../src/lib/lapDetector';
 import { referenceFromLap, referenceFromLayout, sectorSplits } from '../src/lib/sectors';
 import { lineFromLayout } from '../src/lib/startLine';
@@ -25,7 +25,7 @@ function near(actual: number | null, expected: number, label: string) {
  * Traçado de referência como o app o salva: a melhor volta de uma sessão, com
  * os pontos de fronteira na linha (AD-006).
  */
-function layoutSamples(): GpsSample[] {
+function layoutSamples(): GpsFrame[] {
   const { samples } = generateTimedLaps({ lapDurationMs: D, sampleRateHz: 10, laps: 2, warmupS: 3 });
   return sliceLaps(samples, [])[0].samples;
 }
@@ -124,7 +124,7 @@ test('sem traçado, referenceFromLap(melhor volta) dá a régua, e os terços sa
   assert.equal(laps.length, 3);
 
   const best = laps.reduce((b, l) => (l.durationMs < b.durationMs ? l : b), laps[0]);
-  const ref = referenceFromLap(best);
+  const ref = referenceFromLap({ gps: best.samples });
   // A régua é o comprimento da própria volta: uma volta no círculo de 120 m de raio (± 1 %).
   assert.ok(Math.abs(ref.totalLength / (2 * Math.PI * 120) - 1) < 0.01, `comprimento ${ref.totalLength}`);
   for (const [i, lap] of laps.entries()) {

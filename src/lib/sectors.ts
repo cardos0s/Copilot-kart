@@ -11,7 +11,8 @@
  */
 import type { LapRecord } from './analysis';
 import { matchLapToReference, repairDegenerateTimestamps } from './analysis';
-import { buildReferenceLap, type GpsSample, type ReferenceLap } from './geometry';
+import type { GpsFrame } from '../telemetry/frame';
+import { buildReferenceLap, type ReferenceLap } from './geometry';
 import { lineFromLayout } from './startLine';
 
 export type SectorSplits = { s1Ms: number | null; s2Ms: number | null; s3Ms: number | null };
@@ -21,7 +22,7 @@ export type SectorSplits = { s1Ms: number | null; s2Ms: number | null; s3Ms: num
  * comprimento, devolve `null` (mesma regra de `lineFromLayout`): a sessão é
  * tratada como sem traçado.
  */
-export function referenceFromLayout(samples: GpsSample[]): ReferenceLap | null {
+export function referenceFromLayout(samples: GpsFrame[]): ReferenceLap | null {
   if (!lineFromLayout(samples)) return null;
   return buildReferenceLap(samples, { lat: samples[0].lat, lng: samples[0].lng });
 }
@@ -30,9 +31,9 @@ export function referenceFromLayout(samples: GpsSample[]): ReferenceLap | null {
  * Régua a partir de uma volta (a melhor da sessão, quando não há traçado).
  * Com pontos de fronteira, a origem é o ponto da linha.
  */
-export function referenceFromLap(lap: { samples: GpsSample[] }): ReferenceLap {
-  const o = lap.samples[0];
-  return buildReferenceLap(lap.samples, { lat: o.lat, lng: o.lng });
+export function referenceFromLap(lap: { gps: GpsFrame[] }): ReferenceLap {
+  const o = lap.gps[0];
+  return buildReferenceLap(lap.gps, { lat: o.lat, lng: o.lng });
 }
 
 /**
@@ -41,8 +42,8 @@ export function referenceFromLap(lap: { samples: GpsSample[] }): ReferenceLap {
  * sessão e da comparação; o ao vivo mede sobre os mesmos pontos, antes de
  * salvar.
  */
-export function sectorLapSamples(lap: Pick<LapRecord, 'samples' | 'durationMs' | 'startedAt'>): GpsSample[] {
-  return repairDegenerateTimestamps(lap.samples, lap.durationMs, lap.startedAt).samples;
+export function sectorLapSamples(lap: Pick<LapRecord, 'gps' | 'durationMs' | 'startedAt'>): GpsFrame[] {
+  return repairDegenerateTimestamps(lap.gps, lap.durationMs, lap.startedAt).samples;
 }
 
 /**
@@ -53,7 +54,7 @@ export function sectorLapSamples(lap: Pick<LapRecord, 'samples' | 'durationMs' |
  * - Numa volta fechada (termina no ponto de fronteira), o fim é o último
  *   ponto, e `s1 + s2 + s3` é a duração arredondada da volta.
  */
-export function sectorSplits(lapSamples: GpsSample[], ref: ReferenceLap): SectorSplits {
+export function sectorSplits(lapSamples: GpsFrame[], ref: ReferenceLap): SectorSplits {
   const none: SectorSplits = { s1Ms: null, s2Ms: null, s3Ms: null };
   const L = ref.totalLength;
   if (lapSamples.length < 2 || L <= 0) return none;

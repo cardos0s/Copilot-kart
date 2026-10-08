@@ -6,22 +6,22 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import type { LapRecord } from '../src/lib/analysis';
-import type { GpsSample } from '../src/lib/geometry';
+import type { GpsFrame } from '../src/telemetry/frame';
 import { msToKmh, peakSpeedMs, peakSpeedMsOfLaps } from '../src/lib/speed';
 
 const T0 = 1_700_000_000_000;
 
-function pt(i: number, speed: number, accuracy = 4): GpsSample {
-  return { t: T0 + i * 100, lat: -14.86, lng: -40.84, speed, accuracy };
+function pt(i: number, speed: number, accuracy = 4): GpsFrame {
+  return { kind: 'gps', source: 'PHONE', fix: 'unknown', t: T0 + i * 100, lat: -14.86, lng: -40.84, speed, accuracy };
 }
 
-function lap(samples: GpsSample[], id = 'l1'): LapRecord {
-  return { id, sessionId: 's1', samples, startedAt: samples[0]?.t ?? T0, durationMs: 50_000 };
+function lap(samples: GpsFrame[], id = 'l1'): LapRecord {
+  return { id, sessionId: 's1', gps: samples, samples, startedAt: samples[0]?.t ?? T0, durationMs: 50_000 };
 }
 
 /** ~500 pontos entre 79,5 e 80,5 km/h e um único ponto a 150 km/h. */
-function lapWithSpike(): GpsSample[] {
-  const samples: GpsSample[] = [];
+function lapWithSpike(): GpsFrame[] {
+  const samples: GpsFrame[] = [];
   for (let i = 0; i < 500; i++) samples.push(pt(i, (80 + 0.5 * Math.sin(i / 7)) / 3.6));
   samples.splice(250, 0, pt(250, 150 / 3.6));
   return samples;

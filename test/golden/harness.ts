@@ -458,12 +458,12 @@ function sessionScreen(gs: GoldenSession) {
       reference = { ...reference, samples };
     }
   }
-  const saved: Record<string, GpsSample[]> = {};
+  const saved: Record<string, GpsFrame[]> = {};
   for (const l of gs.laps) saved[l.id] = sectorLapSamples(l);
 
   const sessionBest = laps.reduce((b, l) => (l.durationMs < b.durationMs ? l : b), laps[0]);
   const useExternalRef = reference !== null;
-  const refSamples = useExternalRef ? reference!.samples : sessionBest.samples;
+  const refSamples = useExternalRef ? reference!.samples : sessionBest.gps;
   const refDurationMs = useExternalRef ? reference!.durationMs : sessionBest.durationMs;
   const refLap = buildReferenceLap(refSamples, { lat: refSamples[0].lat, lng: refSamples[0].lng });
   const corners = detectCorners(refLap);
@@ -471,18 +471,18 @@ function sessionScreen(gs: GoldenSession) {
     { id: 'ref', sessionId: 'ref', startedAt: 0, durationMs: refDurationMs, gps: refSamples, samples: refSamples },
     refLap,
   );
-  const bestSaved = saved[sessionBest.id] ?? sessionBest.samples;
-  const sectorRef = (useExternalRef ? referenceFromLayout(reference!.samples) : null) ?? referenceFromLap({ samples: bestSaved });
+  const bestSaved = saved[sessionBest.id] ?? sessionBest.gps;
+  const sectorRef = (useExternalRef ? referenceFromLayout(reference!.samples) : null) ?? referenceFromLap({ gps: bestSaved });
   const refSplits = sectorSplits(useExternalRef ? reference!.samples : bestSaved, sectorRef);
 
   const perLap = laps.map((selected) => {
-    if (refSamples.length < 5 || selected.samples.length < 5) return { id: selected.id, kind: 'too-short' };
+    if (refSamples.length < 5 || selected.gps.length < 5) return { id: selected.id, kind: 'too-short' };
     const isSelectedReference = !useExternalRef && selected.id === sessionBest.id;
     const matchedCurrent = matchLapToReference(selected, refLap);
     const analysis = !isSelectedReference ? analyzeLap(matchedCurrent, matchedRef, 20) : null;
     const cornerMetrics = analyzeCorners(corners, refLap, matchedCurrent, isSelectedReference ? null : matchedRef);
-    const splits = sectorSplits(saved[selected.id] ?? selected.samples, sectorRef);
-    const peak = peakSpeedMs(selected.samples);
+    const splits = sectorSplits(saved[selected.id] ?? selected.gps, sectorRef);
+    const peak = peakSpeedMs(selected.gps);
     return {
       id: selected.id,
       kind: 'ok',
@@ -493,9 +493,9 @@ function sessionScreen(gs: GoldenSession) {
       cornerMetrics,
       sectorSplits: splits,
       peakSpeedMs: peak,
-      peakSpeedKmh: peakSpeedKmh(selected.samples),
-      hardestBraking: hardestBraking(selected.samples),
-      speedColorRange: speedColorRange(selected.samples),
+      peakSpeedKmh: peakSpeedKmh(selected.gps),
+      hardestBraking: hardestBraking(selected.gps),
+      speedColorRange: speedColorRange(selected.gps),
     };
   });
 

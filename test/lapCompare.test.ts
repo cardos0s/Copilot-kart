@@ -104,13 +104,13 @@ function withBadFixes(lap: LapRecord, fracs: number[], metros: number): LapRecor
     const p = trackAt(frac(k) + metros / TRACK_M);
     samples[k] = { ...samples[k], lat: p.lat, lng: p.lng, accuracy: 15 };
   }
-  return { ...lap, samples };
+  return { ...lap, gps: samples, samples };
 }
 
 /** O traço do delta e o mapa da tela: pontos limpos por `cleanSamples(10)` e o reparo de timestamp. */
 function cleanedForTrace(lap: LapRecord): LapRecord {
   const { samples } = repairDegenerateTimestamps(cleanSamples(lap.samples, 10), lap.durationMs, lap.startedAt);
-  return { ...lap, samples };
+  return { ...lap, gps: samples, samples };
 }
 
 /** S1/S2/S3 da comparação a no máximo 20 ms dos de `sectorSplits` sobre os pontos salvos. */
