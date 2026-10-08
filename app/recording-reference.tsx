@@ -5,9 +5,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { useLapRecorder, GPS_START_ERROR } from '../src/hooks/useLapRecorder';
 import { useLockLandscape } from '../src/hooks/useLockLandscape';
-import { sqliteLayoutRepo } from '../src/storage/sessionRepo';
-import { GpsSample } from '../src/lib/geometry';
+import { appSqlConn } from '../src/storage/db';
+import { sqlLayoutRepo } from '../src/storage/layoutRepo';
+import type { GpsFrame } from '../src/telemetry/frame';
 import { normalizeId, saveReferenceLayout } from '../src/recording/finishSession';
+import { MIN_SAMPLES } from '../src/recording/finishRecording';
 import { UnresolvedRecordingError } from '../src/recording/journal';
 import { EXIT_OPTIONS, exitGuard, type ExitAction, type ExitState } from '../src/recording/exitGuard';
 import { journal } from '../src/recording/runtime';
@@ -49,7 +51,7 @@ function accuracyLabel(acc: number) {
 }
 
 /** Mini radar: desenha as amostras acumuladas normalizando no box */
-function LiveRadar({ samples }: { samples: GpsSample[] }) {
+function LiveRadar({ samples }: { samples: GpsFrame[] }) {
   const size = 260;
 
   const path = useMemo(() => {
@@ -242,14 +244,16 @@ export default function RecordingReference() {
     const recordingId = journal.recordingId ?? `rec_${Date.now()}`;
     const result = await stop();
 
-    if (result.allSamples.length < 30) {
-      await journal.end(recordingId).catch(() => {});
+    // O bruto do reconhecimento não vira sessão: todo caminho que sai daqui
+    // descarta as séries da gravação (o traçado salvo tem as dele, TF-19).
+    if (result.allSamples.length < MIN_SAMPLES) {
+      await journal.discard(recordingId).catch(() => {});
       leaveWith('POUCOS DADOS', 'Não consegui captar o suficiente pra detectar uma volta.');
       return;
     }
 
     if (result.laps.length === 0) {
-      await journal.end(recordingId).catch(() => {});
+      await journal.discard(recordingId).catch(() => {});
       leaveWith(
         'NENHUMA VOLTA COMPLETA',
         'Não detectei nenhuma volta fechada. É preciso passar pela linha de largada pelo menos 2 vezes. Tenta de novo.'
@@ -259,7 +263,7 @@ export default function RecordingReference() {
 
     // Cria sempre um layout NOVO a partir da melhor volta (a primeira da
     // pista vira default). O id vem da gravação, então salvar de novo não
-    // duplica. Só depois apaga o diário.
+    // duplica. Só depois descarta o diário: o traçado já tem a série própria.
     let layout;
     try {
       layout = await saveReferenceLayout(
@@ -270,7 +274,7 @@ export default function RecordingReference() {
           laps: result.laps,
           recordedAt: Date.now(),
         },
-        sqliteLayoutRepo
+        sqlLayoutRepo(appSqlConn)
       );
     } catch (e) {
       console.warn('[recording-reference] falha ao salvar o traçado:', e);
@@ -278,8 +282,8 @@ export default function RecordingReference() {
       return;
     }
     await journal
-      .end(recordingId)
-      .catch((e) => console.warn('[recording-reference] journal.end:', e));
+      .discard(recordingId)
+      .catch((e) => console.warn('[recording-reference] journal.discard:', e));
 
     // Em vez de diálogo bloqueante, dispara o overlay de countdown — driver
     // ainda tá no kart, então auto-transição pra cronometragem é a default.
@@ -307,7 +311,7 @@ export default function RecordingReference() {
   const discardRecording = async () => {
     const recordingId = journal.recordingId;
     await stop();
-    if (recordingId) await journal.end(recordingId).catch(() => {});
+    if (recordingId) await journal.discard(recordingId).catch(() => {});
     router.replace('/');
   };
 

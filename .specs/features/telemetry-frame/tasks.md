@@ -1144,8 +1144,10 @@ substituído nomeia o que substitui.
 - Skill: NONE
 
 **Done when**:
-- [ ] `test/recordingScreen.test.ts` e `test/recordingReferenceScreen.test.ts` reescritos. Os dois caminhos de descarte chamam `discard(`, e o "Encerrar" chama `end(`.
-- [ ] Gate: `npm test && npm run typecheck`, baseline de 8 erros.
+- [x] `test/recordingScreen.test.ts` e `test/recordingReferenceScreen.test.ts` reescritos (os regex antigos continuam; os novos nomeiam o `journal.end(recordingId)` que substituem). Na corrida, o "Descartar" chama `journal.discard`, e o "Encerrar" passa o diário ao `finishRecording`, que chama `end` só com a sessão salva e `discard` com menos de `MIN_SAMPLES` (comportamento em `finishRecording.test.ts`); a tela não chama mais `journal.end` direto. No reconhecimento, o bruto não vira sessão (decisão do orquestrador na execução, que fecha as séries órfãs de `session:session_<rec>` sem linha de sessão): os quatro caminhos (poucos pontos, nenhuma volta, depois de salvar o traçado e "Descartar") chamam `discard`, e nenhum chama `end`. O traçado salvo tem a série própria (T23), então o descarte não o afeta. A falha ao salvar o traçado mantém o diário, como antes.
+- [x] O literal 30 do reconhecimento virou o `MIN_SAMPLES` de `finishRecording.ts` (a constante já existia desde a T20). O traçado é salvo por `sqlLayoutRepo(appSqlConn)` do `layoutRepo` (antes `sqliteLayoutRepo`, que delegava ao mesmo `layoutRepo` pelo `db.ts`). O radar recebe `GpsFrame[]`, e a corrida lê a referência por `layoutGps`.
+- [x] `app/recovery.tsx` não mudou: o descarte dela já é o `recovery.discard` (`journal.discard`) desde a T21, e ela não lê frames.
+- [x] Gate: `npm test && npm run typecheck`, contagem registrada: 282 testes (277 + 2 + 3), baseline de 8 erros.
 
 **Tests**: unit
 **Gate**: build

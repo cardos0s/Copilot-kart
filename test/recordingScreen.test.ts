@@ -1,7 +1,10 @@
 /**
  * Invariantes estáticas de `app/recording.tsx`, lendo o fonte:
  * REC-08 AC 1 (nenhum alerta nativo na tela presa em paisagem) e REC-07 AC 2
- * (o botão voltar do Android passa pela confirmação).
+ * (o botão voltar do Android passa pela confirmação). Desde a T40 (TF-07, TF-09,
+ * TF-13): o "Descartar" apaga as séries da gravação (`journal.discard`), o "Encerrar"
+ * com a sessão salva só fecha o registro (`end`, dentro do `finishRecording`), e o
+ * traçado de referência é lido por `layoutGps`.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -69,4 +72,24 @@ test('recording.tsx: a sessão grava o traçado que usou como referência, mesmo
   assert.equal(SRC.match(fallback)?.length, 2);
   assert.equal(/layoutId:\s*params\.layoutId\s*,/.test(SRC), false, 'nenhum layoutId cru do parâmetro');
   assert.equal(/layoutId:\s*normalizeId\(params\.layoutId\)\s*,/.test(SRC), false, 'nenhum layoutId sem a referência');
+});
+
+test('recording.tsx (T40): o "Descartar" chama journal.discard; o "Encerrar" passa o diário ao finishRecording, que chama end só com a sessão salva', () => {
+  // Substitui `journal.end(recordingId)` no discardRecording, que deixava as séries órfãs.
+  const discard = SRC.match(/const discardRecording = async \(\) => \{([\s\S]*?)\n  \};/);
+  assert.ok(discard, 'a tela define discardRecording');
+  assert.ok(discard[1].includes('await journal.discard(recordingId)'));
+  assert.equal(/journal\s*\.\s*end\(/.test(SRC), false, 'a tela não chama journal.end direto');
+  // O "Encerrar": o diário vai para o finishRecording (end depois do commit, discard
+  // com poucos pontos; comportamento em finishRecording.test.ts).
+  assert.ok(/const outcome = await finishRecording\(\s*result,[\s\S]*?\{\s*journal,\s*repo: sqliteSessionRepo,/.test(SRC));
+});
+
+test('recording.tsx (T40): a referência do traçado vem por layoutGps, sem .samples nem os tipos antigos', () => {
+  assert.ok(SRC.includes("import { layoutGps } from '../src/storage/layoutRepo';"));
+  // Substitui `setLayoutReference(reference.samples, reference.durationMs)` e `samples={reference.samples}`.
+  assert.ok(SRC.includes('setLayoutReference(layoutGps(reference), reference.durationMs);'));
+  assert.ok(SRC.includes('samples={layoutGps(reference)}'));
+  assert.equal(/\.(samples|imuSamples)\b/.test(SRC), false);
+  assert.equal(/\b(GpsSample|ImuSample)\b/.test(SRC), false);
 });

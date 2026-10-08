@@ -23,6 +23,7 @@ import {
   TrackLayout,
 } from '../src/storage/db';
 import { sqliteSessionRepo } from '../src/storage/sessionRepo';
+import { layoutGps } from '../src/storage/layoutRepo';
 import { normalizeId } from '../src/recording/finishSession';
 import { finishRecording } from '../src/recording/finishRecording';
 import { runPostSaveEffects } from '../src/recording/postSave';
@@ -165,8 +166,8 @@ export default function Recording() {
   // quando vira null → limpa (setores somem da UI). Setores são geográficos
   // (1/3 e 2/3 da polyline), não dependem da PB da sessão.
   useEffect(() => {
-    if (reference && reference.samples.length >= 5 && reference.durationMs > 0) {
-      setLayoutReference(reference.samples, reference.durationMs);
+    if (reference && layoutGps(reference).length >= 5 && reference.durationMs > 0) {
+      setLayoutReference(layoutGps(reference), reference.durationMs);
     } else {
       clearLayoutReference();
     }
@@ -485,11 +486,12 @@ export default function Recording() {
     }
   };
 
-  /** "Descartar" na confirmação de saída: para o GPS, apaga o diário e sai. */
+  /** "Descartar" na confirmação de saída: para o GPS, apaga o diário e as séries e sai. */
   const discardRecording = async () => {
     const recordingId = journal.recordingId;
     await stop();
-    if (recordingId) await journal.end(recordingId).catch(() => {});
+    // Sem sessão, as séries da gravação não têm dono: saem com o registro ativo (TF-09).
+    if (recordingId) await journal.discard(recordingId).catch(() => {});
     router.replace('/');
   };
 
@@ -1131,9 +1133,9 @@ function IdleView({
       </View>
 
       <View style={s.silBox}>
-        {reference?.samples && reference.samples.length >= 2 ? (
+        {reference && layoutGps(reference).length >= 2 ? (
           <TrackSilhouette
-            samples={reference.samples}
+            samples={layoutGps(reference)}
             width={120}
             height={88}
             strokeColor={colors.primary}
