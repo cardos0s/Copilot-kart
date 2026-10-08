@@ -1285,8 +1285,11 @@ Os dois são comparados com o mesmo `expected.json`.
 - Skill: NONE
 
 **Done when**:
-- [ ] Os dois caminhos passam no `goldenCompare` sem mudar o `expected.json`.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Os dois caminhos passam no `goldenCompare` sem mudar o `expected.json`.
+  - Pipeline novo (`runGoldenNewPipeline`): s1, s1 com traçado e s2, com lotes e eventos da IMU em ordem de chegada pelo `handleLocations` com o diário e pelo `createImuCapture`, o diário (`RecordingJournal` sobre o `sqlJournalStore`) num sql.js, o `stop()` do hook, o `finishRecording` e o `loadLaps`. As voltas saem com o id da gravação (`session_rec_…`) e são renomeadas para o id da sessão de referência, que é o que o `expected.json` guarda.
+  - Legado (`runGoldenLegacy`): as cinco sessões e o traçado da sessão 3 em JSON na visão antiga, num banco v4; v5a, v5b (sem falha) e v5c; `loadLaps` e `getLayout`. Cobre os consumidores por sessão, o Pilot DNA de todas, o traçado (linha, régua, curvas, silhueta, setores), o mapa e a comparação.
+  - Os dois caminhos foram conferidos por mutação: o gyro pela metade na conversão e a IMU fora do diário fazem cada um falhar.
+- [x] Gate: `npm test`, contagem registrada: 298 testes (296 + 2).
 
 **Tests**: unit
 **Gate**: quick

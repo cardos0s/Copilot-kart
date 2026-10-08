@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { goldenCompare } from './helpers/goldenCompare';
-import { runGolden, toJson } from './golden/harness';
+import { runGolden, runGoldenLegacy, runGoldenNewPipeline, toJson } from './golden/harness';
 
 type Golden = Record<string, Record<string, unknown>>;
 
@@ -67,4 +67,45 @@ test('golden: 1 ms a mais num tempo de volta faz a comparação falhar nesse cam
   const diff = goldenCompare(expected, copy);
   assert.ok(diff);
   assert.equal(diff.path, 'detectLaps.s1.laps[2].durationMs');
+});
+
+/**
+ * O `expected.json` restrito às chaves que um caminho produz. Toda chave do caminho
+ * tem de existir no `expected.json`, e o caminho tem de cobrir o que se espera dele.
+ */
+function expectedFor(output: Golden): Golden {
+  const out: Golden = {};
+  for (const [consumer, bySession] of Object.entries(output)) {
+    assert.ok(consumer in expected, `consumidor ${consumer} fora do expected.json`);
+    out[consumer] = {};
+    for (const session of Object.keys(bySession)) {
+      assert.ok(session in expected[consumer], `${consumer}.${session} fora do expected.json`);
+      out[consumer][session] = expected[consumer][session];
+    }
+  }
+  return out;
+}
+
+const PER_SESSION = [
+  'lapRecords', 'sessionScreen', 'peakSpeedMsOfLaps', 'buildLapInsight', 'detectSpins',
+  'buildPilotDna', 'coachContext', 'countCorners', 'samplesToSilhouette', 'polylineLength',
+];
+
+test('golden (T45, TF-14): o pipeline novo de ponta a ponta (captura, diário no banco, "Encerrar", loadLaps) reproduz o expected.json', async () => {
+  const output = toJson(await runGoldenNewPipeline()) as Golden;
+  for (const c of PER_SESSION) assert.deepEqual(Object.keys(output[c]).sort(), ['s1', 's1Layout', 's2'], c);
+  assert.ok('s1Layout' in output.trackMapScreen && 's1Layout' in output.compareLaps);
+  const diff = goldenCompare(expectedFor(output), output);
+  assert.equal(diff, null, diff ? `${diff.path}: ${diff.reason}` : '');
+});
+
+test('golden (T45, TF-14, TF-18): o JSON que o código antigo salvava, pela migração v5 inteira e pelo loadLaps, reproduz o expected.json', async () => {
+  const output = toJson(await runGoldenLegacy()) as Golden;
+  for (const c of PER_SESSION) assert.deepEqual(Object.keys(output[c]).filter((s) => SESSIONS.includes(s)).sort(), [...SESSIONS].sort(), c);
+  for (const c of ['lineFromLayout', 'referenceFromLayout', 'sectorSplits']) assert.deepEqual(Object.keys(output[c]), ['s3'], c);
+  assert.deepEqual(Object.keys(output.trackMapScreen).sort(), ['s1Layout', 's4']);
+  assert.deepEqual(Object.keys(output.compareLaps).sort(), ['s1Layout', 's4']);
+  assert.ok('all' in output.buildPilotDna);
+  const diff = goldenCompare(expectedFor(output), output);
+  assert.equal(diff, null, diff ? `${diff.path}: ${diff.reason}` : '');
 });
