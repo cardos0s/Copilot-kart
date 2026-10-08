@@ -14,6 +14,7 @@ import {
   getLayout,
   getSession,
 } from '../src/storage/db';
+import { layoutGps } from '../src/storage/layoutRepo';
 import {
   cleanSamples,
   LapRecord,
@@ -84,7 +85,7 @@ export default function LapCompareScreen() {
           return;
         }
         const forTrace = (raw: LapRecord): LapRecord => {
-          const cleaned = cleanSamples(raw.samples, 10);
+          const cleaned = cleanSamples(raw.gps, 10);
           const { samples } = repairDegenerateTimestamps(cleaned, raw.durationMs, raw.startedAt);
           return { ...raw, gps: samples, samples };
         };
@@ -94,12 +95,12 @@ export default function LapCompareScreen() {
         // Layout: usa o layoutId da sessão A; se não tiver, default da pista
         let layout = sA.layoutId ? await getLayout(sA.layoutId) : null;
         if (!layout && sA.trackId) layout = await getDefaultLayoutForTrack(sA.trackId);
-        if (!layout || layout.samples.length < 5) {
+        if (!layout || layoutGps(layout).length < 5) {
           setState({ kind: 'error', message: 'Sem referência de pista pra comparar.' });
           return;
         }
         const { samples: refSamples } = repairDegenerateTimestamps(
-          layout.samples,
+          layoutGps(layout),
           layout.durationMs
         );
         const refLap = buildReferenceLap(refSamples, {

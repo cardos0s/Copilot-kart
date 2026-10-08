@@ -1,7 +1,9 @@
 /**
  * Invariante estática de `app/track-map.tsx`, lendo o fonte: TMP-07 (AC 1) e
  * AD-006. S1/S2/S3 do mapa detalhado saem da régua única (`sectorSplits`), e
- * não de uma interpolação própria sobre os terços.
+ * não de uma interpolação própria sobre os terços. Desde a T37 (TF-13): a tela lê
+ * `LapRecord.gps` e os frames do traçado por `layoutGps`, com o mesmo caminho de
+ * limpeza (o mapa limpa e repara o traçado e a volta).
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -37,4 +39,23 @@ test('mapa detalhado: a velocidade mínima por curva sai de minSpeedPerCorner, s
   // O laço antigo: `let minMs = Infinity` e o `bestCornerKmh`.
   assert.equal(/let\s+minMs\s*=\s*Infinity/.test(SRC), false);
   assert.equal(/\bbestCornerKmh\b/.test(SRC), false);
+});
+
+test('mapa detalhado (T37): lê frames — nenhum GpsSample e nenhuma leitura de .samples da volta ou do traçado', () => {
+  assert.equal(/\bGpsSample\b/.test(SRC), false);
+  assert.equal(/\b(lap|layout)\.samples\b/.test(SRC), false);
+  assert.ok(SRC.includes("import { layoutGps } from '../src/storage/layoutRepo';"));
+});
+
+test('mapa detalhado (T37): mantém o caminho de limpeza — cleanSamples + reparo no traçado e na volta', () => {
+  // Substitui `cleanSamples(layout.samples, 10)` e `cleanSamples(lap.samples, 10)`.
+  assert.ok(
+    /const cleanedRef = cleanSamples\(layoutGps\(layout\), 10\);\s*const \{ samples: refSamples \} = repairDegenerateTimestamps\(cleanedRef, layout\.durationMs\);/.test(SRC),
+  );
+  assert.ok(
+    /const cleanedLap = cleanSamples\(lap\.gps, 10\);\s*const \{ samples: lapSamples \} = repairDegenerateTimestamps\(\s*cleanedLap,\s*lap\.durationMs,\s*lap\.startedAt\s*\);/.test(SRC),
+  );
+  assert.ok(/matchLapToReference\(\s*\{ \.\.\.lap, gps: lapSamples, samples: lapSamples \},\s*refLap\s*\)/.test(SRC));
+  // A régua dos setores é a do traçado como foi salvo (substitui `referenceFromLayout(layout.samples)`).
+  assert.ok(SRC.includes('const sectorRef = referenceFromLayout(layoutGps(layout));'));
 });

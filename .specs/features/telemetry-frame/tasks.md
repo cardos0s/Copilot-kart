@@ -1071,8 +1071,9 @@ substituído nomeia o que substitui.
 - Skill: NONE
 
 **Done when**:
-- [ ] `test/trackMapScreen.test.ts` e `test/lapCompareScreen.test.ts` reescritos com as mesmas regras (o mapa limpa e repara os dois lados; a comparação não limpa `savedA`).
-- [ ] Gate: `npm test && npm run typecheck`, baseline de 8 erros.
+- [x] `test/trackMapScreen.test.ts` e `test/lapCompareScreen.test.ts` reescritos com as mesmas regras (o mapa limpa e repara os dois lados; a comparação não limpa `savedA`). Os regex antigos dos dois arquivos não citavam `.samples` e continuam; os novos conferem a forma com `.gps`/`layoutGps(…)` no lugar de `cleanSamples(layout.samples, 10)`, `cleanSamples(lap.samples, 10)`, `cleanSamples(raw.samples, 10)`, `referenceFromLayout(layout.samples)` e `repairDegenerateTimestamps(layout.samples, …)`, e que nenhuma das duas lê `.samples` da volta ou do traçado.
+- [x] Golden: o `trackMapScreen` e o `lapCompareScreen` do harness leem o traçado por `layoutGps`, como as telas; o `expected.json` não mudou.
+- [x] Gate: `npm test && npm run typecheck`, contagem registrada: 269 testes (265 + 2 + 2), baseline de 8 erros.
 
 **Tests**: unit
 **Gate**: build

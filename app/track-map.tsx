@@ -16,6 +16,7 @@ import {
   getSession,
   TrackLayout,
 } from '../src/storage/db';
+import { layoutGps } from '../src/storage/layoutRepo';
 import {
   cleanSamples,
   LapRecord,
@@ -83,7 +84,7 @@ export default function TrackMapScreen() {
     let layout: TrackLayout | null = null;
     if (session.layoutId) layout = await getLayout(session.layoutId);
     if (!layout && session.trackId) layout = await getDefaultLayoutForTrack(session.trackId);
-    if (!layout || layout.samples.length < 5) {
+    if (!layout || layoutGps(layout).length < 5) {
       return setState({ kind: 'no-data' });
     }
 
@@ -92,7 +93,7 @@ export default function TrackMapScreen() {
     if (!lap) return setState({ kind: 'no-data' });
 
     // Repara e limpa amostras antes de analisar
-    const cleanedRef = cleanSamples(layout.samples, 10);
+    const cleanedRef = cleanSamples(layoutGps(layout), 10);
     const { samples: refSamples } = repairDegenerateTimestamps(cleanedRef, layout.durationMs);
     const refLap = buildReferenceLap(refSamples, {
       lat: refSamples[0].lat,
@@ -100,7 +101,7 @@ export default function TrackMapScreen() {
     });
     const corners = detectCorners(refLap);
 
-    const cleanedLap = cleanSamples(lap.samples, 10);
+    const cleanedLap = cleanSamples(lap.gps, 10);
     const { samples: lapSamples } = repairDegenerateTimestamps(
       cleanedLap,
       lap.durationMs,
@@ -114,7 +115,7 @@ export default function TrackMapScreen() {
     // Setores S1/S2/S3 pela régua única (sectorSplits), como a sessão: contra
     // o traçado, sobre os pontos da volta como foram salvos (só com o reparo
     // de timestamp). O ponto de fronteira não pode sair no filtro (AD-006).
-    const sectorRef = referenceFromLayout(layout.samples);
+    const sectorRef = referenceFromLayout(layoutGps(layout));
     if (!sectorRef) return setState({ kind: 'no-data' });
     const savedSamples = sectorLapSamples(lap);
     const splits = sectorSplits(savedSamples, sectorRef);

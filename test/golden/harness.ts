@@ -508,11 +508,11 @@ function sessionScreen(gs: GoldenSession) {
 
 /** O mapa detalhado (`app/track-map.tsx`): só existe com traçado. */
 function trackMapScreen(laps: LapRecord[], layout: TrackLayout) {
-  const cleanedRef = cleanSamples(layout.samples, 10);
+  const cleanedRef = cleanSamples(layoutGps(layout), 10);
   const { samples: refSamples } = repairDegenerateTimestamps(cleanedRef, layout.durationMs);
   const refLap = buildReferenceLap(refSamples, { lat: refSamples[0].lat, lng: refSamples[0].lng });
   const corners = detectCorners(refLap);
-  const sectorRef = referenceFromLayout(layout.samples);
+  const sectorRef = referenceFromLayout(layoutGps(layout));
   return laps.map((lap) => {
     const { lap: prepared } = prepareLap(lap);
     const matched = matchLapToReference(prepared, refLap);
@@ -530,7 +530,7 @@ function trackMapScreen(laps: LapRecord[], layout: TrackLayout) {
 
 /** A comparação de voltas (`app/lap-compare.tsx`), que exige traçado. */
 function lapCompareScreen(savedA: LapRecord, savedB: LapRecord, layout: TrackLayout) {
-  const { samples: refSamples } = repairDegenerateTimestamps(layout.samples, layout.durationMs);
+  const { samples: refSamples } = repairDegenerateTimestamps(layoutGps(layout), layout.durationMs);
   const refLap = buildReferenceLap(refSamples, { lat: refSamples[0].lat, lng: refSamples[0].lng });
   const corners = detectCorners(refLap);
   const result = compareLaps(prepareLap(savedA).lap, prepareLap(savedB).lap, refLap, corners, { a: savedA, b: savedB });
