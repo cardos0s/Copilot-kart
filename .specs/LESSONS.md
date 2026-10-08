@@ -62,6 +62,42 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: M02/M06/M09 (rodada 4) (test)
 - last seen: 2026-10-03T13:18:00Z
 
+### L-009 - Do not list an input state in an acceptance criterion that the typed platform API cannot produce unless a test injects it
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `spec` · harmful: 0
+- features: telemetry-frame
+- evidence: TF-04 validation.md gap 1 (spec)
+- last seen: 2026-10-08T15:52:45Z
+
+### L-010 - State whether a quality metric over lap frames reads the raw frames or the frames after the analysis accuracy cut
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `telemetry` · harmful: 0
+- features: telemetry-frame
+- evidence: TF-24 AC 2 validation.md gap 2 (telemetry)
+- last seen: 2026-10-08T15:52:45Z
+
+### L-011 - State a storage size limit against the artifact the test measures, encoded payload bytes or database file size
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `storage` · harmful: 0
+- features: telemetry-frame
+- evidence: TF-10 test/blockCodec.test.ts:171 (storage)
+- last seen: 2026-10-08T15:52:46Z
+
+### L-012 - For screen acceptance criteria name the pure function and the wiring check that prove them, since the suite renders no screens
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `screens` · harmful: 0
+- features: telemetry-frame
+- evidence: TF-23 test/sessionScreen.test.ts:106 (screens)
+- last seen: 2026-10-08T15:52:46Z
+
+### L-013 - Feed migration golden tests with data written by the pre-feature code, not data re-serialized from the new pipeline
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `migration` · harmful: 0
+- features: telemetry-frame
+- evidence: TF-14 test/golden/harness.ts:964 (migration)
+- last seen: 2026-10-08T15:52:47Z
+
+### L-014 - When an acceptance criterion enumerates channels, round-trip each one in the contract test or mark the list as examples
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `telemetry` · harmful: 0
+- features: telemetry-frame
+- evidence: TF-21 AC 2 test/telemetryContract.test.ts:115 (telemetry)
+- last seen: 2026-10-08T15:52:47Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 9,
+  "next_id": 15,
   "lessons": [
     {
       "id": "L-001",
@@ -148,6 +148,114 @@
       ],
       "created": "2026-10-03T13:18:00Z",
       "last_seen": "2026-10-03T13:18:00Z"
+    },
+    {
+      "id": "L-009",
+      "key": "spec_precision_gap::do not list an input state in an acceptance criterion that the typed platform api cannot produce unless a test injects it",
+      "text": "Do not list an input state in an acceptance criterion that the typed platform API cannot produce unless a test injects it",
+      "signal": "spec_precision_gap",
+      "scope": "spec",
+      "status": "candidate",
+      "features": [
+        "telemetry-frame"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "TF-04 validation.md gap 1 (spec)"
+      ],
+      "created": "2026-10-08T15:52:45Z",
+      "last_seen": "2026-10-08T15:52:45Z"
+    },
+    {
+      "id": "L-010",
+      "key": "spec_precision_gap::state whether a quality metric over lap frames reads the raw frames or the frames after the analysis accuracy cut",
+      "text": "State whether a quality metric over lap frames reads the raw frames or the frames after the analysis accuracy cut",
+      "signal": "spec_precision_gap",
+      "scope": "telemetry",
+      "status": "candidate",
+      "features": [
+        "telemetry-frame"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "TF-24 AC 2 validation.md gap 2 (telemetry)"
+      ],
+      "created": "2026-10-08T15:52:45Z",
+      "last_seen": "2026-10-08T15:52:45Z"
+    },
+    {
+      "id": "L-011",
+      "key": "spec_precision_gap::state a storage size limit against the artifact the test measures encoded payload bytes or database file size",
+      "text": "State a storage size limit against the artifact the test measures, encoded payload bytes or database file size",
+      "signal": "spec_precision_gap",
+      "scope": "storage",
+      "status": "candidate",
+      "features": [
+        "telemetry-frame"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "TF-10 test/blockCodec.test.ts:171 (storage)"
+      ],
+      "created": "2026-10-08T15:52:46Z",
+      "last_seen": "2026-10-08T15:52:46Z"
+    },
+    {
+      "id": "L-012",
+      "key": "spec_precision_gap::for screen acceptance criteria name the pure function and the wiring check that prove them since the suite renders no screens",
+      "text": "For screen acceptance criteria name the pure function and the wiring check that prove them, since the suite renders no screens",
+      "signal": "spec_precision_gap",
+      "scope": "screens",
+      "status": "candidate",
+      "features": [
+        "telemetry-frame"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "TF-23 test/sessionScreen.test.ts:106 (screens)"
+      ],
+      "created": "2026-10-08T15:52:46Z",
+      "last_seen": "2026-10-08T15:52:46Z"
+    },
+    {
+      "id": "L-013",
+      "key": "spec_precision_gap::feed migration golden tests with data written by the pre feature code not data re serialized from the new pipeline",
+      "text": "Feed migration golden tests with data written by the pre-feature code, not data re-serialized from the new pipeline",
+      "signal": "spec_precision_gap",
+      "scope": "migration",
+      "status": "candidate",
+      "features": [
+        "telemetry-frame"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "TF-14 test/golden/harness.ts:964 (migration)"
+      ],
+      "created": "2026-10-08T15:52:47Z",
+      "last_seen": "2026-10-08T15:52:47Z"
+    },
+    {
+      "id": "L-014",
+      "key": "spec_precision_gap::when an acceptance criterion enumerates channels round trip each one in the contract test or mark the list as examples",
+      "text": "When an acceptance criterion enumerates channels, round-trip each one in the contract test or mark the list as examples",
+      "signal": "spec_precision_gap",
+      "scope": "telemetry",
+      "status": "candidate",
+      "features": [
+        "telemetry-frame"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "TF-21 AC 2 test/telemetryContract.test.ts:115 (telemetry)"
+      ],
+      "created": "2026-10-08T15:52:47Z",
+      "last_seen": "2026-10-08T15:52:47Z"
     }
   ]
 }
