@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { badgeText, sessionBadge } from '../src/telemetry/badge';
+import { badgeSource, badgeText, sessionBadge } from '../src/telemetry/badge';
 import type { GpsFrame } from '../src/telemetry/frame';
 
 let t = 0;
@@ -63,4 +63,15 @@ test('sessionBadge/badgeText: PHONE dá "Celular", MYCHRON dá "MyChron", e o te
   assert.equal(sessionBadge('MYCHRON', [lap], []).sourceLabel, 'MyChron');
   assert.equal(badgeText(phone), 'Celular · GPS boa (4 m)');
   assert.equal(badgeText(sessionBadge('MYCHRON', [[fix(8.4)]], [])), 'MyChron · GPS média (8 m)');
+});
+
+test('badgeSource (T36): a fonte do selo é a da série GPS, que cada frame leva; a volta legada sem fonte é PHONE; fonte sem rótulo não dá selo', () => {
+  assert.equal(badgeSource([fix(4), fix(5)]), 'PHONE');
+  assert.equal(badgeSource([{ ...fix(4), source: 'MYCHRON' }]), 'MYCHRON');
+  // Ponto do JSON antigo (até a v5b): sem `source`.
+  const { source: _omit, ...legacyPoint } = fix(4);
+  assert.equal(badgeSource([legacyPoint as GpsFrame]), 'PHONE');
+  assert.equal(badgeSource([]), 'PHONE');
+  assert.equal(badgeSource([{ ...fix(4), source: 'ALFANO' }]), null);
+  assert.equal(badgeSource([{ ...fix(4), source: 'GOPRO' }]), null);
 });

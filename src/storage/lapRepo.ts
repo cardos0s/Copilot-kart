@@ -11,8 +11,9 @@
  */
 import type { LapRecord } from '../lib/analysis';
 import type { GpsSample, ImuSample } from '../lib/geometry';
-import type { BoundaryCross, GpsSeries, ImuSeries, LapWindow, Owner, SeriesKind } from '../telemetry/frame';
+import type { BoundaryCross, GpsFrame, GpsSeries, ImuSeries, LapWindow, Owner, SeriesKind } from '../telemetry/frame';
 import { lapFrames } from '../telemetry/laps';
+import { gpsFramesOf } from '../telemetry/series';
 import { readSeries } from '../telemetry/telemetryStore';
 import type { SqlTx } from './sqlConn';
 
@@ -163,4 +164,15 @@ export async function loadLapSummaries(conn: SqlTx, sessionId: string): Promise<
      FROM laps WHERE session_id = ? ORDER BY started_at ASC`,
     sessionId
   );
+}
+
+/**
+ * Todos os frames da série GPS da sessão, do primeiro ao "Encerrar", sem ler a IMU. É o
+ * que o selo usa quando a sessão não tem volta (TF-24 AC 4). Sem série (sessão ainda em
+ * JSON, até a v5b), não há frames.
+ */
+export async function loadSessionGps(conn: SqlTx, sessionId: string): Promise<GpsFrame[]> {
+  const { series } = await readSeries(conn, sessionOwner(sessionId), { kinds: ['gps'] });
+  const gps = series[0] as GpsSeries | undefined;
+  return gps ? gpsFramesOf(gps) : [];
 }

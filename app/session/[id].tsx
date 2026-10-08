@@ -14,6 +14,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ErrorBoundary } from '../../src/components/ErrorBoundary';
 import { RecoveredBadge } from '../../src/components/RecoveredBadge';
 import {
+  appSqlConn,
   getSession,
   getLapsForSession,
   Session,
@@ -28,7 +29,11 @@ import {
   matchLapToReference,
   repairDegenerateTimestamps,
 } from '../../src/lib/analysis';
-import { buildReferenceLap, type GpsSample } from '../../src/lib/geometry';
+import { buildReferenceLap } from '../../src/lib/geometry';
+import type { GpsFrame } from '../../src/telemetry/frame';
+import { badgeSource, badgeText, sessionBadge } from '../../src/telemetry/badge';
+import { loadSessionGps } from '../../src/storage/lapRepo';
+import { layoutGps } from '../../src/storage/layoutRepo';
 import { referenceFromLap, referenceFromLayout, sectorLapSamples, sectorSplits, type SectorSplits } from '../../src/lib/sectors';
 import { Corner, describeSector, detectCorners } from '../../src/lib/corners';
 import { CornerMetric, analyzeCorners } from '../../src/lib/cornerAnalysis';
@@ -133,8 +138,10 @@ function SessionScreenInner() {
   const [laps, setLaps] = useState<LapRecord[]>([]);
   // Pontos de cada volta como foram salvos (sem o filtro de precisão), para
   // S1/S2/S3: são os mesmos pontos que o ao vivo mediu (TMP-07 AC 3).
-  const [sectorSamples, setSectorSamples] = useState<Record<string, GpsSample[]>>({});
+  const [sectorSamples, setSectorSamples] = useState<Record<string, GpsFrame[]>>({});
   const [reference, setReference] = useState<TrackLayout | null>(null);
+  // Selo de fonte e qualidade do GPS (TF-23, TF-24), ex.: "Celular · GPS boa (4 m)".
+  const [badgeLabel, setBadgeLabel] = useState<string | null>(null);
   const [selectedLapId, setSelectedLapId] = useState<string | null>(null);
   const [mode, setMode] = useState<ViewMode>('comparar');
   const [colorMode, setColorMode] = useState<ColorMode>('delta');
@@ -235,7 +242,7 @@ function SessionScreenInner() {
       // todos os setores zerados.
       let anyRepaired = false;
       const cleanedLaps = lapsRaw.map((l) => {
-        const cleaned = cleanSamples(l.samples, 10);
+        const cleaned = cleanSamples(l.gps, 10);
         const { samples: repairedSamples, repaired } = repairDegenerateTimestamps(
           cleaned,
           l.durationMs,
@@ -245,18 +252,26 @@ function SessionScreenInner() {
         return { ...l, gps: repairedSamples, samples: repairedSamples };
       });
 
-      if (ref && ref.samples.length >= 2) {
+      if (ref && layoutGps(ref).length >= 2) {
         const { samples: repairedRefSamples, repaired } = repairDegenerateTimestamps(
-          ref.samples,
+          layoutGps(ref),
           ref.durationMs,
         );
         if (repaired) {
           anyRepaired = true;
-          ref = { ...ref, samples: repairedRefSamples };
+          ref = { ...ref, gps: repairedRefSamples, samples: repairedRefSamples };
         }
       }
 
-      const savedSamples: Record<string, GpsSample[]> = {};
+      // Selo: a qualidade é sobre os frames das voltas como vieram do banco (sem o
+      // cleanSamples da análise); sem volta, sobre todos os frames de GPS da sessão.
+      // A fonte é a da série, que cada frame leva.
+      const lapsGps = lapsRaw.map((l) => l.gps);
+      const allGps = lapsRaw.length > 0 ? [] : await loadSessionGps(await appSqlConn(), id);
+      const source = badgeSource(lapsRaw.length > 0 ? lapsGps.flat() : allGps);
+      const badge = source ? sessionBadge(source, lapsGps, allGps) : null;
+
+      const savedSamples: Record<string, GpsFrame[]> = {};
       for (const l of lapsRaw) {
         savedSamples[l.id] = sectorLapSamples(l);
       }
@@ -265,6 +280,7 @@ function SessionScreenInner() {
       setLaps(cleanedLaps);
       setSectorSamples(savedSamples);
       setReference(ref);
+      setBadgeLabel(badge ? badgeText(badge) : null);
       setApproxTimestamps(anyRepaired);
       setLoading(false);
     })();
@@ -306,7 +322,7 @@ function SessionScreenInner() {
       laps[0]
     );
     const useExternalRef = reference !== null;
-    const refSamples = useExternalRef ? reference!.samples : sessionBest.samples;
+    const refSamples = useExternalRef ? layoutGps(reference!) : sessionBest.gps;
     const refDurationMs = useExternalRef ? reference!.durationMs : sessionBest.durationMs;
     // Default = melhor volta da sessão (não a primeira, que costuma ser out-lap).
     // Se o usuário escolheu outra explicitamente, respeita.
@@ -314,7 +330,7 @@ function SessionScreenInner() {
       ? laps.find((l) => l.id === selectedLapId) ?? sessionBest
       : sessionBest;
 
-    if (refSamples.length < 5 || selected.samples.length < 5) {
+    if (refSamples.length < 5 || selected.gps.length < 5) {
       return { kind: 'too-short' };
     }
 
@@ -350,13 +366,13 @@ function SessionScreenInner() {
       );
       // S1/S2/S3: a régua única (sectorSplits), contra o traçado da sessão ou,
       // sem ele, contra a melhor volta (TMP-07, TMP-09).
-      const bestSamples = sectorSamples[sessionBest.id] ?? sessionBest.samples;
+      const bestSamples = sectorSamples[sessionBest.id] ?? sessionBest.gps;
       const sectorRef =
-        (useExternalRef ? referenceFromLayout(reference!.samples) : null) ??
+        (useExternalRef ? referenceFromLayout(layoutGps(reference!)) : null) ??
         referenceFromLap({ gps: bestSamples });
       const thirds = sectorThirds(
-        sectorSplits(sectorSamples[selected.id] ?? selected.samples, sectorRef),
-        sectorSplits(useExternalRef ? reference!.samples : bestSamples, sectorRef),
+        sectorSplits(sectorSamples[selected.id] ?? selected.gps, sectorRef),
+        sectorSplits(useExternalRef ? layoutGps(reference!) : bestSamples, sectorRef),
         corners,
         refLap.totalLength
       );
@@ -401,6 +417,7 @@ function SessionScreenInner() {
     return (
       <View style={s.root}>
         <ScreenHeader title="SESSÃO" />
+        {badgeLabel && <Text style={s.badgeLine}>{badgeLabel}</Text>}
         <View style={[s.center, { flex: 1, padding: spacing.huge }]}>
           <Text style={s.emptyTitle}>Sem voltas nessa sessão</Text>
           <Text style={s.emptyText}>
@@ -417,6 +434,7 @@ function SessionScreenInner() {
       <View style={s.root}>
         <ScreenHeader title="SESSÃO" subtitle={session?.trackName} />
         {session?.recovered && <RecoveredBadge style={{ alignSelf: 'center' }} />}
+        {badgeLabel && <Text style={s.badgeLine}>{badgeLabel}</Text>}
         <View style={[s.center, { flex: 1, padding: spacing.huge }]}>
           <Text style={s.emptyTitle}>Dados insuficientes</Text>
           <Text style={s.emptyText}>
@@ -432,6 +450,7 @@ function SessionScreenInner() {
       <View style={s.root}>
         <ScreenHeader title="SESSÃO" subtitle={session?.trackName} />
         {session?.recovered && <RecoveredBadge style={{ alignSelf: 'center' }} />}
+        {badgeLabel && <Text style={s.badgeLine}>{badgeLabel}</Text>}
         <View style={[s.center, { flex: 1, padding: spacing.huge }]}>
           <Text style={s.emptyTitle}>Não foi possível analisar</Text>
           <Text style={s.emptyText}>
@@ -507,6 +526,7 @@ function SessionScreenInner() {
         }
       />
       {session?.recovered && <RecoveredBadge style={{ alignSelf: 'center' }} />}
+      {badgeLabel && <Text style={s.badgeLine}>{badgeLabel}</Text>}
 
       <ScrollView
         ref={mapScrollRef}
@@ -573,7 +593,7 @@ function SessionScreenInner() {
             const isSel = lap.id === selected.id;
             const isRef = !useExternalRef && lap.id === sessionBest.id;
             const delta = lap.durationMs - refDurationMs;
-            const peakKmh = peakSpeedKmh(lap.samples);
+            const peakKmh = peakSpeedKmh(lap.gps);
             return (
               <Pressable
                 key={lap.id}
@@ -632,7 +652,7 @@ function SessionScreenInner() {
             selectedDurationMs={selected.durationMs}
             isSelectedReference={isSelectedReference}
             refPeakKmh={peakSpeedKmh(refSamples)}
-            selectedPeakKmh={peakSpeedKmh(selected.samples)}
+            selectedPeakKmh={peakSpeedKmh(selected.gps)}
             bestLabel={useExternalRef ? 'REF' : `V${lapIndex(laps, sessionBest)}`}
             currentLabel={`V${lapIndex(laps, selected)}`}
             currentIndex={lapIndex(laps, selected)}
@@ -1245,16 +1265,16 @@ function MapPanel({
   /** Se passado, mostra botão pra abrir a tela detalhada (track-map.tsx). */
   onOpenDetailedMap?: () => void;
 }) {
-  const mapPoints = selected.samples.map((p) => ({ latitude: p.lat, longitude: p.lng }));
+  const mapPoints = selected.gps.map((p) => ({ latitude: p.lat, longitude: p.lng }));
 
   // Speed range pra colorização (5p–95p evita outliers)
-  const { minS, maxS } = speedColorRange(selected.samples);
+  const { minS, maxS } = speedColorRange(selected.gps);
 
   // Por amostra, computa cor segundo o modo
   const sampleColors: string[] = useMemo(() => {
-    if (selected.samples.length === 0) return [];
+    if (selected.gps.length === 0) return [];
     if (colorMode === 'speed' || isSelectedReference || sectors.length === 0) {
-      return selected.samples.map((p) => speedColor(p.speed, minS, maxS));
+      return selected.gps.map((p) => speedColor(p.speed, minS, maxS));
     }
     // Modo delta — mapa colors per sector
     const sectorLen = refLap.totalLength / sectors.length;
@@ -1267,11 +1287,11 @@ function MapPanel({
   // Agrupar samples adjacentes da mesma cor (pra menos polylines)
   const segments = useMemo(() => {
     const out: ColoredSegment[] = [];
-    if (selected.samples.length === 0 || sampleColors.length === 0) return out;
+    if (selected.gps.length === 0 || sampleColors.length === 0) return out;
     let cur: ColoredSegment | null = null;
-    for (let i = 0; i < selected.samples.length; i++) {
+    for (let i = 0; i < selected.gps.length; i++) {
       const color = sampleColors[i] ?? colors.primary;
-      const sample = selected.samples[i];
+      const sample = selected.gps[i];
       if (!cur || cur.color !== color) {
         if (cur) cur.samples.push(sample); // overlap pra evitar gap
         cur = { samples: [sample], color };
@@ -1288,7 +1308,7 @@ function MapPanel({
     if (focusedSectorIdx == null || sectors.length === 0) return null;
     const sec = sectors[focusedSectorIdx];
     const inSector = matchedCurrent.points
-      .map((p: any, i: number) => ({ p, sample: selected.samples[i] }))
+      .map((p: any, i: number) => ({ p, sample: selected.gps[i] }))
       .filter(({ p }: any) => p.s >= sec.sStart && p.s <= sec.sEnd);
     if (inSector.length === 0) return null;
     const apexIdx = Math.floor(inSector.length / 2);
@@ -1298,7 +1318,7 @@ function MapPanel({
   // Helper: dada uma distância s ao longo da pista, retorna a melhor lat/lng
   // entre os matched points (procura ponto mais próximo na curva matched).
   const findLatLngAtS = (sTarget: number): { lat: number; lng: number } | null => {
-    if (!matchedCurrent?.points?.length || !selected?.samples?.length) return null;
+    if (!matchedCurrent?.points?.length || !selected?.gps?.length) return null;
     let bestIdx = 0;
     let bestDiff = Infinity;
     for (let i = 0; i < matchedCurrent.points.length; i++) {
@@ -1308,7 +1328,7 @@ function MapPanel({
         bestIdx = i;
       }
     }
-    const sample = selected.samples[bestIdx];
+    const sample = selected.gps[bestIdx];
     return sample ? { lat: sample.lat, lng: sample.lng } : null;
   };
 
@@ -1322,18 +1342,18 @@ function MapPanel({
 
     // Peak speed: o mesmo pico da volta (p99 dos pontos bons, TMP-11), no
     // ponto que tem essa velocidade. Sem ponto bom, sem marcador.
-    const peak = peakSpeedMs(selected.samples);
-    const peakIdx = peak === null ? -1 : selected.samples.findIndex((p) => p.speed === peak);
+    const peak = peakSpeedMs(selected.gps);
+    const peakIdx = peak === null ? -1 : selected.gps.findIndex((p) => p.speed === peak);
     if (peakIdx >= 0) {
       out.push({
-        point: { lat: selected.samples[peakIdx].lat, lng: selected.samples[peakIdx].lng },
+        point: { lat: selected.gps[peakIdx].lat, lng: selected.gps[peakIdx].lng },
         color: colors.accentCyan,
         label: 'P',
       });
     }
 
     // Hardest braking — maior decel entre samples consecutivos
-    const brake = hardestBraking(selected.samples);
+    const brake = hardestBraking(selected.gps);
     if (brake) {
       out.push({
         point: { lat: brake.lat, lng: brake.lng },
@@ -1533,6 +1553,12 @@ function MarkerLegendItem({ color, label }: { color: string; label: string }) {
 }
 
 const s = StyleSheet.create({
+  // Selo de fonte e qualidade do GPS: uma linha de texto secundário sob o cabeçalho.
+  badgeLine: {
+    ...typography.bodyS,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
   // ── painéis Curvas e Mapa ───────────────────────────────────────
   panelLabelTight: {
     fontFamily: fonts.semibold,

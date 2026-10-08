@@ -1047,9 +1047,11 @@ substituído nomeia o que substitui.
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste estático: a tela chama `sessionBadge(` e `badgeText(`; mantém `cleanSamples` + `repair` na análise e só `repair` no traçado (as linhas 244 e 255 de hoje).
-- [ ] `test/sessionScreen.test.ts` reescrito: `savedSamples[l.id] = sectorLapSamples(l);` é substituído pela forma nova, com nota.
-- [ ] Gate: `npm test && npm run typecheck`, baseline de 8 erros.
+- [x] Teste estático: a tela chama `sessionBadge(` e `badgeText(`; mantém `cleanSamples(l.gps, 10)` + `repair` na análise e só `repair` sobre `layoutGps(ref)` no traçado (um único `cleanSamples` no arquivo). O traçado reparado troca `gps` e `samples` juntos, porque a tela lê os frames por `layoutGps`.
+- [x] `test/sessionScreen.test.ts` reescrito. A linha `savedSamples[l.id] = sectorLapSamples(l);` não mudou (o `sectorLapSamples` lê `gps` desde a T28), então o regex dela continua, e uma asserção nova confere o tipo `Record<string, GpsFrame[]>`. Os regex de `hardestBraking(selected.samples)`, `speedColorRange(selected.samples)` e `peakSpeed = selected.samples[i].speed` foram trocados pela forma com `.gps`, com nota. Novo: nenhuma leitura de `.samples` da volta ou do traçado, nem `GpsSample`.
+- [x] Selo: a fonte sai de `badgeSource(frames)` (cada frame leva a fonte da série; a volta em JSON, sem fonte, é `PHONE`; `ALFANO`/`GOPRO` dão `null` e a tela não mostra selo). A qualidade é sobre os frames das voltas como vieram do banco (`lapsRaw`, não os limpos pela análise). Sem volta, `lapRepo.loadSessionGps` lê a série GPS inteira da sessão, sem a IMU (TF-24 AC 4). A linha "Celular · GPS boa (4 m)" aparece sob o cabeçalho nas quatro saídas da tela (sem volta, poucos pontos, erro e análise), em `colors.textSecondary`.
+- [x] Golden: o `sessionScreen` do harness lê o traçado por `layoutGps` e repara `gps` e `samples` juntos, como a tela; o `expected.json` não mudou.
+- [x] Gate: `npm test && npm run typecheck`, contagem registrada: 265 testes (259 + 4 de `sessionScreen` + 1 de `badgeSource` + 1 de `loadSessionGps`), baseline de 8 erros.
 
 **Tests**: unit
 **Gate**: build

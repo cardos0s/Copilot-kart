@@ -71,7 +71,7 @@ import { analysisGps, lapFrames, sliceLapWindows } from '../../src/telemetry/lap
 import { gpsSeriesOf, imuSeriesOf } from '../../src/telemetry/series';
 import type { Session, TrackLayout } from '../../src/storage/db';
 import { loadLaps, sessionOwner } from '../../src/storage/lapRepo';
-import { getLayout, sqlLayoutRepo } from '../../src/storage/layoutRepo';
+import { getLayout, layoutGps, sqlLayoutRepo } from '../../src/storage/layoutRepo';
 import { readSeries } from '../../src/telemetry/telemetryStore';
 import { openV5Database } from '../helpers/v5Database';
 import {
@@ -444,11 +444,11 @@ function sessionScreen(gs: GoldenSession) {
     return p.lap;
   });
   let reference = gs.layout;
-  if (reference && reference.samples.length >= 2) {
-    const { samples, repaired } = repairDegenerateTimestamps(reference.samples, reference.durationMs);
+  if (reference && layoutGps(reference).length >= 2) {
+    const { samples, repaired } = repairDegenerateTimestamps(layoutGps(reference), reference.durationMs);
     if (repaired) {
       anyRepaired = true;
-      reference = { ...reference, samples };
+      reference = { ...reference, gps: samples, samples };
     }
   }
   const saved: Record<string, GpsFrame[]> = {};
@@ -456,7 +456,7 @@ function sessionScreen(gs: GoldenSession) {
 
   const sessionBest = laps.reduce((b, l) => (l.durationMs < b.durationMs ? l : b), laps[0]);
   const useExternalRef = reference !== null;
-  const refSamples = useExternalRef ? reference!.samples : sessionBest.gps;
+  const refSamples = useExternalRef ? layoutGps(reference!) : sessionBest.gps;
   const refDurationMs = useExternalRef ? reference!.durationMs : sessionBest.durationMs;
   const refLap = buildReferenceLap(refSamples, { lat: refSamples[0].lat, lng: refSamples[0].lng });
   const corners = detectCorners(refLap);
@@ -465,8 +465,8 @@ function sessionScreen(gs: GoldenSession) {
     refLap,
   );
   const bestSaved = saved[sessionBest.id] ?? sessionBest.gps;
-  const sectorRef = (useExternalRef ? referenceFromLayout(reference!.samples) : null) ?? referenceFromLap({ gps: bestSaved });
-  const refSplits = sectorSplits(useExternalRef ? reference!.samples : bestSaved, sectorRef);
+  const sectorRef = (useExternalRef ? referenceFromLayout(layoutGps(reference!)) : null) ?? referenceFromLap({ gps: bestSaved });
+  const refSplits = sectorSplits(useExternalRef ? layoutGps(reference!) : bestSaved, sectorRef);
 
   const perLap = laps.map((selected) => {
     if (refSamples.length < 5 || selected.gps.length < 5) return { id: selected.id, kind: 'too-short' };

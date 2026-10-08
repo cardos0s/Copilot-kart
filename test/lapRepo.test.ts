@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { LapRecord } from '../src/lib/analysis';
-import { loadLapSummaries, loadLaps } from '../src/storage/lapRepo';
+import { loadLapSummaries, loadLaps, loadSessionGps } from '../src/storage/lapRepo';
 import type { SqlTx, SqlValue } from '../src/storage/sqlConn';
 import type { GpsFrame } from '../src/telemetry/frame';
 import { imuFrames, sessionOnDb, trackFrames } from './helpers/sessionOnDb';
@@ -171,4 +171,16 @@ test('getLapsForSession (db.ts, estático): delega para loadLaps com a IMU e nã
   const m = /export async function getLapsForSession\(sessionId: string\): Promise<LapRecord\[\]> \{([\s\S]*?)\n\}\n/.exec(src);
   assert.ok(m, 'db.ts exporta getLapsForSession');
   assert.equal(m[1].trim(), 'return loadLaps(await appSqlConn(), sessionId, { imu: true });');
+});
+
+test('loadSessionGps (sql.js, T36): devolve todos os frames de GPS da sessão, inclusive fora das voltas e acima de 30 m, sem ler a IMU; sem série, vazio', async () => {
+  const { conn } = await openV5Database();
+  const gps = trackFrames(2);
+  const s = await sessionOnDb(conn, { recordingId: 'rec_1', gps, imu: imuFrames(gps), t0Utc: T0 });
+  assert.ok(gps.some((f) => f.accuracy !== undefined && f.accuracy > 30));
+
+  const spy = spied(conn);
+  assert.deepEqual(await loadSessionGps(spy.conn, s.sessionId), gps);
+  assert.deepEqual(blockReadsOf(spy.queries, s.imuSeriesId), []);
+  assert.deepEqual(await loadSessionGps(conn, 'session_sem_serie'), []);
 });
