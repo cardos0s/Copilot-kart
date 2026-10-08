@@ -72,6 +72,16 @@ export type GpsFrame = {
 export type LocalGpsFrame = GpsFrame & { x: number; y: number };
 
 export type Vec3 = { x: number; y: number; z: number };
+/**
+ * Uma leitura da IMU. Eixos do expo-sensors: x para a direita do celular, y para cima em
+ * retrato, z saindo da tela; o yaw da cabine é o giroscópio z. Um dos dois sensores pode
+ * faltar (par incompleto).
+ *
+ * O acelerômetro é **m/s²**, com a gravidade (sem subtrair). O expo-sensors entrega em g:
+ * a captura (`imuCapture`) multiplica por `G`. Antes da v5 o tipo antigo dizia m/s², mas
+ * guardava o valor do sensor em g; a migração (`legacy.ts`) converte o histórico, então
+ * todo frame, novo ou convertido, está em m/s². O giroscópio é rad/s nos dois.
+ */
 export type ImuFrame = {
   kind: 'imu';
   source: Source;

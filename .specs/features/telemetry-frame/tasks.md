@@ -9,7 +9,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/telemetry-frame/design.md`
-**Status**: Approved (06/10) — In Progress
+**Status**: Approved (06/10) — T1–T47 done, aguardando o Verificador
 
 ---
 
@@ -1333,8 +1333,9 @@ Os dois são comparados com o mesmo `expected.json`.
 - Skill: NONE
 
 **Done when**:
-- [ ] O documento descreve o `TelemetryFrame` e as séries como o formato único, sem trecho que mande gravar `samples_json`.
-- [ ] Gate: `npm test && npm run typecheck`, baseline de 8 erros.
+- [x] O documento descreve o `TelemetryFrame` e as séries como o formato único, sem trecho que mande gravar `samples_json`. Seções novas: "O dado guardado" (frames, séries e blocos, relógio, qualidade, unidades, regra de leitura com o corte de 30 m e as fronteiras geradas, AD-007) e "O histórico de antes: a migração v5" (v5a/v5b/v5c, as regras da conversão). A captura (§1) sem o descarte de 30 m, com o diário em blocos e a IMU em m/s²; a volta como janela (§2); defesas, limites e constantes atualizados. `samples_json` só aparece descrevendo o formato antigo que a v5 converte.
+- [x] O comentário do acelerômetro saiu de `geometry.ts` com o alias `ImuSample` na T46; o corrigido está no `ImuFrame` (`src/telemetry/frame.ts`): m/s² com a gravidade, o sensor entrega em g, e o histórico antigo, que dizia m/s² mas guardava g, foi convertido pela migração.
+- [x] Gate: `npm test && npm run typecheck`, contagem registrada: 302 testes, baseline de 8 erros. Fim da fase.
 
 **Tests**: none
 **Gate**: build
