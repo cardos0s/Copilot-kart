@@ -60,25 +60,26 @@
 
 ## Handoff
 
-- **08/10**: a `telemetry-frame` (feature 3) fechou, com o Verificador PASS na rodada 1.
-  - **Branch** `feat/telemetry-frame`, criada da `feat/tempos-honestos`. Nada foi enviado ao origin: o push é da Julia.
-  - **Resultado**: 302 testes (eram 149) e typecheck com os mesmos 8 erros de baseline. O golden `test/golden/expected.json` não mudou desde `21d1c16`. O sensor matou 22 de 22 mutantes. O relatório está em `.specs/features/telemetry-frame/validation.md`.
-  - **Decisões da Julia durante a execução**, registradas na spec:
-    - gravação com menos de 30 pontos de GPS (inclusive nenhum) é descartada com o bruto;
-    - TF-16 é medido em tempo de CPU;
-    - na regra de "mesmos números", tempo até 0,001 ms e os demais reais até max(1e-9, 1e-5·|valor|).
-  - **Lacunas de precisão da spec, não bloqueantes** (lições candidatas L-009 a L-014):
-    - TF-04 com timestamp ausente;
-    - o selo ignora fixes acima de 30 m dentro da volta;
-    - TF-10 medido no payload, e não no arquivo SQLite;
-    - o selo não é renderizado em teste;
-    - o JSON legado do golden é reconstruído;
-    - o canal de freio não é lido de volta numa unidade do catálogo.
+- **Pausa em 08/10**: a Julia segue numa sessão nova.
+- **Feature 3, `telemetry-frame`: fechada.**
+  - Verificador PASS na rodada 1. Branch `feat/telemetry-frame`, último commit `672b500`, sem push.
+  - O relatório está em `.specs/features/telemetry-frame/validation.md`, com 6 lacunas de precisão não bloqueantes.
+  - Uma delas é decisão da Julia: o selo de qualidade ignora as fixes acima de 30 m dentro da volta.
+- **Feature 4, `conta-e-backup`: spec escrita, aguardando aprovação.**
+  - Commit `accbc3a`, branch `feat/conta-e-backup`, criada da `feat/telemetry-frame`.
+  - Fica na **worktree `/Volumes/SSD/Dev/Pessoal/Copilot-kart-conta`**, cujo `node_modules` é um symlink para o da pasta principal.
+  - As oito decisões da Julia de 08/10 estão em `context.md`.
+  - Faltam:
+    - a aprovação dos seis padrões marcados `n` na tabela de Assumptions;
+    - o plano do Supabase e a cota de armazenamento, que a Julia informa antes de aplicar qualquer coisa no projeto real.
+- **Next step**: aprovar a spec e fazer o Design.
+  - Decisão técnica que entra no Design: como testar as políticas RLS (hoje não há Postgres local nem Supabase CLI).
+  - O que fica de servidor (tabelas, bucket privado, Edge Function de exclusão com a revogação da Apple) vai em arquivos versionados. Só se aplica no Supabase com o ok da Julia na hora.
 - **Pendências**:
-  - UAT no aparelho das features 1, 2 e 3. Na 3, conferir a migração v5 num banco real com histórico, o selo na tela da sessão e se o descarte e o abandono não deixam bruto órfão.
-  - Push das branches `feat/tempos-honestos` e `feat/telemetry-frame`, que fica com a Julia.
-  - O bug dos desafios diários "Sub-50/Sub-60", que nunca concluem, virou tarefa separada.
-  - Os `.xrk` do Ricardo Haag (MyChron 5/6, Velopark), prometidos para 07/10, são os primeiros arquivos de kart reais. Rodar o leitor do spike neles e conferir o canal de EGT.
-- **Next step**: a feature 4, `conta-e-backup`, que sobe os blocos de `telemetry_blocks` como estão (AD-007).
+  - UAT no aparelho das features 1, 2 e 3.
+  - Push das branches `feat/tempos-honestos`, `feat/telemetry-frame` e `fix/desafios-sub-volta`, que fica com a Julia.
+  - A correção dos desafios Sub-50/Sub-60 foi feita por outra sessão na pasta principal (branch `fix/desafios-sub-volta`, `96c6ae5`) e ainda precisa ser revista e juntada.
+  - Os `.xrk` do Ricardo Haag (MyChron 5/6, Velopark) ainda não foram rodados no leitor do spike.
+- **Cuidado**: a pasta principal `/Volumes/SSD/Dev/Pessoal/Copilot-kart` é usada por outras sessões. Feature nova vai em worktree própria.
 - **Blockers**: nenhum.
-- **Uncommitted files**: `CockPit-Guia-do-Testador.pdf`.
+- **Uncommitted files**: na pasta principal, `CockPit-Guia-do-Testador.pdf`.
