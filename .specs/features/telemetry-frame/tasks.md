@@ -1227,15 +1227,16 @@ Uma falha desfaz só aquela, e a próxima execução retoma dela.
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste (sql.js), banco v4 de referência:
+- [x] Teste (sql.js), banco v4 de referência (`test/helpers/v4Database.ts`):
   - 3 sessões das features 1 e 2, com e sem sintéticos, com e sem IMU;
   - uma volta com JSON corrompido;
-  - 2 traçados;
+  - 2 traçados (e uma referência e um PB);
   - um diário pendente.
 
-  Depois da migração, os tempos, `started_at`, o PB e a linha de chegada de cada traçado são os de antes.
-- [ ] Teste (sql.js): com falha injetada na 2ª sessão, a 1ª fica convertida, a 2ª continua legível no formato antigo, e a próxima execução termina sem duplicar a 1ª.
-- [ ] Gate: `npm test`, contagem registrada.
+  Depois da migração, os tempos, `started_at`, o PB e a linha de chegada de cada traçado são os de antes. As voltas lidas pelo `loadLaps` são as amostras antigas, e a recuperação acha no diário convertido as mesmas voltas que acharia no JSON.
+- [x] Teste (sql.js): com falha injetada na 2ª sessão, a 1ª fica convertida, a 2ª continua legível no formato antigo, e a próxima execução termina sem duplicar a 1ª. A falha não para a 3ª: cada item tem a própria transação, e o que falhou volta na próxima abertura.
+- [x] Teste (sql.js): rodar de novo não grava nada. Convertido = sessão com `frames_version = 5`, traçado com `window_kind`, referência com série (criada mesmo vazia), diário sem pedaços.
+- [x] Gate: `npm test`, contagem registrada: 293 testes (290 + 3).
 
 **Tests**: integration
 **Gate**: full
