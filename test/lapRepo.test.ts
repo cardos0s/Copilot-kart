@@ -12,8 +12,9 @@ import { join } from 'node:path';
 import type { LapRecord } from '../src/lib/analysis';
 import { loadLapSummaries, loadLaps, loadSessionGps } from '../src/storage/lapRepo';
 import type { SqlTx, SqlValue } from '../src/storage/sqlConn';
-import type { GpsFrame } from '../src/telemetry/frame';
+import { G, type GpsFrame } from '../src/telemetry/frame';
 import { imuFrames, sessionOnDb, trackFrames } from './helpers/sessionOnDb';
+import { insertOldSession, oldPoint } from './helpers/v4Database';
 import { openV5Database } from './helpers/v5Database';
 
 const T0 = 1_790_000_000_000;
@@ -141,29 +142,33 @@ test('loadLapSummaries (sql.js): devolve id, startedAt e durationMs de cada volt
   assert.deepEqual(spy.queries.filter((q) => q.sql.includes('telemetry_blocks') || q.sql.includes('telemetry_series')), []);
 });
 
-test('loadLaps (sql.js): volta ainda não convertida (sem janela, só o JSON) sai como saía antes, até a v5b', async () => {
+/**
+ * Migrado na T44: substitui "volta ainda não convertida (sem janela, só o JSON) sai como
+ * saía antes, até a v5b", que conferia o JSON devolvido cru. A volta que a v5b não
+ * converteu (falhou e volta na próxima abertura) agora sai pela mesma conversão da v5b,
+ * em memória: os mesmos pontos e a mesma IMU (o acelerômetro de g para m/s²), em frames.
+ */
+test('loadLaps (sql.js): volta que a v5b ainda não converteu (sem janela, só o JSON) sai com os mesmos pontos, pela conversão da v5b', async () => {
   const { conn } = await openV5Database();
-  await conn.runAsync(
-    `INSERT INTO sessions (id, track_name, started_at) VALUES ('session_old', 'Antiga', ?)`,
-    T0
-  );
   const samples = [
-    { t: T0 + 1000, lat: -14.86, lng: -40.84, speed: 10, accuracy: 4, synthetic: true },
+    { t: T0 + 1000, lat: -14.86, lng: -40.84, speed: 10, accuracy: 4, synthetic: true as const },
     { t: T0 + 1100, lat: -14.861, lng: -40.841, speed: 11, accuracy: 5 },
+    { t: T0 + 1200, lat: -14.862, lng: -40.842, speed: 12, accuracy: 4, synthetic: true as const },
   ];
   const imuSamples = [{ t: T0 + 1000, accel: { x: 0, y: 0, z: 1 }, gyro: { x: 0, y: 0, z: 0.1 } }];
-  await conn.runAsync(
-    `INSERT INTO laps (id, session_id, started_at, duration_ms, samples_json, imu_samples_json)
-     VALUES ('old_lap_1', 'session_old', ?, 100, ?, ?)`,
-    T0 + 1000,
-    JSON.stringify(samples),
-    JSON.stringify(imuSamples)
-  );
+  await insertOldSession(conn, {
+    id: 'session_old',
+    startedAt: T0,
+    trackId: 'track_1',
+    laps: [{ id: 'old_lap_1', startedAt: T0 + 1000, durationMs: 200, samples, imu: imuSamples }],
+  });
 
-  const old = { id: 'old_lap_1', sessionId: 'session_old', startedAt: T0 + 1000, durationMs: 100, samples };
-  // `gps`/`imu` (T27) são o mesmo JSON de `samples`/`imuSamples`, até a v5b.
-  assert.deepEqual(await loadLaps(conn, 'session_old', { imu: true }), [{ ...old, gps: samples, imu: imuSamples, imuSamples }]);
-  assert.deepEqual(await loadLaps(conn, 'session_old'), [{ ...old, gps: samples, imu: undefined, imuSamples: undefined }]);
+  const [lap] = await loadLaps(conn, 'session_old', { imu: true });
+  assert.deepEqual([lap.id, lap.sessionId, lap.startedAt, lap.durationMs], ['old_lap_1', 'session_old', T0 + 1000, 200]);
+  assert.equal(lap.window!.kind, 'cross');
+  assert.deepEqual(lap.gps.map((f) => oldPoint(f, T0 + 1000)), samples);
+  assert.deepEqual(lap.imu, [{ kind: 'imu', source: 'PHONE', t: 0, accel: { x: 0, y: 0, z: G }, gyro: { x: 0, y: 0, z: 0.1 }, legacy: true }]);
+  assert.equal((await loadLaps(conn, 'session_old'))[0].imu, undefined);
 });
 
 test('getLapsForSession (db.ts, estático): delega para loadLaps com a IMU e não lê mais o JSON de amostras', () => {

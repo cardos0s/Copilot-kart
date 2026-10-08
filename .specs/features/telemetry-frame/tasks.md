@@ -1256,9 +1256,11 @@ Uma falha desfaz só aquela, e a próxima execução retoma dela.
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste (sql.js): com uma sessão ainda sem conversão, a v5c não remove nada e não grava `user_version = 5`.
-- [ ] Teste (sql.js): com tudo convertido, as colunas e a tabela saem, e as sessões abrem com os mesmos tempos e o mesmo PB (TF-18 AC 10).
-- [ ] Gate: `npm test && npm run typecheck`, baseline de 8 erros.
+- [x] Teste (sql.js): com uma sessão ainda sem conversão, a v5c não remove nada e não grava `user_version = 5`. O mesmo com um traçado sem janela, uma referência sem série e um diário v4 pendente. Nesse estado, sessão e traçado novos continuam gravando: enquanto a coluna antiga (NOT NULL) existe, a linha nova leva `'[]'` (`legacyJsonPlaceholders`, em `legacy.ts`); depois da v5c, nada.
+- [x] Teste (sql.js): com tudo convertido, as colunas e a tabela saem, e as sessões abrem com os mesmos tempos e o mesmo PB (TF-18 AC 10). Sessão e traçado novos gravam sem as colunas, e rodar v5b/v5c de novo não faz nada. `ALTER TABLE … DROP COLUMN` bastou (nenhuma coluna tem índice, chave, `CHECK`, gatilho ou visão).
+- [x] `db()` encadeia v4 → v5a → v5b → v5c sobre a mesma conexão (teste estático de `migrationV5Schema.test.ts` ampliado, com nota).
+- [x] Fallbacks de transição: o JSON cru do `lapRepo.legacyLap`, do `rowToLayout`/`rowToReference` e o caminho JSON do `saveLayoutOn` saíram. O item que a v5b não converteu (falha) continua legível pela mesma conversão em memória (`pendingSessionLaps`/`pendingLayout`/`pendingReference` de `legacy.ts`), como pede TF-20 AC 7. `saveLayoutOn` recusa traçado sem janela e reancora a janela por índice na série do traçado. `saveTrackReference`/`deleteTrackReference` (sem chamador) saíram do `db.ts`. Testes migrados, com nota do que substituem: `lapRepo` (volta sem janela), `layoutRepo` (traçado sem janela, referência sem série) e o fixture de `promoteReferenceLayout` (o traçado antigo entra como linha v4).
+- [x] Gate: `npm test && npm run typecheck`, contagem registrada: 296 testes (293 + 2 da v5c + 1 da janela por índice do traçado), baseline de 8 erros.
 
 **Tests**: integration
 **Gate**: build

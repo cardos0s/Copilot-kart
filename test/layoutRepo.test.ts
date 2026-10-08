@@ -2,12 +2,11 @@
  * Traçados sobre séries (T23) em SQL real (sql.js): TF-19 (o traçado tem frames
  * próprios, com dono `layout:<id>`, e dá a mesma linha de chegada que a volta de
  * origem) e a leitura de `track_references` pelo dono `reference:<track_id>`.
- * O traçado ou a referência ainda em JSON sai como antes, até a v5b.
+ * O traçado ou a referência que a v5b ainda não converteu sai pela mesma conversão.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import type { GpsSample } from '../src/lib/geometry';
 import { lineFromLayout } from '../src/lib/startLine';
 import { saveReferenceLayout, type RecordedLap } from '../src/recording/finishSession';
 import { sessionOwner } from '../src/storage/lapRepo';
@@ -27,6 +26,7 @@ import { encodeBlock } from '../src/telemetry/blockCodec';
 import { appendBlocks, createSeries, deleteOwner } from '../src/telemetry/telemetryStore';
 import { stopResult } from './helpers/recordingResult';
 import { imuFrames, sessionOnDb, trackFrames } from './helpers/sessionOnDb';
+import { insertOldLayout, oldPoint, type OldPoint } from './helpers/v4Database';
 import { openV5Database, rowsOf } from './helpers/v5Database';
 
 const T0 = 1_790_000_000_000;
@@ -102,27 +102,63 @@ test('deleteLayout (sql.js): apaga o traçado e a série dele, e o de outra pist
   assert.deepEqual((await getLayout(r.conn, 'layout_other'))!.gps, r.best.gps);
 });
 
-test('layoutRepo (sql.js): traçado sem janela (ainda em JSON, até a v5b) é gravado e lido pelo JSON, como antes', async () => {
+/**
+ * Migrado na T44: substitui "traçado sem janela (ainda em JSON, até a v5b) é gravado e
+ * lido pelo JSON, como antes". O traçado que a v5b ainda não converteu é lido pela
+ * mesma conversão, com os mesmos pontos; gravar um traçado sem janela não existe mais.
+ */
+test('layoutRepo (sql.js): traçado que a v5b ainda não converteu (JSON, sem janela) sai com os mesmos pontos pela conversão; gravar sem janela é recusado', async () => {
   const { conn } = await openV5Database();
-  const samples: GpsSample[] = [
-    { kind: 'gps', source: 'PHONE', fix: 'unknown', t: T0 + 1000, lat: -14.86, lng: -40.84, speed: 10, accuracy: 4, synthetic: true },
-    { kind: 'gps', source: 'PHONE', fix: 'unknown', t: T0 + 1100, lat: -14.8601, lng: -40.8401, speed: 11, accuracy: 5 },
+  const samples: OldPoint[] = [
+    { t: T0 + 1000, lat: -14.86, lng: -40.84, speed: 10, accuracy: 4, synthetic: true },
+    { t: T0 + 1100, lat: -14.8601, lng: -40.8401, speed: 11, accuracy: 5 },
+    { t: T0 + 1200, lat: -14.8602, lng: -40.8402, speed: 12, accuracy: 4, synthetic: true },
   ];
-  const legacy: TrackLayout = {
+  await insertOldLayout(conn, {
     id: 'layout_old',
     trackId: 'track_1',
-    name: 'Layout principal',
     samples,
     durationMs: 38_000,
     lengthM: 500,
     recordedAt: T0,
     sourceSessionId: 'session_old',
     sourceLapId: 'session_old_lap_2',
+  });
+
+  const read = (await getLayout(conn, 'layout_old'))!;
+  assert.deepEqual(
+    [read.name, read.durationMs, read.lengthM, read.recordedAt, read.sourceSessionId, read.sourceLapId, read.isDefault],
+    ['Layout principal', 38_000, 500, T0, 'session_old', 'session_old_lap_2', true]
+  );
+  assert.equal(read.window!.kind, 'cross');
+  assert.deepEqual(read.gps!.map((f) => oldPoint(f, 0)), samples);
+  assert.equal(read.samples, read.gps);
+  assert.deepEqual(rowsOf(conn, 'SELECT COUNT(*) AS c FROM telemetry_series'), [{ c: 0 }]);
+
+  const { window: _w, gps: _g, ...withoutWindow } = read;
+  await assert.rejects(saveLayout(conn, { ...withoutWindow, id: 'layout_sem_janela' }), /sem a janela/);
+  assert.equal(await getLayout(conn, 'layout_sem_janela'), null);
+});
+
+test('saveLayout (sql.js, TF-19): a janela por índice de uma volta vale sobre a série do traçado, que só tem os frames dela', async () => {
+  const { conn } = await openV5Database();
+  const frames: GpsFrame[] = trackFrames(1).slice(20, 25).map((f) => ({ ...f, accuracy: 4, legacy: true }));
+  const layout: TrackLayout = {
+    id: 'layout_index',
+    trackId: 'track_1',
+    name: 'Layout principal',
+    samples: frames,
+    gps: frames,
+    window: { kind: 'index', from: 120, to: 124 },
+    durationMs: 400,
+    lengthM: 40,
+    recordedAt: T0,
     isDefault: true,
   };
-  await saveLayout(conn, legacy);
-  assert.deepEqual(await getLayout(conn, 'layout_old'), legacy);
-  assert.deepEqual(rowsOf(conn, 'SELECT COUNT(*) AS c FROM telemetry_series'), [{ c: 0 }]);
+  await saveLayout(conn, layout);
+  const read = (await getLayout(conn, 'layout_index'))!;
+  assert.deepEqual(read.window, { kind: 'index', from: 0, to: 4 });
+  assert.deepEqual(read.gps, frames);
 });
 
 const REFERENCES = `CREATE TABLE track_references (
@@ -130,7 +166,11 @@ const REFERENCES = `CREATE TABLE track_references (
   length_m REAL NOT NULL, recorded_at INTEGER NOT NULL, source_session_id TEXT, source_lap_id TEXT
 )`;
 
-test('track_references (sql.js): a referência é lida da série do dono reference:<track_id>; sem série, do JSON (até a v5b)', async () => {
+/**
+ * Migrado na T44: a referência sem série (que a v5b ainda não converteu) saía do JSON
+ * cru; agora sai pela mesma conversão, com os mesmos pontos em frames.
+ */
+test('track_references (sql.js): a referência é lida da série do dono reference:<track_id>; sem série, pela conversão da v5b', async () => {
   const { conn } = await openV5Database();
   await conn.execAsync(REFERENCES);
   const oldSamples = [{ t: T0, lat: -14.9, lng: -40.9, speed: 9, accuracy: 6 }];
@@ -153,8 +193,8 @@ test('track_references (sql.js): a referência é lida da série do dono referen
   assert.deepEqual([b.trackName, b.durationMs, b.lengthM, b.sourceSessionId, b.sourceLapId], ['Pista B', 41000, 610, 's_b', 'l_b']);
 
   const a = (await getTrackReference(conn, 'track_a'))!;
-  assert.deepEqual(a.samples, oldSamples);
-  assert.equal(a.gps, undefined);
+  assert.deepEqual(a.gps!.map((f) => oldPoint(f, 0)), oldSamples);
+  assert.equal(a.samples, a.gps);
 
   assert.deepEqual((await listTrackReferences(conn)).map((x) => [x.trackId, x.samples.length]), [['track_b', 40], ['track_a', 1]]);
 });

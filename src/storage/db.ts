@@ -6,7 +6,7 @@ import type { GpsFrame } from '../telemetry/frame';
 import { loadLaps } from './lapRepo';
 import * as layoutRepo from './layoutRepo';
 import type { TrackLayout } from './layoutRepo';
-import { migrateV4, migrateV5Schema, migrationExecutorFrom } from './migrations';
+import { migrateV4, migrateV5Cleanup, migrateV5Data, migrateV5Schema, migrationExecutorFrom } from './migrations';
 import { expoSqlConn } from './sqlConn';
 import { deleteSessionOn } from './sqlSessionRepo';
 
@@ -220,9 +220,14 @@ export const db = once(async () => {
       ),
   });
 
-  // v5a: schema das séries de telemetria. A conversão (v5b) e a remoção do
-  // formato antigo (v5c) vêm depois.
-  await migrateV5Schema(migrationExecutorFrom(expoSqlConn(dbInstance)));
+  // v5: schema das séries (v5a), a conversão do formato antigo, uma transação por
+  // sessão, traçado, referência e diário (v5b), e a remoção das colunas e da tabela
+  // antigas quando tudo converteu (v5c). O que falha na v5b fica legível e volta na
+  // próxima abertura.
+  const conn = expoSqlConn(dbInstance);
+  await migrateV5Schema(migrationExecutorFrom(conn));
+  await migrateV5Data(conn);
+  await migrateV5Cleanup(migrationExecutorFrom(conn));
   return dbInstance;
 });
 
@@ -508,28 +513,6 @@ export async function getTrackReference(
   trackId: string
 ): Promise<TrackReference | null> {
   return layoutRepo.getTrackReference(await appSqlConn(), trackId);
-}
-
-export async function saveTrackReference(ref: TrackReference): Promise<void> {
-  const d = await db();
-  await d.runAsync(
-    `INSERT OR REPLACE INTO track_references
-     (track_id, track_name, samples_json, duration_ms, length_m, recorded_at, source_session_id, source_lap_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    ref.trackId,
-    ref.trackName,
-    JSON.stringify(ref.samples),
-    ref.durationMs,
-    ref.lengthM,
-    ref.recordedAt,
-    ref.sourceSessionId ?? null,
-    ref.sourceLapId ?? null
-  );
-}
-
-export async function deleteTrackReference(trackId: string): Promise<void> {
-  const d = await db();
-  await d.runAsync('DELETE FROM track_references WHERE track_id = ?', trackId);
 }
 
 // =========================

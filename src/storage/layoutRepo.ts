@@ -10,9 +10,9 @@
  * `track_references` (legado, ainda lido pela silhueta) é lido do dono
  * `reference:<track_id>`.
  *
- * Transição (até a v5b/v5c, T43/T44): o traçado sem janela (ainda em JSON, ou salvo
- * a partir de uma volta que ainda não foi convertida) e a referência sem série
- * continuam lidos e gravados pelo `samples_json`.
+ * O traçado sem janela e a referência sem série são os que a v5b ainda não
+ * converteu (ela falhou e volta na próxima abertura): saem pela mesma conversão,
+ * em memória (TF-20 AC 7).
  *
  * Sobre um `SqlConn`: no aparelho é o expo-sqlite (`db.ts`), nos testes o sql.js.
  */
@@ -21,12 +21,13 @@ import type { LayoutRepo } from '../recording/finishSession';
 import { encodeBlock } from '../telemetry/blockCodec';
 import type { GpsFrame, GpsSeries, LapWindow, Owner, SeriesMeta } from '../telemetry/frame';
 import { lapFrames } from '../telemetry/laps';
+import { legacyJsonPlaceholders, pendingLayout, pendingReference } from '../telemetry/legacy';
 import { gpsFramesOf, gpsSeriesOf } from '../telemetry/series';
 import { createSeries, deleteOwner, insertBlocks, readSeries } from '../telemetry/telemetryStore';
 import type { PbRecord, TrackReference } from './db';
 import { windowOf, type WindowRow } from './lapRepo';
 import type { SqlConn, SqlTx } from './sqlConn';
-import { windowColumns } from './sqlSessionRepo';
+import { WINDOW_COLUMN_NAMES, windowColumns } from './sqlSessionRepo';
 
 /**
  * Cada layout é uma referência gravada da pista numa configuração específica
@@ -60,7 +61,6 @@ type LayoutRow = WindowRow & {
   id: string;
   track_id: string;
   name: string;
-  samples_json: string;
   duration_ms: number;
   length_m: number;
   recorded_at: number;
@@ -86,9 +86,6 @@ export function layoutGps(layout: { gps?: GpsFrame[]; samples: GpsFrame[] }): Gp
   return layout.gps ?? layout.samples;
 }
 
-/** `samples_json` é NOT NULL até a v5c (T44) remover a coluna: o traçado com janela leva um array vazio. */
-const NO_SAMPLES_JSON = '[]';
-
 async function rowToLayout(conn: SqlTx, row: LayoutRow): Promise<TrackLayout> {
   const base = {
     id: row.id,
@@ -101,12 +98,19 @@ async function rowToLayout(conn: SqlTx, row: LayoutRow): Promise<TrackLayout> {
     sourceLapId: row.source_lap_id ?? undefined,
     isDefault: Boolean(row.is_default),
   };
-  const window = windowOf(row);
-  // Transição (até a v5b): traçado sem janela sai do JSON, como antes.
-  if (!window) return { ...base, samples: JSON.parse(row.samples_json) };
-  const { series } = await readSeries(conn, layoutOwner(row.id), { kinds: ['gps'] });
-  const gps = series[0] as GpsSeries | undefined;
-  const frames = gps ? lapFrames(window, gps).gps : [];
+  const stored = windowOf(row);
+  let window: LapWindow;
+  let frames: GpsFrame[];
+  if (stored) {
+    window = stored;
+    const { series } = await readSeries(conn, layoutOwner(row.id), { kinds: ['gps'] });
+    const gps = series[0] as GpsSeries | undefined;
+    frames = gps ? lapFrames(window, gps).gps : [];
+  } else {
+    const conv = pendingLayout(row);
+    window = conv.window;
+    frames = lapFrames(window, gpsSeriesOf(layoutMeta(row.id), conv.gps)).gps;
+  }
   return { ...base, window, gps: frames, samples: frames as GpsSample[] };
 }
 
@@ -143,46 +147,47 @@ export async function getDefaultLayoutForTrack(conn: SqlTx, trackId: string): Pr
   return row ? rowToLayout(conn, row) : null;
 }
 
+/** A série GPS do traçado. O instante absoluto de cada fix fica no `gnssTime`: o traçado não tem início de sessão. */
+function layoutMeta(layoutId: string, source: GpsFrame['source'] = 'PHONE', legacy = true): SeriesMeta {
+  return { id: `${layoutId}_gps`, owner: layoutOwner(layoutId), source, kind: 'gps', t0Utc: null, legacy };
+}
+
 /**
- * O traçado e a série dele, dentro da transação de quem chama. Com janela, os
- * frames da volta (sem as fronteiras, que saem da janela na leitura) são copiados
- * para a série `gps` do dono `layout:<id>`, no relógio da sessão de origem.
+ * O traçado e a série dele, dentro da transação de quem chama. Os frames da volta (sem
+ * as fronteiras, que saem da janela na leitura) são copiados para a série `gps` do dono
+ * `layout:<id>`, no relógio da sessão de origem. A janela por índice passa a valer sobre
+ * essa série, que só tem os frames da volta.
  */
 export async function saveLayoutOn(tx: SqlTx, layout: TrackLayout): Promise<void> {
-  const withFrames = layout.window !== undefined && layout.gps !== undefined;
+  if (!layout.window || !layout.gps) throw new Error(`traçado ${layout.id} sem a janela e os frames da volta`);
+  const frames = layout.gps.filter((f) => !f.synthetic);
+  const window: LapWindow =
+    layout.window.kind === 'index' ? { kind: 'index', from: 0, to: frames.length - 1 } : layout.window;
+  const legacy = await legacyJsonPlaceholders(tx, 'track_layouts');
+  const columns = [
+    'id', 'track_id', 'name', 'duration_ms', 'length_m', 'recorded_at', 'source_session_id', 'source_lap_id', 'is_default',
+    ...WINDOW_COLUMN_NAMES,
+    ...legacy.columns,
+  ];
   await tx.runAsync(
-    `INSERT OR REPLACE INTO track_layouts
-     (id, track_id, name, samples_json, duration_ms, length_m, recorded_at, source_session_id, source_lap_id, is_default,
-      window_kind, from_idx, to_idx,
-      start_t, start_lat, start_lng, start_speed, start_acc,
-      end_t, end_lat, end_lng, end_speed, end_acc)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT OR REPLACE INTO track_layouts (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
     layout.id,
     layout.trackId,
     layout.name,
-    withFrames ? NO_SAMPLES_JSON : JSON.stringify(layout.samples),
     layout.durationMs,
     layout.lengthM,
     layout.recordedAt,
     layout.sourceSessionId ?? null,
     layout.sourceLapId ?? null,
     layout.isDefault ? 1 : 0,
-    ...windowColumns(withFrames ? layout.window : undefined)
+    ...windowColumns(window),
+    ...legacy.values
   );
   const owner = layoutOwner(layout.id);
   await deleteOwner(tx, owner);
-  if (!withFrames) return;
+  if (window.kind === 'none') return;
 
-  const frames = layout.gps!.filter((f) => !f.synthetic);
-  // O instante absoluto de cada fix fica no `gnssTime`; o traçado não tem início de sessão.
-  const meta: SeriesMeta = {
-    id: `${layout.id}_gps`,
-    owner,
-    source: frames[0]?.source ?? 'PHONE',
-    kind: 'gps',
-    t0Utc: null,
-    legacy: false,
-  };
+  const meta = layoutMeta(layout.id, frames[0]?.source, frames.some((f) => f.legacy));
   await createSeries(tx, meta);
   if (frames.length === 0) return;
   const series = gpsSeriesOf(meta, frames);
@@ -277,7 +282,6 @@ export function sqlLayoutRepo(conn: () => Promise<SqlConn>): LayoutRepo {
 type ReferenceRow = {
   track_id: string;
   track_name: string;
-  samples_json: string;
   duration_ms: number;
   length_m: number;
   recorded_at: number;
@@ -287,8 +291,8 @@ type ReferenceRow = {
 
 /**
  * A referência com os frames da série dela. `track_references` não tem colunas
- * de janela: a série é lida inteira, na ordem. Transição (até a v5b): referência
- * sem série sai do JSON, como antes.
+ * de janela: a série é lida inteira, na ordem. Sem série, é a referência que a v5b
+ * ainda não converteu, e ela sai pela mesma conversão, em memória.
  */
 async function rowToReference(conn: SqlTx, row: ReferenceRow): Promise<TrackReference> {
   const base = {
@@ -301,8 +305,7 @@ async function rowToReference(conn: SqlTx, row: ReferenceRow): Promise<TrackRefe
     sourceLapId: row.source_lap_id ?? undefined,
   };
   const { series } = await readSeries(conn, referenceOwner(row.track_id), { kinds: ['gps'] });
-  if (series.length === 0) return { ...base, samples: JSON.parse(row.samples_json) };
-  const frames = gpsFramesOf(series[0] as GpsSeries);
+  const frames = series.length > 0 ? gpsFramesOf(series[0] as GpsSeries) : pendingReference(row).gps;
   return { ...base, gps: frames, samples: frames as GpsSample[] };
 }
 

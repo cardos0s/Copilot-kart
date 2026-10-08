@@ -10,18 +10,13 @@
 import type { LapRecord } from '../lib/analysis';
 import type { RecordedSessionRow, SessionRepo, SessionRepoTx } from '../recording/finishSession';
 import type { BoundaryCross, LapWindow } from '../telemetry/frame';
+import { legacyJsonPlaceholders } from '../telemetry/legacy';
 import { deleteOwner } from '../telemetry/telemetryStore';
 import { sessionOwner } from './lapRepo';
 import type { SqlConn, SqlTx, SqlValue } from './sqlConn';
 
 /** Versão do formato das voltas que a sessão gravada aqui já tem (v5: janelas). */
 export const FRAMES_VERSION = 5;
-
-/**
- * `laps.samples_json` é NOT NULL até a v5c (T44) remover a coluna: a volta nova
- * leva um array vazio, e o bruto fica nas séries.
- */
-const NO_SAMPLES_JSON = '[]';
 
 function crossColumns(c: BoundaryCross | null): SqlValue[] {
   return c ? [c.t, c.lat, c.lng, c.speed, c.accuracy] : [null, null, null, null, null];
@@ -64,23 +59,31 @@ function sessionOps(conn: () => Promise<SqlTx>): SessionRepoTx {
   };
 }
 
-/** A volta como janela, sem JSON de amostra, dentro da transação de quem chama (ou fora dela). */
+/** As colunas de janela, na ordem de `windowColumns`. */
+export const WINDOW_COLUMN_NAMES = [
+  'window_kind', 'from_idx', 'to_idx',
+  'start_t', 'start_lat', 'start_lng', 'start_speed', 'start_acc',
+  'end_t', 'end_lat', 'end_lng', 'end_speed', 'end_acc',
+] as const;
+
+/**
+ * A volta como janela, sem JSON de amostra, dentro da transação de quem chama (ou fora
+ * dela). Enquanto a v5c não removeu a coluna antiga (NOT NULL), ela leva o array vazio.
+ */
 export async function insertLapOn(
   tx: SqlTx,
   lap: Pick<LapRecord, 'id' | 'sessionId' | 'startedAt' | 'durationMs' | 'window'>
 ): Promise<void> {
+  const legacy = await legacyJsonPlaceholders(tx, 'laps');
+  const columns = ['id', 'session_id', 'started_at', 'duration_ms', ...WINDOW_COLUMN_NAMES, ...legacy.columns];
   await tx.runAsync(
-    `INSERT INTO laps (id, session_id, started_at, duration_ms, samples_json, imu_samples_json,
-       window_kind, from_idx, to_idx,
-       start_t, start_lat, start_lng, start_speed, start_acc,
-       end_t, end_lat, end_lng, end_speed, end_acc)
-     VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO laps (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
     lap.id,
     lap.sessionId,
     lap.startedAt,
     lap.durationMs,
-    NO_SAMPLES_JSON,
-    ...windowColumns(lap.window)
+    ...windowColumns(lap.window),
+    ...legacy.values
   );
 }
 

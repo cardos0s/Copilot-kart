@@ -11,9 +11,10 @@
  */
 import type { LapRecord } from '../lib/analysis';
 import type { GpsSample, ImuSample } from '../lib/geometry';
-import type { BoundaryCross, GpsFrame, GpsSeries, ImuSeries, LapWindow, Owner, SeriesKind } from '../telemetry/frame';
+import type { BoundaryCross, GpsFrame, GpsSeries, ImuSeries, LapWindow, Owner, SeriesKind, SeriesMeta } from '../telemetry/frame';
 import { lapFrames } from '../telemetry/laps';
-import { gpsFramesOf } from '../telemetry/series';
+import { pendingSessionLaps } from '../telemetry/legacy';
+import { gpsFramesOf, gpsSeriesOf, imuSeriesOf } from '../telemetry/series';
 import { readSeries } from '../telemetry/telemetryStore';
 import type { SqlTx } from './sqlConn';
 
@@ -43,8 +44,6 @@ type LapRow = WindowRow & {
   session_id: string;
   started_at: number;
   duration_ms: number;
-  samples_json: string;
-  imu_samples_json: string | null;
 };
 
 /** As séries da sessão são do dono `session:<id>` (o diário grava em `session_<recordingId>`). */
@@ -56,7 +55,7 @@ function cross(t: number | null, lat: number | null, lng: number | null, speed: 
   return { t: t!, lat: lat!, lng: lng!, speed: speed!, accuracy: acc! };
 }
 
-/** A janela guardada na linha; `null` quando ainda não há janela (formato antigo, até a v5b). */
+/** A janela guardada na linha; `null` quando ainda não há janela (formato antigo que a v5b não converteu). */
 export function windowOf(r: WindowRow): LapWindow | null {
   switch (r.window_kind) {
     case 'cross':
@@ -75,23 +74,24 @@ export function windowOf(r: WindowRow): LapWindow | null {
 }
 
 /**
- * Transição (até a v5b/v5c, T43/T44): a volta ainda não convertida não tem janela
- * (`window_kind` nulo) e sai do JSON, exatamente como o `getLapsForSession` de antes.
+ * As voltas sem janela, que a v5b ainda não converteu (ela falhou nesta sessão e
+ * tenta de novo na próxima abertura), pela mesma conversão em memória: a sessão abre
+ * com os mesmos frames e janelas que terá depois de convertida (TF-20 AC 7).
  */
-function legacyLap(r: LapRow, imu: boolean): LapRecord {
-  // O JSON antigo vai como está (t em epoch ms, accel em g); a conversão em frames é a da v5b.
-  const samples = JSON.parse(r.samples_json) as GpsSample[];
-  const imuSamples: ImuSample[] | undefined =
-    imu && r.imu_samples_json ? JSON.parse(r.imu_samples_json) : undefined;
+function pendingSeries(sessionId: string, rows: LapRow[], imu: boolean) {
+  const conv = pendingSessionLaps(rows);
+  const meta = (kind: 'gps' | 'imu'): SeriesMeta => ({
+    id: `${sessionId}_${kind}`,
+    owner: sessionOwner(sessionId),
+    source: 'PHONE',
+    kind,
+    t0Utc: conv.t0Utc,
+    legacy: true,
+  });
   return {
-    id: r.id,
-    sessionId: r.session_id,
-    startedAt: r.started_at,
-    durationMs: r.duration_ms,
-    gps: samples,
-    samples,
-    imu: imuSamples,
-    imuSamples,
+    windows: conv.windows,
+    gps: gpsSeriesOf(meta('gps'), conv.gps),
+    imu: imu ? imuSeriesOf(meta('imu'), conv.imu) : undefined,
   };
 }
 
@@ -125,6 +125,9 @@ export async function loadLaps(conn: SqlTx, sessionId: string, opts: LoadLapsOpt
     if (w) windows.set(r.id, w);
   }
 
+  const unconverted = rows.filter((r) => !windows.has(r.id));
+  const pending = unconverted.length > 0 ? pendingSeries(sessionId, unconverted, imu) : null;
+
   let gps: GpsSeries | undefined;
   let imuSeries: ImuSeries | undefined;
   const readable = [...windows.values()].filter((w) => w.kind !== 'none');
@@ -137,9 +140,13 @@ export async function loadLaps(conn: SqlTx, sessionId: string, opts: LoadLapsOpt
   }
 
   return rows.map((r) => {
-    const window = windows.get(r.id);
-    if (!window) return legacyLap(r, imu);
-    const frames = gps ? lapFrames(window, gps, imuSeries) : { gps: [], imu: [] };
+    const stored = windows.get(r.id);
+    const window = stored ?? pending!.windows.get(r.id)!;
+    const frames = stored
+      ? gps
+        ? lapFrames(window, gps, imuSeries)
+        : { gps: [], imu: [] }
+      : lapFrames(window, pending!.gps, pending!.imu);
     const lap: LapRecord = {
       id: r.id,
       sessionId: r.session_id,
@@ -168,8 +175,8 @@ export async function loadLapSummaries(conn: SqlTx, sessionId: string): Promise<
 
 /**
  * Todos os frames da série GPS da sessão, do primeiro ao "Encerrar", sem ler a IMU. É o
- * que o selo usa quando a sessão não tem volta (TF-24 AC 4). Sem série (sessão ainda em
- * JSON, até a v5b), não há frames.
+ * que o selo usa quando a sessão não tem volta (TF-24 AC 4). Sem série (sessão que a v5b
+ * ainda não converteu), não há frames.
  */
 export async function loadSessionGps(conn: SqlTx, sessionId: string): Promise<GpsFrame[]> {
   const { series } = await readSeries(conn, sessionOwner(sessionId), { kinds: ['gps'] });

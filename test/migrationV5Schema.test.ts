@@ -171,11 +171,19 @@ test('uma falha no meio da v5a desfaz tudo dela, e a próxima execução termina
   conn.close();
 });
 
-test('db() roda a v5a depois da v4', () => {
+// Ampliado na T44: a asserção `migrateV5Schema(migrationExecutorFrom(expoSqlConn(dbInstance)))`
+// virou a cadeia v5a → v5b → v5c sobre a mesma conexão (`conn = expoSqlConn(dbInstance)`).
+test('db() roda a v5a depois da v4, e depois a v5b e a v5c, sobre a mesma conexão', () => {
   const src = readFileSync(join(__dirname, '..', 'src', 'storage', 'db.ts'), 'utf8');
   const v4 = src.indexOf('await migrateV4(');
-  const v5a = src.indexOf('await migrateV5Schema(migrationExecutorFrom(expoSqlConn(dbInstance)))');
+  const conn = src.indexOf('const conn = expoSqlConn(dbInstance);');
+  const v5a = src.indexOf('await migrateV5Schema(migrationExecutorFrom(conn));');
+  const v5b = src.indexOf('await migrateV5Data(conn);');
+  const v5c = src.indexOf('await migrateV5Cleanup(migrationExecutorFrom(conn));');
   assert.ok(v4 > 0, 'migrateV4 no db()');
-  assert.ok(v5a > v4, 'migrateV5Schema depois da v4');
-  assert.ok(v5a < src.indexOf('return dbInstance;'), 'antes de devolver o banco');
+  assert.ok(conn > v4, 'a conexão das v5 depois da v4');
+  assert.ok(v5a > conn, 'migrateV5Schema depois da v4');
+  assert.ok(v5b > v5a, 'migrateV5Data depois da v5a');
+  assert.ok(v5c > v5b, 'migrateV5Cleanup depois da v5b');
+  assert.ok(v5c < src.indexOf('return dbInstance;'), 'antes de devolver o banco');
 });

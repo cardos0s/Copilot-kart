@@ -14,9 +14,10 @@ import assert from 'node:assert/strict';
 
 import { inheritedPb, nextReferenceLayout } from '../src/lib/referenceLayout';
 import { loadLaps } from '../src/storage/lapRepo';
-import { getLayout, promoteReferenceLayout, saveLayout, insertPbRecord, type TrackLayout } from '../src/storage/layoutRepo';
+import { getLayout, promoteReferenceLayout, insertPbRecord, type TrackLayout } from '../src/storage/layoutRepo';
 import type { PbRecord } from '../src/storage/db';
 import { imuFrames, sessionOnDb, trackFrames } from './helpers/sessionOnDb';
+import { insertOldLayout } from './helpers/v4Database';
 import { openV5Database, rowsOf } from './helpers/v5Database';
 
 const T0 = 1_790_000_000_000;
@@ -41,7 +42,18 @@ async function scenario() {
     recordedAt: T0 - 86_400_000,
     isDefault: true,
   };
-  await saveLayout(db.conn, reference);
+  // O traçado antigo como o formato v4 o guardava (JSON, sem janela). Antes da T44 ele
+  // era gravado pelo `saveLayout` em JSON; esse caminho saiu, e o traçado antigo é a
+  // linha que a v5b ainda não converteu.
+  await insertOldLayout(db.conn, {
+    id: reference.id,
+    trackId: reference.trackId,
+    name: reference.name,
+    samples: [{ t: T0 - 90_000, lat: -14.86, lng: -40.84, speed: 10, accuracy: 4, synthetic: true }],
+    durationMs: reference.durationMs,
+    lengthM: reference.lengthM,
+    recordedAt: reference.recordedAt,
+  });
   const previousPb: PbRecord = {
     id: 'pb_antigo',
     trackId: 'track_1',

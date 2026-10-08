@@ -59,9 +59,11 @@ export async function migrateV4(executor: MigrationExecutor): Promise<void> {
   });
 }
 
-/** Transação da v5: além de executar, consulta se uma coluna já existe. */
+/** Transação da v5: além de executar, consulta se uma coluna já existe e lê uma contagem. */
 export type V5SchemaTx = MigrationTx & {
   hasColumn(table: string, column: string): Promise<boolean>;
+  /** `COUNT(*)` (ou outro inteiro) da primeira coluna da primeira linha. */
+  count(sql: string): Promise<number>;
 };
 
 /** Executor da v5 sobre um `SqlConn`: o mesmo código no aparelho (expo-sqlite) e nos testes (sql.js). */
@@ -75,6 +77,7 @@ export function migrationExecutorFrom(conn: SqlConn): MigrationExecutor<V5Schema
           exec: (sql) => tx.execAsync(sql),
           hasColumn: async (table, column) =>
             (await tx.getFirstAsync('SELECT 1 FROM pragma_table_info(?) WHERE name = ?', table, column)) !== null,
+          count: async (sql) => (await tx.getFirstAsync<{ n: number }>(sql))?.n ?? 0,
         })
       ),
   };
@@ -306,4 +309,55 @@ export async function migrateV5Data(conn: SqlConn, warn: (message: string) => vo
   }
   if (report.skippedLaps > 0) warn(`migração v5: ${report.skippedLaps} volta(s) com JSON ilegível ficaram sem trajetória`);
   return report;
+}
+
+// ---------------------------------------------------------------------------
+// v5c: remoção do formato antigo, só quando tudo converteu
+// ---------------------------------------------------------------------------
+
+/** As colunas de JSON que saem na v5c. */
+const LEGACY_COLUMNS: ReadonlyArray<[table: string, column: string]> = [
+  ['laps', 'samples_json'],
+  ['laps', 'imu_samples_json'],
+  ['track_layouts', 'samples_json'],
+  ['track_references', 'samples_json'],
+];
+
+/** O que a v5b ainda não converteu: sessão sem a marca, traçado sem janela, referência sem série, diário v4. */
+async function unconverted(tx: V5SchemaTx): Promise<number> {
+  let n = await tx.count(`SELECT COUNT(*) AS n FROM sessions WHERE frames_version <> ${FRAMES_VERSION}`);
+  n += await tx.count('SELECT COUNT(*) AS n FROM track_layouts WHERE window_kind IS NULL');
+  if (await tx.hasColumn('track_references', 'track_id')) {
+    n += await tx.count(
+      `SELECT COUNT(*) AS n FROM track_references WHERE track_id NOT IN
+         (SELECT owner_id FROM telemetry_series WHERE owner_kind = 'reference')`
+    );
+  }
+  if (await tx.hasColumn('recording_chunks', 'recording_id')) n += await tx.count('SELECT COUNT(*) AS n FROM recording_chunks');
+  return n;
+}
+
+/**
+ * v5c: com tudo convertido, numa transação, remove `laps.samples_json`,
+ * `laps.imu_samples_json`, `track_layouts.samples_json`, `track_references.samples_json`
+ * e a tabela `recording_chunks`, e grava `user_version = 5` (TF-13, TF-20 AC 8). Se
+ * ainda sobra algo da v5b, não remove nada: o que falhou continua legível no formato
+ * antigo e volta na próxima abertura. Devolve se removeu.
+ *
+ * `DROP COLUMN` aceita a coluna NOT NULL: nenhuma delas tem índice, chave, `CHECK`,
+ * gatilho ou visão, os casos em que o SQLite recusa e a tabela teria de ser refeita.
+ */
+export async function migrateV5Cleanup(executor: MigrationExecutor<V5SchemaTx>): Promise<boolean> {
+  if ((await executor.getUserVersion()) >= 5) return false;
+  let done = false;
+  await executor.transaction(async (tx) => {
+    if ((await unconverted(tx)) > 0) return;
+    for (const [table, column] of LEGACY_COLUMNS) {
+      if (await tx.hasColumn(table, column)) await tx.exec(`ALTER TABLE ${table} DROP COLUMN ${column}`);
+    }
+    await tx.exec('DROP TABLE IF EXISTS recording_chunks');
+    await tx.exec('PRAGMA user_version = 5');
+    done = true;
+  });
+  return done;
 }

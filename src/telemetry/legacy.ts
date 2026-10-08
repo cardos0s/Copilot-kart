@@ -20,6 +20,7 @@
  * pontos sintéticos ou nenhuma. A janela por cruzamento procura os frames pelo tempo e
  * supõe a série crescente, o que vale para as voltas com ponto sintético.
  */
+import type { SqlTx } from '../storage/sqlConn';
 import { G, type BoundaryCross, type GpsFrame, type ImuFrame, type LapWindow, type Vec3 } from './frame';
 
 /** A volta como `laps` a guardava até a v4. */
@@ -251,4 +252,42 @@ export function convertJournal(startedAt: number, chunks: readonly LegacyChunk[]
     for (const p of i) imu.push(imuFrame(p, startedAt));
   }
   return { t0Utc: startedAt, gps, imu, skipped };
+}
+
+// ---------------------------------------------------------------------------
+// O que a v5b ainda não converteu (até a v5c)
+// ---------------------------------------------------------------------------
+
+/**
+ * As voltas sem janela de uma sessão que a v5b ainda não converteu (ela falhou e volta
+ * na próxima abertura). As linhas vêm do `SELECT *` de `laps`, que até a v5c tem as
+ * colunas de JSON. A leitura usa a mesma conversão, em memória: a sessão abre igual
+ * antes e depois de convertida (TF-20 AC 7).
+ */
+export function pendingSessionLaps(rows: readonly object[]): ConvertedSession {
+  return convertSessionLaps(rows as LegacyLapRow[]);
+}
+
+/** O traçado sem janela que a v5b ainda não converteu, pela linha de `track_layouts`. */
+export function pendingLayout(row: object): ConvertedLayout {
+  return convertLayout((row as { samples_json?: string | null }).samples_json);
+}
+
+/** A referência sem série que a v5b ainda não converteu, pela linha de `track_references`. */
+export function pendingReference(row: object): ConvertedReference {
+  return convertReference((row as { samples_json?: string | null }).samples_json);
+}
+
+/**
+ * Até a v5c, `laps.samples_json` e `track_layouts.samples_json` existem e são NOT NULL:
+ * a linha nova leva um array vazio, e o bruto fica nas séries. Depois da v5c, não há
+ * coluna nem valor. A v5c só roda quando tudo converteu, então um item que falha para
+ * sempre na v5b deixa a coluna, e a gravação de sessões novas continua funcionando.
+ */
+export async function legacyJsonPlaceholders(
+  tx: SqlTx,
+  table: 'laps' | 'track_layouts'
+): Promise<{ columns: string[]; values: string[] }> {
+  const has = (await tx.getFirstAsync("SELECT 1 FROM pragma_table_info(?) WHERE name = 'samples_json'", table)) !== null;
+  return has ? { columns: ['samples_json'], values: ['[]'] } : { columns: [], values: [] };
 }
