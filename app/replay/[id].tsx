@@ -46,9 +46,11 @@ import Mapbox, {
   Terrain,
 } from '@rnmapbox/maps';
 import type { Feature, FeatureCollection, LineString, Point } from 'geojson';
-import { getLapsForSession, getSession } from '../../src/storage/db';
+import { appSqlConn, getSession } from '../../src/storage/db';
+import { loadLaps } from '../../src/storage/lapRepo';
 import { detectSpins, type SpinEvent } from '../../src/lib/spinDetector';
-import { buildReferenceLap, type GpsSample, type ImuSample } from '../../src/lib/geometry';
+import { buildReferenceLap } from '../../src/lib/geometry';
+import type { GpsFrame, ImuFrame } from '../../src/telemetry/frame';
 import { matchLapToReference } from '../../src/lib/analysis';
 import { detectCorners } from '../../src/lib/corners';
 import { analyzeCorners, fmtAzimuth, type CornerMetric } from '../../src/lib/cornerAnalysis';
@@ -134,7 +136,8 @@ export default function ReplayScreen() {
       try {
         const [session, lapsRaw] = await Promise.all([
           getSession(id),
-          getLapsForSession(id),
+          // A IMU vai junto: o trompo sai dela (detectSpins).
+          appSqlConn().then((conn) => loadLaps(conn, id, { imu: true })),
         ]);
         if (cancelled) return;
         if (!session) {
@@ -718,8 +721,8 @@ function fmtTime(ms: number): string {
 function buildScene(
   rawLapsIn: Array<{
     id: string;
-    samples: GpsSample[];
-    imuSamples?: ImuSample[];
+    gps: GpsFrame[];
+    imu?: ImuFrame[];
     durationMs: number;
     startedAt: number;
   }>
@@ -727,14 +730,14 @@ function buildScene(
   const rawLaps = rawLapsIn
     .map((l) => ({
       ...l,
-      samples: l.samples.filter(
+      gps: l.gps.filter(
         (s) =>
           Number.isFinite(s.lat) &&
           Number.isFinite(s.lng) &&
           Number.isFinite(s.t)
       ),
     }))
-    .filter((l) => l.samples.length >= 2);
+    .filter((l) => l.gps.length >= 2);
   if (rawLaps.length === 0) return null;
 
   const bestLap = rawLaps.reduce(
@@ -748,10 +751,10 @@ function buildScene(
   let cornerDefs: ReturnType<typeof detectCorners> = [];
   let matchedBest: ReturnType<typeof matchLapToReference> | null = null;
   try {
-    if (bestLap.samples.length >= 10) {
-      ref = buildReferenceLap(bestLap.samples, {
-        lat: bestLap.samples[0].lat,
-        lng: bestLap.samples[0].lng,
+    if (bestLap.gps.length >= 10) {
+      ref = buildReferenceLap(bestLap.gps, {
+        lat: bestLap.gps[0].lat,
+        lng: bestLap.gps[0].lng,
       });
       cornerDefs = detectCorners(ref);
       matchedBest = matchLapToReference(
@@ -760,8 +763,8 @@ function buildScene(
           sessionId: '',
           startedAt: bestLap.startedAt,
           durationMs: bestLap.durationMs,
-          gps: bestLap.samples,
-          samples: bestLap.samples,
+          gps: bestLap.gps,
+          samples: bestLap.gps,
         },
         ref
       );
@@ -776,9 +779,9 @@ function buildScene(
 
   let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity;
   const sceneLaps: SceneLap[] = rawLaps.map((lap, idx) => {
-    const step = Math.max(1, Math.floor(lap.samples.length / 400));
+    const step = Math.max(1, Math.floor(lap.gps.length / 400));
     const keptIdx: number[] = [];
-    const samples = lap.samples.filter((_, i) => {
+    const samples = lap.gps.filter((_, i) => {
       const keep = i % step === 0;
       if (keep) keptIdx.push(i);
       return keep;
@@ -808,8 +811,8 @@ function buildScene(
                 sessionId: '',
                 startedAt: lap.startedAt,
                 durationMs: lap.durationMs,
-                gps: lap.samples,
-                samples: lap.samples,
+                gps: lap.gps,
+                samples: lap.gps,
               },
               ref
             );
@@ -854,7 +857,7 @@ function buildScene(
           bestIdx = i;
         }
       }
-      const sample = bestLap.samples[bestIdx];
+      const sample = bestLap.gps[bestIdx];
       return sample ? [sample.lng, sample.lat] : null;
     };
     for (const m of pbMetrics) {
@@ -873,7 +876,7 @@ function buildScene(
 
   const spins: SceneData['spins'] = [];
   for (const lap of rawLaps) {
-    const events = detectSpins(lap.samples, lap.imuSamples);
+    const events = detectSpins(lap.gps, lap.imu);
     for (const ev of events) {
       spins.push({ event: ev, lngLat: [ev.lng, ev.lat] });
     }

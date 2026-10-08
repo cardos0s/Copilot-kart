@@ -1093,8 +1093,9 @@ substituído nomeia o que substitui.
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste estático: a tela chama `loadLaps(` com `imu: true` e não chama `cleanSamples(`.
-- [ ] Gate: `npm test && npm run typecheck`, baseline de 8 erros.
+- [x] Teste estático (`test/replayScreen.test.ts`): a tela chama `loadLaps(conn, id, { imu: true })` (no lugar do `getLapsForSession`, que fazia a mesma leitura) e não chama `cleanSamples(`; o filtro só de não finitos fica sobre `lap.gps`, e o trompo sai de `detectSpins(lap.gps, lap.imu)`. Nenhuma leitura de `.samples`/`.imuSamples` nem dos tipos antigos.
+- [x] Golden: o replay não tem pipeline no harness (só o `detectSpins`, coberto desde a T30); o `expected.json` não mudou.
+- [x] Gate: `npm test && npm run typecheck`, contagem registrada: 272 testes (269 + 3), baseline de 8 erros.
 
 **Tests**: unit
 **Gate**: build
