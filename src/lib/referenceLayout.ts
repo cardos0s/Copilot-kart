@@ -39,9 +39,9 @@ export function nextReferenceLayout(
     id: `layout_${best.id}`,
     trackId: reference.trackId,
     name: `${baseName} · ${ddmm(now)}`,
-    samples: [...best.samples],
+    samples: [...best.gps],
     durationMs: best.durationMs,
-    lengthM: polylineLength(best.samples),
+    lengthM: polylineLength(best.gps),
     recordedAt: now,
     sourceSessionId: sessionId,
     sourceLapId: best.id,
@@ -49,7 +49,7 @@ export function nextReferenceLayout(
   };
   // A janela e os frames da volta: o `promoteReferenceLayout` os copia para a série
   // do traçado novo (TF-19). A volta ainda em JSON (até a v5b) não tem janela.
-  if (best.window && best.gps) {
+  if (best.window) {
     layout.window = best.window;
     layout.gps = [...best.gps];
     // Transição (até a T46): `samples` é o mesmo array de `gps`.

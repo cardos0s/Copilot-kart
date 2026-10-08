@@ -6,11 +6,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import type { GpsSample } from '../src/lib/geometry';
+import type { GpsFrame } from '../src/telemetry/frame';
 import { speedColorRange } from '../src/lib/speedRange';
 
-function pts(speeds: number[]): GpsSample[] {
-  return speeds.map((speed, i) => ({ t: 1_790_000_000_000 + i * 100, lat: -14.86, lng: -40.84, speed, accuracy: 4 }));
+function pts(speeds: number[]): GpsFrame[] {
+  return speeds.map((speed, i) => ({ kind: 'gps', source: 'PHONE', fix: 'unknown', t: 1_790_000_000_000 + i * 100, lat: -14.86, lng: -40.84, speed, accuracy: 4 }));
 }
 
 test('speedColorRange: 100 velocidades de 1 a 100, fora de ordem, dão p5 = 5 e p95 = 95', () => {

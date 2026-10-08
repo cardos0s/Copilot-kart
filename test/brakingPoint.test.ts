@@ -6,21 +6,21 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import type { GpsSample } from '../src/lib/geometry';
+import type { GpsFrame } from '../src/telemetry/frame';
 import { hardestBraking } from '../src/lib/brakingPoint';
 
 const T0 = 1_790_000_000_000;
 
-function pt(t: number, speed: number, i: number): GpsSample {
-  return { t: T0 + t, lat: -14.86 + i * 1e-5, lng: -40.84 - i * 1e-5, speed, accuracy: 4 };
+function pt(t: number, speed: number, i: number): GpsFrame {
+  return { kind: 'gps', source: 'PHONE', fix: 'unknown', t: T0 + t, lat: -14.86 + i * 1e-5, lng: -40.84 - i * 1e-5, speed, accuracy: 4 };
 }
 
 /**
  * Reta a 25 m/s a cada 200 ms, uma frenagem de 25 para 10 m/s em 1 s (pontos
  * 5 → 6), retomada e uma frenagem mais leve, de 20 para 15 m/s em 1 s (5 m/s²).
  */
-function lapWithKnownBraking(): GpsSample[] {
-  const out: GpsSample[] = [];
+function lapWithKnownBraking(): GpsFrame[] {
+  const out: GpsFrame[] = [];
   let t = 0;
   const speeds = [25, 25, 25, 25, 25, 25];
   speeds.forEach((v) => {

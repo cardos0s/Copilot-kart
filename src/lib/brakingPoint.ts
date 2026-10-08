@@ -4,7 +4,7 @@
  * Maior desaceleração entre pontos consecutivos, só onde o intervalo entre
  * eles fica entre 0,05 s e 5 s. Abaixo de 3 m/s² não há marcador.
  */
-import type { GpsSample } from './geometry';
+import type { GpsFrame } from '../telemetry/frame';
 
 export type BrakingPoint = {
   /** Índice do ponto em que a desaceleração termina. */
@@ -15,7 +15,7 @@ export type BrakingPoint = {
   decelMs2: number;
 };
 
-export function hardestBraking(samples: GpsSample[]): BrakingPoint | null {
+export function hardestBraking(samples: GpsFrame[]): BrakingPoint | null {
   let brakeIdx = -1;
   let maxDecel = 0;
   for (let i = 1; i < samples.length; i++) {

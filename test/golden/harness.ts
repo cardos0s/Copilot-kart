@@ -35,8 +35,6 @@ import { minSpeedPerCorner } from '../../src/lib/cornerSpeed';
 import {
   buildReferenceLap,
   polylineLength,
-  type GpsSample,
-  type ImuSample,
   type ReferenceLap,
 } from '../../src/lib/geometry';
 import { compareLaps, type CompareResult, type LapTrace } from '../../src/lib/lapCompare';
@@ -259,8 +257,8 @@ function compareSummary(r: CompareResult) {
 // ---------------------------------------------------------------------------
 
 /**
- * Visão antiga de um frame de GPS: `t` absoluto (`t0Utc + t`) e só as chaves de antes.
- * Serve ao que vai para o `expected.json` e aos consumidores ainda não migrados na fase 5.
+ * Visão antiga de um frame de GPS, só para o resumo que vai para o `expected.json`:
+ * `t` absoluto (`t0Utc + t`) e só as chaves de antes. Os consumidores recebem os frames.
  */
 function legacyFrame(f: GpsFrame, t0Utc: number) {
   return {
@@ -274,11 +272,6 @@ function legacyFrame(f: GpsFrame, t0Utc: number) {
     altitudeAccuracy: f.altitudeAccuracy,
     synthetic: f.synthetic,
   };
-}
-
-/** Os frames que a análise lê (`analysisGps`, ≤ 30 m), na visão antiga. */
-function legacyGps(frames: GpsFrame[], t0Utc: number): GpsSample[] {
-  return analysisGps(frames).map((f) => ({ ...legacyFrame(f, t0Utc), kind: 'gps', source: f.source, fix: f.fix }));
 }
 
 /** IMU na visão antiga, para o `expected.json`: `t` absoluto e o acelerômetro em g, como o sensor entrega. */
@@ -588,13 +581,18 @@ function sessionRow(id: string, trackName: string, startedAt: number, layoutId: 
   };
 }
 
-function detectionSummary(samples: GpsSample[], line: StartLine | null) {
-  const d = detectLaps(samples, { line });
+/**
+ * A detecção sobre os frames de análise, no relógio da sessão. O `expected.json` guarda
+ * os cruzamentos e o início das voltas em epoch ms: o resumo soma o `t0`.
+ */
+function detectionSummary(frames: GpsFrame[], line: StartLine | null, t0: number) {
+  const d = detectLaps(frames, { line });
+  const at = <C extends { t: number }>(c: C): C => ({ ...c, t: t0 + c.t });
   return {
     movingStartIdx: d.movingStartIdx,
     startFinishLine: d.startFinishLine,
-    laps: d.laps,
-    openCross: d.openCross,
+    laps: d.laps.map((l) => ({ ...l, startCross: at(l.startCross), endCross: at(l.endCross), startedAt: t0 + l.startedAt })),
+    openCross: d.openCross && at(d.openCross),
   };
 }
 
@@ -618,9 +616,9 @@ export async function runGolden(): Promise<GoldenOutput> {
   const s1Frames = await captureGps(s1.batches, s1.t0);
   const s1ImuFrames = captureImu(s1.imuEvents, s1.t0);
   const s2Frames = await captureGps(s2.batches, s2.t0);
-  // Visão antiga, para a detecção (até a T33).
-  const s1Gps = legacyGps(s1Frames, s1.t0);
-  const s2Gps = legacyGps(s2Frames, s2.t0);
+  // Os frames que a análise lê (≤ 30 m), no relógio da sessão.
+  const s1Gps = analysisGps(s1Frames);
+  const s2Gps = analysisGps(s2Frames);
 
   // Voltas salvas: janelas + lapFrames + toLapRecord, como no "Encerrar".
   const s1Recorded = recordedLaps(s1Frames, s1ImuFrames, s1.t0, null);
@@ -678,13 +676,13 @@ export async function runGolden(): Promise<GoldenOutput> {
   };
 
   // Captura e detecção.
-  put('handleLocations', 's1', gpsSeries(analysisGps(s1Frames), s1.t0));
-  put('handleLocations', 's2', gpsSeries(analysisGps(s2Frames), s2.t0));
-  put('handleLocations', 's1HeadTimesMs', s1Gps.slice(0, 300).map((p) => p.t));
+  put('handleLocations', 's1', gpsSeries(s1Gps, s1.t0));
+  put('handleLocations', 's2', gpsSeries(s2Gps, s2.t0));
+  put('handleLocations', 's1HeadTimesMs', s1Gps.slice(0, 300).map((p) => s1.t0 + p.t));
   put('imuPairing', 's1', imuSeries(s1ImuFrames, s1.t0));
-  put('detectLaps', 's1', detectionSummary(s1Gps, null));
-  put('detectLaps', 's1Layout', detectionSummary(s1Gps, layoutLine));
-  put('detectLaps', 's2', detectionSummary(s2Gps, null));
+  put('detectLaps', 's1', detectionSummary(s1Gps, null, s1.t0));
+  put('detectLaps', 's1Layout', detectionSummary(s1Gps, layoutLine, s1.t0));
+  put('detectLaps', 's2', detectionSummary(s2Gps, null, s2.t0));
 
   for (const gs of sessions) {
     put('lapRecords', gs.name, gs.laps.map((l) => lapSummary(l, gs.t0)));

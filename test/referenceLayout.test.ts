@@ -6,7 +6,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { inheritedPb, nextReferenceLayout } from '../src/lib/referenceLayout';
-import { polylineLength, type GpsSample } from '../src/lib/geometry';
+import { polylineLength } from '../src/lib/geometry';
+import type { GpsFrame } from '../src/telemetry/frame';
 import type { LapRecord } from '../src/lib/analysis';
 import type { PbRecord, TrackLayout } from '../src/storage/db';
 
@@ -17,7 +18,10 @@ require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: {
 const { processSessionMilestones } =
   require('../src/lib/gamification') as typeof import('../src/lib/gamification');
 
-const pt = (t: number, lat: number, lng: number, synthetic?: true): GpsSample => ({
+const pt = (t: number, lat: number, lng: number, synthetic?: true): GpsFrame => ({
+  kind: 'gps',
+  source: 'PHONE',
+  fix: 'unknown',
   t,
   lat,
   lng,
@@ -41,18 +45,20 @@ const makeReference = (): TrackLayout => ({
   isDefault: true,
 });
 
+const bestFrames = [
+  pt(100_000, -12.9, -38.4, true),
+  pt(100_050, -12.90005, -38.40002),
+  pt(110_000, -12.9012, -38.4011),
+  pt(125_000, -12.9003, -38.4019),
+  pt(137_699, -12.9, -38.4, true),
+];
 const best: LapRecord = {
   id: 'sess_nova_lap_3',
   sessionId: 'sess_nova',
   startedAt: 100_000,
   durationMs: 37_699,
-  samples: [
-    pt(100_000, -12.9, -38.4, true),
-    pt(100_050, -12.90005, -38.40002),
-    pt(110_000, -12.9012, -38.4011),
-    pt(125_000, -12.9003, -38.4019),
-    pt(137_699, -12.9, -38.4, true),
-  ],
+  gps: bestFrames,
+  samples: bestFrames,
 };
 
 // 30/09 ao meio-dia, no fuso local: o nome usa a data local de `now`.
@@ -67,11 +73,11 @@ test('nextReferenceLayout: id novo, mesmo trackId, nome com a data, padrão, e a
   assert.equal(next.name, 'Layout principal · 30/09');
   assert.equal(next.isDefault, true);
 
-  assert.deepEqual(next.samples, best.samples);
+  assert.deepEqual(next.samples, best.gps);
   assert.equal(next.samples[0].synthetic, true);
   assert.equal(next.samples[next.samples.length - 1].synthetic, true);
   assert.equal(next.durationMs, 37_699);
-  assert.equal(next.lengthM, polylineLength(best.samples));
+  assert.equal(next.lengthM, polylineLength(best.gps));
   assert.equal(next.recordedAt, NOW);
   assert.equal(next.sourceSessionId, 'sess_nova');
   assert.equal(next.sourceLapId, 'sess_nova_lap_3');

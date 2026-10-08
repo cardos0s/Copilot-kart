@@ -9,7 +9,8 @@
  *
  * Puro: nada nativo, testado em Node.
  */
-import { GpsSample, LatLng, haversine, makeLocalProjector } from './geometry';
+import type { GpsFrame } from '../telemetry/frame';
+import { LatLng, haversine, makeLocalProjector } from './geometry';
 
 export type StartLine = { lat: number; lng: number; headingDeg: number };
 
@@ -28,7 +29,7 @@ function headingBetween(from: LatLng, to: LatLng): number {
 }
 
 /** Índice do primeiro ponto depois de `fromIdx` a 5 m ou mais dele, ou -1. */
-function firstPointAtChord(samples: GpsSample[], fromIdx: number): number {
+function firstPointAtChord(samples: GpsFrame[], fromIdx: number): number {
   const origin = samples[fromIdx];
   for (let i = fromIdx + 1; i < samples.length; i++) {
     if (haversine(origin, samples[i]) >= HEADING_CHORD_M) return i;
@@ -41,7 +42,7 @@ function firstPointAtChord(samples: GpsSample[], fromIdx: number): number {
  * o primeiro ponto a 5 m ou mais. Com menos de 5 pontos ou sem comprimento,
  * devolve `null` e a sessão é tratada como sem traçado.
  */
-export function lineFromLayout(samples: GpsSample[]): StartLine | null {
+export function lineFromLayout(samples: GpsFrame[]): StartLine | null {
   if (samples.length < 5) return null;
   const j = firstPointAtChord(samples, 0);
   if (j < 0) return null;
@@ -54,7 +55,7 @@ export function lineFromLayout(samples: GpsSample[]): StartLine | null {
  * com o rumo do movimento a partir dele. Se nenhum ponto seguinte se afasta
  * 5 m, usa o rumo do próprio GPS.
  */
-export function lineFromMotion(samples: GpsSample[], movingStartIdx: number): StartLine {
+export function lineFromMotion(samples: GpsFrame[], movingStartIdx: number): StartLine {
   const p = samples[movingStartIdx];
   const j = firstPointAtChord(samples, movingStartIdx);
   const headingDeg = j >= 0 ? headingBetween(p, samples[j]) : p.heading ?? 0;
@@ -71,8 +72,8 @@ export function lineFromMotion(samples: GpsSample[], movingStartIdx: number): St
  * instante, a posição e a velocidade.
  */
 export function crossing(
-  a: GpsSample,
-  b: GpsSample,
+  a: GpsFrame,
+  b: GpsFrame,
   line: StartLine,
   halfWidthM = 15
 ): (CrossPoint & { f: number }) | null {

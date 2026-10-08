@@ -2,7 +2,7 @@
  * Faixa da cor por velocidade do mapa da sessão: os percentis 5 e 95 das
  * velocidades da volta, para que um ponto fora da curva não achate a escala.
  */
-import type { GpsSample } from './geometry';
+import type { GpsFrame } from '../telemetry/frame';
 
 /** Percentil (clamp 0..1) sem mutar o array. */
 function percentile(values: number[], p: number) {
@@ -12,7 +12,7 @@ function percentile(values: number[], p: number) {
   return sorted[idx];
 }
 
-export function speedColorRange(samples: GpsSample[]): { minS: number; maxS: number } {
+export function speedColorRange(samples: GpsFrame[]): { minS: number; maxS: number } {
   const speeds = samples.map((p) => p.speed);
   return { minS: percentile(speeds, 0.05), maxS: percentile(speeds, 0.95) };
 }

@@ -975,9 +975,9 @@ entrada.
 - Skill: NONE
 
 **Done when**:
-- [ ] `test/lapDetector.test.ts`, `test/startLine.test.ts` e `test/referenceLayout.test.ts` passam com os mesmos valores.
-- [ ] Golden (contagem de curvas, silhueta, linha, frenagem B, faixa de cor) passa sem mudar o `expected.json`.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] `test/lapDetector.test.ts`, `test/startLine.test.ts` e `test/referenceLayout.test.ts` passam com os mesmos valores (fixtures em `GpsFrame`, e a melhor volta do `referenceLayout` com `gps`). `test/brakingPoint.test.ts` e `test/speedRange.test.ts` também trocam só o tipo. `nextReferenceLayout` copia os pontos de `best.gps`.
+- [x] Golden (contagem de curvas, silhueta, linha, frenagem B, faixa de cor) passa sem mudar o `expected.json`. A detecção do harness roda sobre os frames de análise no relógio da sessão; o resumo soma o t0 aos cruzamentos e ao início das voltas, que o `expected.json` guarda em epoch ms. O harness não tem mais adaptador de entrada: a visão antiga (`legacyFrame`/`legacyImu`) só monta o resumo que vai para o `expected.json`.
+- [x] Gate: `npm test`, contagem registrada: 251 testes (251 + 0).
 
 **Tests**: unit
 **Gate**: quick

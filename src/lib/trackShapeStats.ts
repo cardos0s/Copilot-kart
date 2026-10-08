@@ -8,9 +8,10 @@
  */
 
 import { detectCorners } from './corners';
-import { buildReferenceLap, GpsSample } from './geometry';
+import type { GpsFrame } from '../telemetry/frame';
+import { buildReferenceLap } from './geometry';
 
-export function countCorners(samples: GpsSample[]): number | null {
+export function countCorners(samples: GpsFrame[]): number | null {
   if (!samples || samples.length < 20) return null;
   try {
     const ref = buildReferenceLap(samples, { lat: samples[0].lat, lng: samples[0].lng });

@@ -29,7 +29,8 @@
  * 500ms sem custo perceptível.
  */
 
-import { GpsSample, haversine } from './geometry';
+import type { GpsFrame } from '../telemetry/frame';
+import { haversine } from './geometry';
 import { crossing, lineFromMotion, type CrossPoint, type StartLine } from './startLine';
 
 export type DetectLapsOptions = {
@@ -106,7 +107,7 @@ export type DetectLapsResult = {
  * onde ele foi confirmado.
  */
 function findRitmoStart(
-  samples: GpsSample[],
+  samples: GpsFrame[],
   opts: Required<DetectLapsOptions>
 ): number {
   const { ritmoSpeedMs, ritmoMinSustainedMs, ritmoConfirmSamples } = opts;
@@ -132,7 +133,7 @@ function findRitmoStart(
 }
 
 export function detectLaps(
-  samples: GpsSample[],
+  samples: GpsFrame[],
   options?: DetectLapsOptions & { line?: StartLine | null }
 ): DetectLapsResult {
   const { line: layoutLine, ...rest } = options ?? {};

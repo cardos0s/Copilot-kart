@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { XMLParser } from 'fast-xml-parser';
 
-import type { GpsSample } from '../src/lib/geometry';
+import type { GpsFrame } from '../src/telemetry/frame';
 import { detectLaps } from '../src/lib/lapDetector';
 import { crossing, lineFromLayout, type StartLine } from '../src/lib/startLine';
 import { generateLapSamples, generateTimedLaps, sampleTrack } from './helpers/syntheticTrack';
@@ -48,18 +48,18 @@ test('Caso 4: rejeita "volta" curta demais (jitter na linha)', () => {
   const baseLng = -40.8444;
   const offsetLat = 16 / 111_320; // 16 m em latitude
 
-  const samples: GpsSample[] = [];
+  const samples: GpsFrame[] = [];
   let t = Date.now();
   for (let i = 0; i < 30; i++) {
-    samples.push({ t, lat: baseLat, lng: baseLng, speed: 10, accuracy: 4 });
+    samples.push({ kind: 'gps', source: 'PHONE', fix: 'unknown', t, lat: baseLat, lng: baseLng, speed: 10, accuracy: 4 });
     t += 200;
   }
   for (let i = 0; i < 10; i++) {
-    samples.push({ t, lat: baseLat + offsetLat * (i / 10), lng: baseLng, speed: 10, accuracy: 4 });
+    samples.push({ kind: 'gps', source: 'PHONE', fix: 'unknown', t, lat: baseLat + offsetLat * (i / 10), lng: baseLng, speed: 10, accuracy: 4 });
     t += 200;
   }
   for (let i = 0; i < 10; i++) {
-    samples.push({ t, lat: baseLat + offsetLat * (1 - i / 10), lng: baseLng, speed: 10, accuracy: 4 });
+    samples.push({ kind: 'gps', source: 'PHONE', fix: 'unknown', t, lat: baseLat + offsetLat * (1 - i / 10), lng: baseLng, speed: 10, accuracy: 4 });
     t += 200;
   }
 
@@ -242,7 +242,10 @@ test('GPX de bancada: 3 voltas, e os tempos deixam de ser múltiplos de 100 ms',
   const xml = readFileSync(join(__dirname, '..', 'scripts', 'bench-leandro-melo-3laps.gpx'), 'utf8');
   const doc = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '' }).parse(xml);
   const pts: { lat: string; lon: string; time: string; speed?: string }[] = doc.gpx.trk.trkseg.trkpt;
-  const samples: GpsSample[] = pts.map((p) => ({
+  const samples: GpsFrame[] = pts.map((p) => ({
+    kind: 'gps',
+    source: 'PHONE',
+    fix: 'unknown',
     lat: parseFloat(p.lat),
     lng: parseFloat(p.lon),
     t: new Date(p.time).getTime(),

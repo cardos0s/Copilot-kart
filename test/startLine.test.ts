@@ -6,15 +6,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { makeLocalProjector, type GpsSample } from '../src/lib/geometry';
+import { makeLocalProjector } from '../src/lib/geometry';
+import type { GpsFrame } from '../src/telemetry/frame';
 import { crossing, lineFromLayout, lineFromMotion, type StartLine } from '../src/lib/startLine';
 
 const LINE: StartLine = { lat: -14.8619, lng: -40.8444, headingDeg: 0 };
 const proj = makeLocalProjector(LINE);
 
 /** Ponto a `x` m a leste e `y` m ao norte do ponto da linha. */
-function at(x: number, y: number, t: number, speed = 10): GpsSample {
-  return { ...proj.toLatLng({ x, y }), t, speed, accuracy: 4 };
+function at(x: number, y: number, t: number, speed = 10): GpsFrame {
+  return { kind: 'gps', source: 'PHONE', fix: 'unknown', ...proj.toLatLng({ x, y }), t, speed, accuracy: 4 };
 }
 
 /** Rumo inicial ortodrômico, em graus, independente do plano local. */

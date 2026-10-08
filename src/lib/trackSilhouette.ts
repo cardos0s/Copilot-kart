@@ -8,7 +8,8 @@
  * Só quem nunca foi gravado cai na forma genérica.
  */
 
-import { GpsSample, LatLng, makeLocalProjector } from './geometry';
+import type { GpsFrame } from '../telemetry/frame';
+import { LatLng, makeLocalProjector } from './geometry';
 
 /** Todas as silhuetas vivem neste viewBox. */
 export const SILHOUETTE_VIEWBOX = '0 0 50 48';
@@ -51,7 +52,7 @@ export function placeholderSilhouette(trackId: string): Silhouette {
  * proporção preservada. `pad` deixa respiro pra espessura do traço não
  * encostar na borda.
  */
-export function samplesToSilhouette(samples: GpsSample[] | LatLng[], pad = 4): Silhouette | null {
+export function samplesToSilhouette(samples: GpsFrame[] | LatLng[], pad = 4): Silhouette | null {
   if (!samples || samples.length < 8) return null;
 
   const projector = makeLocalProjector({ lat: samples[0].lat, lng: samples[0].lng });
