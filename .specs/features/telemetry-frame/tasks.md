@@ -1197,12 +1197,13 @@ substituído nomeia o que substitui.
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste: uma sessão com 3 voltas pós-AD-006 vira uma série única, 3 janelas por cruzamento, e `lapFrames` de cada janela devolve exatamente as amostras antigas da volta.
-- [ ] Teste: voltas pré-AD-006 com um ponto compartilhado na fronteira geram um frame só para ele, e as janelas por índice devolvem as amostras antigas.
-- [ ] Teste: uma volta com todos os `t` iguais (degenerada) mantém todos os pontos.
-- [ ] Teste: um JSON ilegível vai para `skipped`, e as outras voltas convertem.
-- [ ] Teste: um diário v4 pendente vira séries com os mesmos frames.
-- [ ] Gate: `npm test`, contagem registrada.
+- [x] Teste: uma sessão com 3 voltas pós-AD-006 vira uma série única, 3 janelas por cruzamento, e `lapFrames` de cada janela devolve exatamente as amostras antigas da volta. A IMU da janela é a antiga com o acelerômetro × `G`, e a leitura da fronteira repetida nas duas voltas vira um frame só.
+- [x] Teste: voltas pré-AD-006 com um ponto compartilhado na fronteira geram um frame só para ele, e as janelas por índice devolvem as amostras antigas. Mesmo `t` com posição diferente não é duplicata.
+- [x] Teste: uma volta com todos os `t` iguais (degenerada) mantém todos os pontos.
+- [x] Teste: um JSON ilegível vai para `skipped`, e as outras voltas convertem. A IMU ilegível vai para `imuSkipped`, e a volta converte sem IMU.
+- [x] Teste: um diário v4 pendente vira séries com os mesmos frames.
+- [x] `convertLayout` (t como foi gravado, `t0Utc` nulo) e `convertReference` (sem os pontos sintéticos, que nunca entram no bruto) testados no mesmo arquivo.
+- [x] Gate: `npm test`, contagem registrada: 290 testes (284 + 6).
 
 **Tests**: unit
 **Gate**: quick
