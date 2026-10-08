@@ -32,6 +32,7 @@ import {
   setDefaultLayout,
   TrackLayout,
 } from '../src/storage/db';
+import { layoutGps } from '../src/storage/layoutRepo';
 import { TrackSilhouette } from '../src/components/TrackSilhouette';
 import { placeholderSilhouette, SILHOUETTE_VIEWBOX } from '../src/lib/trackSilhouette';
 import { countCorners } from '../src/lib/trackShapeStats';
@@ -96,7 +97,7 @@ export default function TrackLayoutsPicker() {
     () =>
       (layouts ?? []).map((l) => ({
         ...l,
-        corners: countCorners(l.samples),
+        corners: countCorners(layoutGps(l)),
         stats: stats.get(l.id),
       })),
     [layouts, stats]
@@ -264,7 +265,7 @@ export default function TrackLayoutsPicker() {
             >
               <View style={s.rowShape}>
                 <TrackSilhouette
-                  samples={l.samples}
+                  samples={layoutGps(l)}
                   width={104}
                   height={78}
                   strokeColor={on ? colors.blue : colors.muted}

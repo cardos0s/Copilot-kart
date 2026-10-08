@@ -1167,8 +1167,8 @@ substituído nomeia o que substitui.
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste estático: nenhuma das cinco importa `GpsSample` nem lê `samples_json`.
-- [ ] Gate: `npm test && npm run typecheck`, baseline de 8 erros.
+- [x] Teste estático (`test/trackScreens.test.ts`): nenhuma das cinco importa `GpsSample` nem lê `samples_json` ou `.samples`. O seletor e a nova sessão contam curvas e desenham a silhueta por `layoutGps(…)` (no lugar de `l.samples` e `row.defaultLayout.samples`); `at-track`, `onboarding/track` e `onboarding/track-confirm` não leem pontos e não mudaram. As leituras de traçado seguem pelos wrappers do `db.ts`, que delegam ao `layoutRepo` desde a T23.
+- [x] Gate: `npm test && npm run typecheck`, contagem registrada: 284 testes (282 + 2), baseline de 8 erros. Fim da fase.
 
 **Tests**: unit
 **Gate**: build

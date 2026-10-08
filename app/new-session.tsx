@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TRACKS, TrackRef, distanceKm, findTrackById } from '../src/data/tracks';
 import { addCustomTrack, listCustomTracks } from '../src/storage/customTracks';
 import { listAllLayoutsGrouped, TrackLayout } from '../src/storage/db';
+import { layoutGps } from '../src/storage/layoutRepo';
 import { getProfile } from '../src/storage/profile';
 import { TrackSilhouette } from '../src/components/TrackSilhouette';
 import { colors, spacing, radius, typography } from '../src/theme';
@@ -247,9 +248,9 @@ export default function NewSession() {
               ]}
             >
               <View style={s.iconBox}>
-                {row.defaultLayout && row.defaultLayout.samples.length > 2 ? (
+                {row.defaultLayout && layoutGps(row.defaultLayout).length > 2 ? (
                   <TrackSilhouette
-                    samples={row.defaultLayout.samples}
+                    samples={layoutGps(row.defaultLayout)}
                     width={60}
                     height={44}
                     strokeColor={colors.primary}
