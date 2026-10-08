@@ -9,7 +9,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/telemetry-frame/design.md`
-**Status**: Approved (06/10) — T1–T47 done, aguardando o Verificador
+**Status**: Done — T1–T47 commitadas; Verificador PASS na rodada 1 (08/10)
 
 ---
 

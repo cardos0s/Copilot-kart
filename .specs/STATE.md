@@ -60,34 +60,25 @@
 
 ## Handoff
 
-- **Pausa em 06/10**: a Julia vai continuar numa sessão nova.
-- **Feito**:
-  - `gravacao-sem-perda` com PASS (24/09).
-  - `tempos-honestos` com PASS na rodada 5 (03/10).
-  - A UAT no aparelho das duas está pendente.
-- **Roteiro novo**: `docs/levantamento-loja.md` §7, revisto em 06/10.
-  - A v1 sai intercalada com o Telemetry Engine, a partir do documento de ideias da Julia: Modo Mobile, Modo Pro, `TelemetryFrame`, Corner Intelligence, coach com evidência e `.xrk`.
-  - O `.xrk` do MyChron é importado **direto no app**.
-  - Ordem: 3 `telemetry-frame` → 4 `conta-e-backup` → 5 `nuvem-segura` → 6 `corner-intelligence` → 7 `importar-xrk` → 8 `produto-limpo` → 9 `conformidade-e-ficha`.
-- **Spike do `.xrk`, fechado em 06/10**: o veredito está em `/Volumes/SSD/Dev/Pessoal/Copilot-kart-dados/xrk/spike/RELATORIO.md`.
-  - O leitor em TypeScript puro bate com a DLL da AiM, pelo teste do libxrk. Também bate com o CSV
-    do Race Studio (a diferença é só arredondamento) e com o `detectLaps` do app, a até 2 ms por
-    volta, quando a linha vem do `TRK` do arquivo.
-  - Sem JIT, que é o proxy do Hermes, ele leva de 0,2 a 1 s por arquivo de 3 a 9 MB no Mac.
-  - Corrigidos dois bugs: o `idn` vem embutido em `SRC`/`iSLV`, e as strings de piloto, carro e
-    sessão ficam num trailer no fim do arquivo.
-  - O que o relatório muda na `telemetry-frame`:
-    - canais com taxas e relógios próprios (1, 20, 25 e 50 Hz);
-    - pontos de GPS sem fix, que precisam de marca;
-    - hora do logger sem fuso;
-    - unidades a normalizar.
-  - Sem traçado, o `detectLaps` não fecha volta nos arquivos de carro, porque o ritmo começa no pit
-    lane. Na importação, a linha vem do arquivo ou do traçado.
-  - Ainda não há `.xrk` de kart: o MyChron 5 segue sem validação.
-- **Next step**: especificar a `telemetry-frame` (feature 3), usando o §"O que isto muda" do relatório do spike.
+- **08/10**: a `telemetry-frame` (feature 3) fechou, com o Verificador PASS na rodada 1.
+  - **Branch** `feat/telemetry-frame`, criada da `feat/tempos-honestos`. Nada foi enviado ao origin: o push é da Julia.
+  - **Resultado**: 302 testes (eram 149) e typecheck com os mesmos 8 erros de baseline. O golden `test/golden/expected.json` não mudou desde `21d1c16`. O sensor matou 22 de 22 mutantes. O relatório está em `.specs/features/telemetry-frame/validation.md`.
+  - **Decisões da Julia durante a execução**, registradas na spec:
+    - gravação com menos de 30 pontos de GPS (inclusive nenhum) é descartada com o bruto;
+    - TF-16 é medido em tempo de CPU;
+    - na regra de "mesmos números", tempo até 0,001 ms e os demais reais até max(1e-9, 1e-5·|valor|).
+  - **Lacunas de precisão da spec, não bloqueantes** (lições candidatas L-009 a L-014):
+    - TF-04 com timestamp ausente;
+    - o selo ignora fixes acima de 30 m dentro da volta;
+    - TF-10 medido no payload, e não no arquivo SQLite;
+    - o selo não é renderizado em teste;
+    - o JSON legado do golden é reconstruído;
+    - o canal de freio não é lido de volta numa unidade do catálogo.
 - **Pendências**:
-  - O origin já tem tudo até `8ed370d`, conferido em 06/10.
-  - A GoPro dela é uma HERO7: falta confirmar se é a Black (com GPS) mandando um MP4.
+  - UAT no aparelho das features 1, 2 e 3. Na 3, conferir a migração v5 num banco real com histórico, o selo na tela da sessão e se o descarte e o abandono não deixam bruto órfão.
+  - Push das branches `feat/tempos-honestos` e `feat/telemetry-frame`, que fica com a Julia.
+  - O bug dos desafios diários "Sub-50/Sub-60", que nunca concluem, virou tarefa separada.
+  - Os `.xrk` do Ricardo Haag (MyChron 5/6, Velopark), prometidos para 07/10, são os primeiros arquivos de kart reais. Rodar o leitor do spike neles e conferir o canal de EGT.
+- **Next step**: a feature 4, `conta-e-backup`, que sobe os blocos de `telemetry_blocks` como estão (AD-007).
 - **Blockers**: nenhum.
 - **Uncommitted files**: `CockPit-Guia-do-Testador.pdf`.
-- **Branch**: `feat/tempos-honestos`.
