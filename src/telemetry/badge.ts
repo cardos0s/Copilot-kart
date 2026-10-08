@@ -55,8 +55,8 @@ export function badgeText(badge: SessionBadge): string {
 
 /**
  * A fonte do selo, lida dos frames de GPS da sessão: cada frame leva a fonte da série.
- * A volta ainda em JSON (até a v5b) não tem fonte nos pontos e é `PHONE`, porque toda
- * sessão gravada até aqui é do celular. Uma fonte sem rótulo (`ALFANO`, `GOPRO`) dá
+ * Sem nenhum frame, é `PHONE`, porque toda sessão gravada até aqui é do celular (a
+ * convertida do formato antigo também). Uma fonte sem rótulo (`ALFANO`, `GOPRO`) dá
  * `null`, e a tela não mostra selo em vez de inventar um.
  */
 export function badgeSource(gps: GpsFrame[]): BadgeSource | null {

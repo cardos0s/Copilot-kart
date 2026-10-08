@@ -36,7 +36,12 @@ const makeReference = (): TrackLayout => ({
   id: 'layout_rec_antigo',
   trackId: 'kartodromo-x',
   name: 'Layout principal',
-  samples: [pt(1_000, -12.9, -38.4, true), pt(1_100, -12.9001, -38.4), pt(39_000, -12.9, -38.4, true)],
+  window: {
+    kind: 'cross',
+    start: { t: 1_000, lat: -12.9, lng: -38.4, speed: 15, accuracy: 3 },
+    end: { t: 39_000, lat: -12.9, lng: -38.4, speed: 15, accuracy: 3 },
+  },
+  gps: [pt(1_000, -12.9, -38.4, true), pt(1_100, -12.9001, -38.4), pt(39_000, -12.9, -38.4, true)],
   durationMs: 38_000,
   lengthM: 820,
   recordedAt: 1_700_000_000_000,
@@ -57,8 +62,12 @@ const best: LapRecord = {
   sessionId: 'sess_nova',
   startedAt: 100_000,
   durationMs: 37_699,
+  window: {
+    kind: 'cross',
+    start: { t: 100_000, lat: -12.9, lng: -38.4, speed: 15, accuracy: 3 },
+    end: { t: 137_699, lat: -12.9, lng: -38.4, speed: 15, accuracy: 3 },
+  },
   gps: bestFrames,
-  samples: bestFrames,
 };
 
 // 30/09 ao meio-dia, no fuso local: o nome usa a data local de `now`.
@@ -73,9 +82,9 @@ test('nextReferenceLayout: id novo, mesmo trackId, nome com a data, padrão, e a
   assert.equal(next.name, 'Layout principal · 30/09');
   assert.equal(next.isDefault, true);
 
-  assert.deepEqual(next.samples, best.gps);
-  assert.equal(next.samples[0].synthetic, true);
-  assert.equal(next.samples[next.samples.length - 1].synthetic, true);
+  assert.deepEqual(next.gps, best.gps);
+  assert.equal(next.gps[0].synthetic, true);
+  assert.equal(next.gps[next.gps.length - 1].synthetic, true);
   assert.equal(next.durationMs, 37_699);
   assert.equal(next.lengthM, polylineLength(best.gps));
   assert.equal(next.recordedAt, NOW);
@@ -97,7 +106,7 @@ test('nextReferenceLayout: o traçado anterior não é alterado', () => {
   assert.deepEqual(reference, snapshot);
 
   // Mexer no traçado novo não alcança o anterior.
-  next.samples.push(pt(200_000, 0, 0));
+  next.gps.push(pt(200_000, 0, 0));
   assert.deepEqual(reference, snapshot);
 });
 

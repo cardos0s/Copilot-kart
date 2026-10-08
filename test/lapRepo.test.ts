@@ -66,9 +66,10 @@ test('loadLaps (sql.js): cada volta lida tem as fronteiras geradas nos cruzament
     assert.ok(inner.length > 300, `volta ${i + 1}: ${inner.length} frames internos`);
     assert.deepEqual(lap.gps, [boundary(start), ...inner, boundary(end)]);
     assert.deepEqual(lap.imu, imu.filter((f) => f.t >= start.t && f.t <= end.t));
-    // Transição (até a T46): as propriedades antigas são os mesmos arrays.
-    assert.equal(lap.samples, lap.gps);
-    assert.equal(lap.imuSamples, lap.imu);
+    // Migrado na T46: as propriedades de transição (`samples`/`imuSamples`, o mesmo array
+    // de `gps`/`imu`) saíram do `LapRecord`; a volta lida não as tem mais.
+    assert.equal('samples' in lap, false);
+    assert.equal('imuSamples' in lap, false);
   });
 });
 
@@ -84,7 +85,7 @@ test('loadLaps (sql.js): sem imu: true, nenhum bloco de IMU é lido nem decodifi
   assert.ok(blockReadsOf(without.queries, s.gpsSeriesId).length > 0);
   for (const lap of laps) {
     assert.equal(lap.imu, undefined);
-    assert.equal(lap.imuSamples, undefined);
+    assert.equal('imuSamples' in lap, false); // migrado na T46: era `lap.imuSamples === undefined`
     assert.ok(lap.gps!.length > 300);
   }
 

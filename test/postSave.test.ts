@@ -17,9 +17,9 @@ const SESSION = {
 };
 
 const LAPS: LapRecord[] = [
-  { id: 'session_rec_1_lap_1', sessionId: 'session_rec_1', gps: [], samples: [], startedAt: 0, durationMs: 56_000 },
-  { id: 'session_rec_1_lap_2', sessionId: 'session_rec_1', gps: [], samples: [], startedAt: 56_000, durationMs: 54_321 },
-  { id: 'session_rec_1_lap_3', sessionId: 'session_rec_1', gps: [], samples: [], startedAt: 110_321, durationMs: 55_000 },
+  { id: 'session_rec_1_lap_1', sessionId: 'session_rec_1', gps: [], startedAt: 0, durationMs: 56_000 },
+  { id: 'session_rec_1_lap_2', sessionId: 'session_rec_1', gps: [], startedAt: 56_000, durationMs: 54_321 },
+  { id: 'session_rec_1_lap_3', sessionId: 'session_rec_1', gps: [], startedAt: 110_321, durationMs: 55_000 },
 ];
 
 type Call = { name: string; args: unknown[] };
@@ -172,7 +172,7 @@ function lapAt(id: string, durationMs: number, kmh: number, accuracy: number, n 
     speed: kmh / 3.6,
     accuracy,
   }));
-  return { id, sessionId: 'session_rec_1', gps: samples, samples, startedAt: 0, durationMs };
+  return { id, sessionId: 'session_rec_1', gps: samples, startedAt: 0, durationMs };
 }
 
 test('runPostSaveEffects: volta sem nenhum ponto de até 10 m manda peakKmh: null ao coach', async () => {
@@ -188,7 +188,7 @@ test('runPostSaveEffects: volta sem nenhum ponto de até 10 m manda peakKmh: nul
 test('runPostSaveEffects: um ponto isolado a 150 km/h não passa para o coach (pico < 81 km/h)', async () => {
   const { deps, called } = fakeDeps();
   const best = lapAt('session_rec_1_lap_1', 54_000, 80, 4);
-  best.samples[250] = { ...best.samples[250], speed: 150 / 3.6 };
+  best.gps[250] = { ...best.gps[250], speed: 150 / 3.6 };
   const { background } = await runPostSaveEffects(SESSION, [best], { fromRecovery: false }, deps);
   await background;
   const insight = called('requestQuickInsight')[0].args[0] as any;

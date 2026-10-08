@@ -8,10 +8,17 @@ import assert from 'node:assert/strict';
 
 import { loadLaps } from '../src/storage/lapRepo';
 import { getLayout, getTrackReference, saveLayout } from '../src/storage/layoutRepo';
-import { migrateV5Cleanup, migrateV5Data, migrateV5Schema, migrationExecutorFrom } from '../src/storage/migrations';
+import {
+  migrateBaseSchema,
+  migrateV4,
+  migrateV5Cleanup,
+  migrateV5Data,
+  migrateV5Schema,
+  migrationExecutorFrom,
+} from '../src/storage/migrations';
 import type { GpsFrame } from '../src/telemetry/frame';
 import { imuFrames, sessionOnDb, trackFrames } from './helpers/sessionOnDb';
-import type { SqlJsConn } from './helpers/sqlJsConn';
+import { openSqlJsConn, type SqlJsConn } from './helpers/sqlJsConn';
 import { insertOldLayout, insertOldSession, oldLaps, oldPoint, openV4Database, type OldLap } from './helpers/v4Database';
 import { rowsOf } from './helpers/v5Database';
 
@@ -86,7 +93,7 @@ test('v5c (sql.js, TF-20 AC 8): com qualquer item ainda sem conversão, não rem
     assert.ok(laps.length >= 2 && laps.every((l) => l.window?.kind === 'cross'), label);
     const best = laps[0];
     await saveLayout(conn, {
-      id: 'layout_new', trackId: 'cwb', name: 'Novo', samples: best.gps, gps: best.gps, window: best.window,
+      id: 'layout_new', trackId: 'cwb', name: 'Novo', gps: best.gps, window: best.window!,
       durationMs: best.durationMs, lengthM: 1, recordedAt: T0, isDefault: false,
     });
     assert.deepEqual((await getLayout(conn, 'layout_new'))!.gps, best.gps, label);
@@ -124,7 +131,7 @@ test('v5c (sql.js, TF-18 AC 10): com tudo convertido, as colunas e a tabela anti
   const fresh = await loadLaps(conn, s.sessionId);
   assert.deepEqual(fresh.map((l) => l.durationMs), s.windows.map((w) => w.durationMs));
   await saveLayout(conn, {
-    id: 'layout_after', trackId: 'cwb', name: 'Depois', samples: fresh[0].gps, gps: fresh[0].gps, window: fresh[0].window,
+    id: 'layout_after', trackId: 'cwb', name: 'Depois', gps: fresh[0].gps, window: fresh[0].window!,
     durationMs: fresh[0].durationMs, lengthM: 1, recordedAt: T0, isDefault: false,
   });
   assert.deepEqual((await getLayout(conn, 'layout_after'))!.gps, fresh[0].gps);
@@ -132,4 +139,25 @@ test('v5c (sql.js, TF-18 AC 10): com tudo convertido, as colunas e a tabela anti
   // Rodar de novo (e a v5b depois da v5c) não faz nada.
   assert.equal(await migrateV5Cleanup(migrationExecutorFrom(conn)), false);
   assert.deepEqual(await migrateV5Data(conn, noWarn), { sessions: 0, layouts: 0, references: 0, journals: 0, skippedLaps: 0, failed: [] });
+});
+
+test('banco novo (T46, TF-13): o schema base, a v4 e a v5 terminam em user_version = 5 sem as colunas de JSON nem recording_chunks, e reabrir não as recria', async () => {
+  const conn = await openSqlJsConn();
+  const open = async () => {
+    await migrateBaseSchema(conn);
+    await migrateV4(migrationExecutorFrom(conn));
+    await migrateV5Schema(migrationExecutorFrom(conn));
+    await migrateV5Data(conn, noWarn);
+    return migrateV5Cleanup(migrationExecutorFrom(conn));
+  };
+
+  assert.equal(await open(), true);
+  assert.deepEqual(legacyColumns(conn), { laps: [], track_layouts: [], track_references: [], recording_chunks: 0 });
+  assert.equal(userVersion(conn), 5);
+
+  assert.equal(await open(), false);
+  assert.deepEqual(legacyColumns(conn), { laps: [], track_layouts: [], track_references: [], recording_chunks: 0 });
+  const gps = trackFrames(3);
+  const s = await sessionOnDb(conn, { recordingId: 'rec_fresh', gps, imu: imuFrames(gps), t0Utc: T0 });
+  assert.deepEqual((await loadLaps(conn, s.sessionId)).map((l) => l.durationMs), s.windows.map((w) => w.durationMs));
 });

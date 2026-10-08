@@ -67,7 +67,7 @@ export function deltaReferenceLap(
   all: AnalysisGpsFrame[],
   line: StartLine | null,
   lapIdx: number
-): { samples: GpsFrame[]; durationMs: number } | null {
+): { gps: GpsFrame[]; durationMs: number } | null {
   const lap = sliceLaps(all, [], line)[lapIdx];
-  return lap ? { samples: lap.samples, durationMs: lap.durationMs } : null;
+  return lap ? { gps: lap.gps, durationMs: lap.durationMs } : null;
 }

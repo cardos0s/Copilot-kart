@@ -10,7 +10,6 @@
  * Sobre um `SqlTx`: no aparelho é o expo-sqlite (`db.ts`), nos testes o sql.js.
  */
 import type { LapRecord } from '../lib/analysis';
-import type { GpsSample, ImuSample } from '../lib/geometry';
 import type { BoundaryCross, GpsFrame, GpsSeries, ImuSeries, LapWindow, Owner, SeriesKind, SeriesMeta } from '../telemetry/frame';
 import { lapFrames } from '../telemetry/laps';
 import { pendingSessionLaps } from '../telemetry/legacy';
@@ -110,8 +109,7 @@ function coveringRange(windows: LapWindow[]): { tFrom?: number; tTo?: number } |
 }
 
 /**
- * As voltas da sessão, em ordem de início, com `gps`/`imu`/`window`. Transição (até a
- * T46): `samples`/`imuSamples` apontam para os mesmos arrays de `gps`/`imu`.
+ * As voltas da sessão, em ordem de início, com `gps`/`imu`/`window`.
  */
 export async function loadLaps(conn: SqlTx, sessionId: string, opts: LoadLapsOptions = {}): Promise<LapRecord[]> {
   const imu = opts.imu === true;
@@ -154,12 +152,8 @@ export async function loadLaps(conn: SqlTx, sessionId: string, opts: LoadLapsOpt
       durationMs: r.duration_ms,
       window,
       gps: frames.gps,
-      samples: frames.gps as GpsSample[],
     };
-    if (imu && frames.imu.length > 0) {
-      lap.imu = frames.imu;
-      lap.imuSamples = frames.imu as unknown as ImuSample[];
-    }
+    if (imu && frames.imu.length > 0) lap.imu = frames.imu;
     return lap;
   });
 }

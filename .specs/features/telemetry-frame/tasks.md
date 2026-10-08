@@ -1309,9 +1309,11 @@ Os dois são comparados com o mesmo `expected.json`.
 - Skill: NONE
 
 **Done when**:
-- [ ] Teste estático: nenhum arquivo de `src/` e `app/` contém `GpsSample`, `ImuSample`, `LocalSample`, `samples_json` ou `imu_samples_json`. A única exceção é `src/storage/migrations.ts` e `src/telemetry/legacy.ts`, que leem o formato antigo.
-- [ ] Teste estático: nenhum acesso a `.imuSamples` nem a `lap.samples` em `src/` e `app/`.
-- [ ] Gate: `npm test && npm run typecheck`, baseline de 8 erros.
+- [x] Teste estático: nenhum arquivo de `src/` e `app/` contém `GpsSample`, `ImuSample`, `LocalSample`, `samples_json` ou `imu_samples_json`. A única exceção é `src/storage/migrations.ts` e `src/telemetry/legacy.ts`, que leem o formato antigo. Para isso, o schema base e as migrações v1 → v3 saíram do `db.ts` para `migrateBaseSchema` (`migrations.ts`), sem mudar o SQL; um teste novo confere que um banco novo passa por base, v4 e v5 e termina em `user_version = 5` sem as colunas de JSON.
+- [x] Teste estático: nenhum acesso a `.imuSamples` nem a `.samples` em `src/` e `app/`, sem exceção. Os dois campos `samples` que não eram volta mudaram de nome: o buffer da captura (`buf.samples` → `buf.gps`, com a mesma guarda de reload do `buf.imu`) e o segmento de cor (`ColoredSegment.samples` → `frames`). O `sectors.ts` desestrutura o resultado do `repairDegenerateTimestamps`, que mantém o campo `samples`. Outro teste estático confere que `LapRecord`, `SlicedLap` (base do `RecordedLap`), `TrackLayout` e `TrackReference` não declaram `samples`/`imuSamples`.
+- [x] Tipos: `LapRecord`, `RecordedLap` (`window` obrigatório; o recorte em memória do ao vivo é `SlicedLap`), `TrackLayout` (`window` e `gps` obrigatórios) e `TrackReference` (`gps` obrigatório) sem as propriedades de transição. `layoutGps` fica como acessor de `layout.gps` (as telas e os testes estáticos delas a usam), sem o `?? samples`. `saveLap` (JSON) saiu do `db.ts`, e `insights.ts` lê `gps`.
+- [x] Testes migrados, com nota onde a asserção era sobre a transição: o alias `samples === gps` (`lapRepo`, `layoutRepo`) vira "a propriedade não existe"; o `layoutGps` com JSON (`trackComponents`); os regex das telas que citavam o alias (`sessionScreen`, `trackMapScreen`, `lapCompareScreen`, `trackComponents`) e a assinatura `GpsSample[]` do `livePoll` (`liveLapClock`). O resto é troca de nome (`samples` → `gps`, `imuSamples` → `imu`, `GpsSample` → `GpsFrame`).
+- [x] Gate: `npm test && npm run typecheck`, contagem registrada: 302 testes (298 + 3 estáticos + 1 do banco novo), baseline de 8 erros.
 
 **Tests**: unit
 **Gate**: build

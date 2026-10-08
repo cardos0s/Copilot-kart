@@ -20,7 +20,7 @@ const D = 37_699;
 
 function layoutLine(): StartLine {
   const { samples } = generateTimedLaps({ lapDurationMs: D, sampleRateHz: 10, laps: 2, warmupS: 3 });
-  const line = lineFromLayout(sliceLaps(samples, [])[0].samples);
+  const line = lineFromLayout(sliceLaps(samples, [])[0].gps);
   assert.ok(line);
   return line;
 }
@@ -97,8 +97,8 @@ test('deltaReferenceLap: a referência do delta começa e termina em pontos synt
   for (const [i, lap] of full.laps.entries()) {
     const ref = deltaReferenceLap(samples, line, i);
     assert.ok(ref);
-    const first = ref.samples[0];
-    const last = ref.samples[ref.samples.length - 1];
+    const first = ref.gps[0];
+    const last = ref.gps[ref.gps.length - 1];
     assert.equal(first.synthetic, true);
     assert.equal(last.synthetic, true);
     assert.equal(first.t, lap.startCross.t);
@@ -176,7 +176,8 @@ test('Depois de um box de 200 s passando pela linha, openCross é o cruzamento d
 
 test('useLapRecorder: currentLapSamples (setores ao vivo) usa openCross, e não o endCross da última volta fechada', () => {
   const src = POLL();
-  assert.ok(/function currentLapSamples\(\s*all: GpsSample\[\],\s*openCross: OpenCross \| null\s*\)/.test(src));
+  // Migrado na T46: o tipo `GpsSample` saiu; a mesma assinatura agora é sobre `GpsFrame`.
+  assert.ok(/function currentLapSamples\(\s*all: GpsFrame\[\],\s*openCross: OpenCross \| null\s*\)/.test(src));
   assert.ok(/currentLapSamples\(all,\s*detection\.openCross\)/.test(src), 'o poll passa detection.openCross');
   assert.equal(/\.endCross\b/.test(src), false, 'o poll não abre a volta pelo endCross');
   assert.equal(/\.endCross\b/.test(HOOK()), false, 'o hook não abre a volta pelo endCross');
@@ -206,7 +207,7 @@ function runPolls(samples: AnalysisGpsFrame[], line: StartLine) {
     if (bestIdx >= 0 && bestIdx !== loadedIdx) {
       const ref = deltaReferenceLap(all, line, bestIdx);
       assert.ok(ref);
-      tracker.setReference(ref.samples, ref.durationMs);
+      tracker.setReference(ref.gps, ref.durationMs);
       loadedIdx = bestIdx;
     }
 

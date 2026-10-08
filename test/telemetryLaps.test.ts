@@ -61,8 +61,8 @@ test('sliceLapWindows: com fixes de 45 m, dá as mesmas voltas e cruzamentos que
   assert.ok(expected.length >= 3);
   assert.equal(windows.length, expected.length);
   windows.forEach((w, i) => {
-    const first = expected[i].samples[0];
-    const last = expected[i].samples[expected[i].samples.length - 1];
+    const first = expected[i].gps[0];
+    const last = expected[i].gps[expected[i].gps.length - 1];
     assert.deepEqual(w.window.start, { t: first.t, lat: first.lat, lng: first.lng, speed: first.speed, accuracy: first.accuracy });
     assert.deepEqual(w.window.end, { t: last.t, lat: last.lat, lng: last.lng, speed: last.speed, accuracy: last.accuracy });
     assert.equal(w.durationMs, expected[i].durationMs);
@@ -71,7 +71,7 @@ test('sliceLapWindows: com fixes de 45 m, dá as mesmas voltas e cruzamentos que
 
   // Sem o corte, a mesma sessão daria outros cruzamentos: o teste distingue.
   const unfiltered = sliceLaps(frames.map((f) => ({ ...f, accuracy: f.accuracy ?? 999 })), []);
-  assert.notDeepEqual(unfiltered.map((l) => l.samples[0].t), expected.map((l) => l.samples[0].t));
+  assert.notDeepEqual(unfiltered.map((l) => l.gps[0].t), expected.map((l) => l.gps[0].t));
 });
 
 test('lapFrames: janela por cruzamento dá [fronteira, frames internos com ≤ 30 m, fronteira], com as fronteiras sintéticas e a precisão guardada', () => {
@@ -91,7 +91,7 @@ test('lapFrames: janela por cruzamento dá [fronteira, frames internos com ≤ 3
     // Os mesmos pontos que o sliceLaps salvava na volta.
     assert.deepEqual(
       gps.map((f) => [f.t, f.lat, f.lng, f.speed, f.accuracy, f.synthetic]),
-      expected[i].samples.map((s) => [s.t, s.lat, s.lng, s.speed, s.accuracy, s.synthetic]),
+      expected[i].gps.map((s) => [s.t, s.lat, s.lng, s.speed, s.accuracy, s.synthetic]),
     );
   });
 });

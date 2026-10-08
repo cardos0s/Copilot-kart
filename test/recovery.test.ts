@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { haversine, type GpsSample } from '../src/lib/geometry';
+import { haversine } from '../src/lib/geometry';
 import { detectLaps } from '../src/lib/lapDetector';
 import { lineFromLayout } from '../src/lib/startLine';
 import type { TrackLayout } from '../src/storage/db';
@@ -15,7 +15,7 @@ import { sliceLaps, type LayoutRepo } from '../src/recording/finishSession';
 import { RecordingJournal, type RecordingMetaInput } from '../src/recording/journal';
 import { discard, recover, summarize, type RecoveryDeps } from '../src/recording/recovery';
 import { sqlSessionRepo } from '../src/storage/sqlSessionRepo';
-import type { ImuFrame } from '../src/telemetry/frame';
+import type { GpsFrame, ImuFrame } from '../src/telemetry/frame';
 import { analysisGps } from '../src/telemetry/laps';
 import {
   asFrames,
@@ -159,8 +159,8 @@ test('recover (reconhecimento): cria o layout com o nome da meta a partir da mel
   assert.equal(layout.name, 'Traçado invertido');
   assert.equal(layout.trackId, 'track_1');
   assert.equal(layout.durationMs, best.durationMs);
-  const pts = (ps: GpsSample[]) => ps.map((p) => [p.t, p.lat, p.lng, p.speed, p.accuracy, p.synthetic]);
-  assert.deepEqual(pts(layout.samples), pts(best.samples));
+  const pts = (ps: GpsFrame[]) => ps.map((p) => [p.t, p.lat, p.lng, p.speed, p.accuracy, p.synthetic]);
+  assert.deepEqual(pts(layout.gps), pts(best.gps));
   assert.ok('layoutId' in r && r.layoutId === layout.id);
   assert.equal(store.active, null);
   // Nenhuma sessão é dona das séries do reconhecimento: o diário sai inteiro.
@@ -198,7 +198,7 @@ test('discard: apaga o diário', async () => {
 });
 
 /** Grava pelo diário os pontos dados, em pedaços de 25, como `journalWith`. */
-async function journalFromSamples(meta: RecordingMetaInput, samples: GpsSample[]) {
+async function journalFromSamples(meta: RecordingMetaInput, samples: GpsFrame[]) {
   const store = await fakeJournalStore();
   const journal = new RecordingJournal(store, () => T0);
   const id = await journal.begin(meta);
@@ -251,7 +251,7 @@ test('recover: buraco de 200 s sem pontos no meio segue a regra do detectLaps e 
 /** Traçado como o app o salva: a melhor volta, com os pontos de fronteira (AD-006). */
 function layoutLine() {
   const { samples } = generateTimedLaps({ lapDurationMs: 37_699, sampleRateHz: 10, laps: 2, warmupS: 3, t0: T0 });
-  const line = lineFromLayout(sliceLaps(samples, [])[0].samples);
+  const line = lineFromLayout(sliceLaps(samples, [])[0].gps);
   assert.ok(line);
   return line;
 }
@@ -279,7 +279,7 @@ test('recover: diário com meta.line recupera as voltas do detectLaps com essa l
     assert.ok(Math.abs(l.durationMs - withLine[i].durationMs) <= 1, `volta ${i + 1}: ${l.durationMs} × ${withLine[i].durationMs}`);
     assert.ok(Math.abs(l.startedAt - withLine[i].startedAt) <= 1, `volta ${i + 1}: início ${l.startedAt} × ${withLine[i].startedAt}`);
     // A volta começa na linha do traçado, não na inferida (240 m dali).
-    assert.ok(haversine(l.samples[0], line) < 1, `volta ${i + 1} começa a ${haversine(l.samples[0], line)} m da linha`);
+    assert.ok(haversine(l.gps[0], line) < 1, `volta ${i + 1} começa a ${haversine(l.gps[0], line)} m da linha`);
   }
   // Sem a linha, o mesmo diário daria outras voltas: o teste distingue.
   assert.notEqual(detectLaps(samples).laps.length, withLine.length);
@@ -343,8 +343,8 @@ test('recover (sql.js): gravação interrompida depois de 4 blocos volta com tod
   assert.equal(db.store.active, null);
 
   // As voltas são as que os frames gravados fecham (o oráculo: detectLaps sobre eles).
-  const expected = detectLaps(saved as GpsSample[]).laps;
-  assert.ok(expected.length >= 2 && expected.length < detectLaps(frames as GpsSample[]).laps.length);
+  const expected = detectLaps(saved as GpsFrame[]).laps;
+  assert.ok(expected.length >= 2 && expected.length < detectLaps(frames as GpsFrame[]).laps.length);
   const laps = rowsOf<{ window_kind: string; start_t: number; end_t: number; duration_ms: number; started_at: number }>(
     db.conn,
     'SELECT window_kind, start_t, end_t, duration_ms, started_at FROM laps WHERE session_id = ? ORDER BY started_at',

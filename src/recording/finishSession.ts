@@ -6,29 +6,26 @@
  * sobre o SQLite em outro arquivo. Nada aqui importa módulo nativo.
  */
 import type { LapRecord } from '../lib/analysis';
-import { polylineLength, type GpsSample, type ImuSample } from '../lib/geometry';
+import { polylineLength } from '../lib/geometry';
 import { detectLaps } from '../lib/lapDetector';
 import type { CrossPoint, StartLine } from '../lib/startLine';
 import type { Session, SessionMode, TrackLayout } from '../storage/db';
 import type { GpsFrame, GpsSeries, ImuFrame, ImuSeries } from '../telemetry/frame';
 import { lapFrames, type AnalysisGpsFrame, type CrossWindow, type LapWindowRecord } from '../telemetry/laps';
 
-export type RecordedLap = {
-  samples: GpsSample[];
+/** Uma volta recortada dos frames em memória: os frames dela, a duração e o início. */
+export type SlicedLap = {
+  /** Os frames de GPS, com as fronteiras na linha (AD-006). */
+  gps: GpsFrame[];
   /** IMU recortada para a mesma janela de tempo da volta. Vazia se a IMU falhou. */
-  imuSamples: ImuSample[];
+  imu: ImuFrame[];
   durationMs: number;
   /** Início da volta, em epoch ms. */
   startedAt: number;
-  /**
-   * A janela sobre o bruto da sessão (AD-007) e os frames dela (`lapFrames`).
-   * Ausentes só no recorte antigo (`sliceLaps`), que a recuperação usa até a T21.
-   * Transição: `samples` e `imuSamples` apontam para os mesmos arrays de `gps` e `imu`.
-   */
-  window?: CrossWindow;
-  gps?: GpsFrame[];
-  imu?: ImuFrame[];
 };
+
+/** A volta do "Encerrar" e da recuperação: a janela sobre o bruto da sessão (AD-007) e os frames dela (`lapFrames`). */
+export type RecordedLap = SlicedLap & { window: CrossWindow };
 
 /**
  * As voltas detectadas como `RecordedLap`: a janela, os frames dela com as
@@ -46,11 +43,6 @@ export function recordedLaps(
       window: w.window,
       gps: frames.gps,
       imu: frames.imu,
-      // Transição (até a T46): a janela por cruzamento só tem frames com precisão
-      // (≤ 30 m e as fronteiras). O frame de IMU sem par não tem um dos sensores;
-      // o `spinDetector` passa a ler `imu` na T30.
-      samples: frames.gps as AnalysisGpsFrame[],
-      imuSamples: frames.imu as unknown as ImuSample[],
       durationMs: w.durationMs,
       startedAt: t0Utc + w.startT,
     };
@@ -74,18 +66,18 @@ function boundaryPoint(cross: CrossPoint, samples: AnalysisGpsFrame[], idx: numb
  * cruzamentos, endCross]`. A IMU é recortada por timestamp, não por índice
  * (50 Hz contra 10 Hz do GPS): entra tudo em [startCross.t, endCross.t].
  */
-export function sliceLaps(samples: AnalysisGpsFrame[], imu: ImuFrame[], line?: StartLine | null): RecordedLap[] {
+export function sliceLaps(samples: AnalysisGpsFrame[], imu: ImuFrame[], line?: StartLine | null): SlicedLap[] {
   return detectLaps(samples, { line }).laps.map((lap) => {
     const t0 = lap.startCross.t;
     const t1 = lap.endCross.t;
     const inner = samples.slice(lap.startIdx, lap.endIdx + 1).filter((s) => s.t > t0 && s.t < t1);
     return {
-      samples: [
+      gps: [
         boundaryPoint(lap.startCross, samples, lap.startIdx),
         ...inner,
         boundaryPoint(lap.endCross, samples, lap.endIdx),
       ],
-      imuSamples: imu.filter((s) => s.t >= t0 && s.t <= t1),
+      imu: imu.filter((s) => s.t >= t0 && s.t <= t1),
       durationMs: lap.durationMs,
       startedAt: lap.startedAt,
     };
@@ -106,17 +98,13 @@ export function toLapRecord(lap: RecordedLap, sessionId: string, index: number):
   const record: LapRecord = {
     id: `${sessionId}_lap_${index + 1}`,
     sessionId,
-    // Transição (até a T46): o recorte antigo (`sliceLaps`) não tem `gps`; os dois apontam para o mesmo array.
-    gps: lap.gps ?? lap.samples,
-    samples: lap.samples,
     startedAt: lap.startedAt,
     durationMs: lap.durationMs,
-    // IMU vazia (sensor falhou, app sem foreground) fica de fora.
-    imuSamples: lap.imuSamples.length > 0 ? lap.imuSamples : undefined,
+    window: lap.window,
+    gps: lap.gps,
   };
-  if (lap.window) record.window = lap.window;
-  const imu = lap.imu ?? lap.imuSamples;
-  if (imu.length > 0) record.imu = imu;
+  // IMU vazia (sensor falhou, app sem foreground) fica de fora.
+  if (lap.imu.length > 0) record.imu = lap.imu;
   return record;
 }
 
@@ -221,17 +209,14 @@ export async function saveReferenceLayout(
     trackId: input.trackId,
     name:
       input.layoutName?.trim() || (isFirst ? 'Layout principal' : `Layout ${existing.length + 1}`),
-    samples: best.samples,
+    // A janela e os frames da volta: o repositório copia os frames para a série do traçado (TF-19).
+    window: best.window,
+    gps: best.gps,
     durationMs: best.durationMs,
-    lengthM: polylineLength(best.samples),
+    lengthM: polylineLength(best.gps),
     recordedAt: input.recordedAt,
     isDefault: isFirst,
   };
-  // A janela e os frames da volta: o repositório copia os frames para a série do traçado (TF-19).
-  if (best.window && best.gps) {
-    layout.window = best.window;
-    layout.gps = best.gps;
-  }
   await repo.saveLayout(layout);
   return layout;
 }

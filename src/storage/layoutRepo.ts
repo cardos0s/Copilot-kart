@@ -16,7 +16,6 @@
  *
  * Sobre um `SqlConn`: no aparelho é o expo-sqlite (`db.ts`), nos testes o sql.js.
  */
-import type { GpsSample } from '../lib/geometry';
 import type { LayoutRepo } from '../recording/finishSession';
 import { encodeBlock } from '../telemetry/blockCodec';
 import type { GpsFrame, GpsSeries, LapWindow, Owner, SeriesMeta } from '../telemetry/frame';
@@ -41,20 +40,15 @@ export type TrackLayout = {
   id: string;
   trackId: string;
   name: string;
-  samples: GpsSample[];
   durationMs: number;
   lengthM: number;
   recordedAt: number;
   sourceSessionId?: string;
   sourceLapId?: string;
   isDefault: boolean;
-  /**
-   * A janela da volta de origem e os frames dela, com as fronteiras (AD-007).
-   * Ausentes no traçado ainda em JSON (até a v5b). Transição (até a T46): `samples`
-   * aponta para o mesmo array de `gps`.
-   */
-  window?: LapWindow;
-  gps?: GpsFrame[];
+  /** A janela da volta de origem e os frames dela, com as fronteiras (AD-007). */
+  window: LapWindow;
+  gps: GpsFrame[];
 };
 
 type LayoutRow = WindowRow & {
@@ -77,13 +71,9 @@ export function referenceOwner(trackId: string): Owner {
   return { kind: 'reference', id: trackId };
 }
 
-/**
- * Os frames de GPS de um traçado ou de uma referência, para quem desenha ou analisa.
- * Transição (até a T46): o traçado ainda em JSON (até a v5b) não tem `gps`, e os
- * pontos dele estão só em `samples`; com série, os dois são o mesmo array.
- */
-export function layoutGps(layout: { gps?: GpsFrame[]; samples: GpsFrame[] }): GpsFrame[] {
-  return layout.gps ?? layout.samples;
+/** Os frames de GPS de um traçado ou de uma referência, para quem desenha ou analisa. */
+export function layoutGps(layout: { gps: GpsFrame[] }): GpsFrame[] {
+  return layout.gps;
 }
 
 async function rowToLayout(conn: SqlTx, row: LayoutRow): Promise<TrackLayout> {
@@ -111,7 +101,7 @@ async function rowToLayout(conn: SqlTx, row: LayoutRow): Promise<TrackLayout> {
     window = conv.window;
     frames = lapFrames(window, gpsSeriesOf(layoutMeta(row.id), conv.gps)).gps;
   }
-  return { ...base, window, gps: frames, samples: frames as GpsSample[] };
+  return { ...base, window, gps: frames };
 }
 
 async function rowsToLayouts(conn: SqlTx, rows: LayoutRow[]): Promise<TrackLayout[]> {
@@ -306,7 +296,7 @@ async function rowToReference(conn: SqlTx, row: ReferenceRow): Promise<TrackRefe
   };
   const { series } = await readSeries(conn, referenceOwner(row.track_id), { kinds: ['gps'] });
   const frames = series.length > 0 ? gpsFramesOf(series[0] as GpsSeries) : pendingReference(row).gps;
-  return { ...base, gps: frames, samples: frames as GpsSample[] };
+  return { ...base, gps: frames };
 }
 
 export async function getTrackReference(conn: SqlTx, trackId: string): Promise<TrackReference | null> {

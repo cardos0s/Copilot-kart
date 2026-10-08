@@ -108,7 +108,7 @@ export default function TrackMapScreen() {
       lap.startedAt
     );
     const matched = matchLapToReference(
-      { ...lap, gps: lapSamples, samples: lapSamples },
+      { ...lap, gps: lapSamples },
       refLap
     );
 

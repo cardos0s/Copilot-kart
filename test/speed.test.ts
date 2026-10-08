@@ -16,7 +16,7 @@ function pt(i: number, speed: number, accuracy = 4): GpsFrame {
 }
 
 function lap(samples: GpsFrame[], id = 'l1'): LapRecord {
-  return { id, sessionId: 's1', gps: samples, samples, startedAt: samples[0]?.t ?? T0, durationMs: 50_000 };
+  return { id, sessionId: 's1', gps: samples, startedAt: samples[0]?.t ?? T0, durationMs: 50_000 };
 }
 
 /** ~500 pontos entre 79,5 e 80,5 km/h e um único ponto a 150 km/h. */

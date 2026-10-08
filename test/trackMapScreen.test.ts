@@ -55,7 +55,8 @@ test('mapa detalhado (T37): mantém o caminho de limpeza — cleanSamples + repa
   assert.ok(
     /const cleanedLap = cleanSamples\(lap\.gps, 10\);\s*const \{ samples: lapSamples \} = repairDegenerateTimestamps\(\s*cleanedLap,\s*lap\.durationMs,\s*lap\.startedAt\s*\);/.test(SRC),
   );
-  assert.ok(/matchLapToReference\(\s*\{ \.\.\.lap, gps: lapSamples, samples: lapSamples \},\s*refLap\s*\)/.test(SRC));
+  // Migrado na T46: a volta reparada não leva mais o alias `samples: lapSamples`.
+  assert.ok(/matchLapToReference\(\s*\{ \.\.\.lap, gps: lapSamples \},\s*refLap\s*\)/.test(SRC));
   // A régua dos setores é a do traçado como foi salvo (substitui `referenceFromLayout(layout.samples)`).
   assert.ok(SRC.includes('const sectorRef = referenceFromLayout(layoutGps(layout));'));
 });

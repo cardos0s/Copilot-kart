@@ -3,7 +3,6 @@
  * com o registro ativo e as séries como o aparelho guarda, mais a falha de
  * escrita injetável. As leituras auxiliares são síncronas (o sql.js é).
  */
-import type { GpsSample } from '../../src/lib/geometry';
 import type { ActiveRecording, JournalStore } from '../../src/recording/journal';
 import { recordingOwner } from '../../src/recording/journal';
 import { sqlJournalStore } from '../../src/storage/sqlJournalStore';
@@ -140,7 +139,7 @@ export function persistedImu(store: FakeJournalStore, recordingId: string): ImuF
  * Os pontos de um gerador de pista (tempo absoluto) como os frames que a captura
  * entregaria ao diário de uma sessão que começou em `t0Utc`.
  */
-export function asFrames(samples: GpsSample[], t0Utc: number): GpsFrame[] {
+export function asFrames(samples: GpsFrame[], t0Utc: number): GpsFrame[] {
   return samples.map((p) => {
     const f: GpsFrame = { kind: 'gps', source: 'PHONE', t: p.t - t0Utc, lat: p.lat, lng: p.lng, speed: p.speed, fix: 'unknown' };
     f.accuracy = p.accuracy;

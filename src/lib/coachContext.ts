@@ -78,8 +78,7 @@ export async function loadCoachContext(
         l.durationMs,
         l.startedAt
       );
-      // Transição (até a T46): `samples` é o mesmo array.
-      return { ...l, gps: samples, samples };
+      return { ...l, gps: samples };
     });
     const lap = preparedLaps.find((l) => l.id === lapId);
     if (!lap) return { kind: 'no-lap' };
@@ -96,9 +95,9 @@ export async function loadCoachContext(
 
     let refSamples = lap.gps;
     let refDurationMs = lap.durationMs;
-    if (layout && layout.samples.length >= 5) {
+    if (layout && layout.gps.length >= 5) {
       const { samples: repaired } = repairDegenerateTimestamps(
-        layout.samples,
+        layout.gps,
         layout.durationMs
       );
       refSamples = repaired;
@@ -127,7 +126,6 @@ export async function loadCoachContext(
         startedAt: 0,
         durationMs: refDurationMs,
         gps: refSamples,
-        samples: refSamples,
       },
       refLap
     );

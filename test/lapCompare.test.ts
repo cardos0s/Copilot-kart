@@ -21,13 +21,20 @@ const KEYS = ['s1Ms', 's2Ms', 's3Ms'] as const;
 /** Traçado como o app o salva: a melhor volta de uma sessão, com fronteiras na linha. */
 function layoutSamples(): GpsFrame[] {
   const { samples } = generateTimedLaps({ lapDurationMs: D, sampleRateHz: 10, laps: 2, warmupS: 3 });
-  return sliceLaps(samples, [])[0].samples;
+  return sliceLaps(samples, [])[0].gps;
 }
 
 /** Duas voltas salvas de uma sessão com traçado, começando andando (pontos de fronteira, AD-006). */
 function savedLaps(line: ReturnType<typeof lineFromLayout>, sampleRateHz = 10): LapRecord[] {
   const { samples } = generateTimedLaps({ lapDurationMs: D, sampleRateHz, startPhase: 0.5, laps: 3 });
-  const laps = sliceLaps(samples, [], line).map((l, i) => toLapRecord(l, 'ses', i));
+  // A volta como o `toLapRecord` a montava antes da T46 (o recorte em memória não tem janela).
+  const laps: LapRecord[] = sliceLaps(samples, [], line).map((l, i) => ({
+    id: `ses_lap_${i + 1}`,
+    sessionId: 'ses',
+    startedAt: l.startedAt,
+    durationMs: l.durationMs,
+    gps: l.gps,
+  }));
   assert.ok(laps.length >= 2, `${laps.length} voltas`);
   return laps.slice(0, 2);
 }
@@ -104,13 +111,13 @@ function withBadFixes(lap: LapRecord, fracs: number[], metros: number): LapRecor
     const p = trackAt(frac(k) + metros / TRACK_M);
     samples[k] = { ...samples[k], lat: p.lat, lng: p.lng, accuracy: 15 };
   }
-  return { ...lap, gps: samples, samples };
+  return { ...lap, gps: samples };
 }
 
 /** O traço do delta e o mapa da tela: pontos limpos por `cleanSamples(10)` e o reparo de timestamp. */
 function cleanedForTrace(lap: LapRecord): LapRecord {
   const { samples } = repairDegenerateTimestamps(cleanSamples(lap.gps, 10), lap.durationMs, lap.startedAt);
-  return { ...lap, gps: samples, samples };
+  return { ...lap, gps: samples };
 }
 
 /** S1/S2/S3 da comparação a no máximo 20 ms dos de `sectorSplits` sobre os pontos salvos. */

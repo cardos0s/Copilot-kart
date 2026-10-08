@@ -19,7 +19,7 @@ const BAD_M = 25;
 
 function layoutSamples(): GpsFrame[] {
   const { samples } = generateTimedLaps({ lapDurationMs: D, sampleRateHz: 10, laps: 2, warmupS: 3 });
-  return sliceLaps(samples, [])[0].samples;
+  return sliceLaps(samples, [])[0].gps;
 }
 
 /**
@@ -47,15 +47,15 @@ function lapsWithBadFixesAtTheLine() {
 test('cleanSamples(10) mantém os pontos de fronteira com precisão herdada de 25 m e tira os crus acima de 10 m', () => {
   const { laps } = lapsWithBadFixesAtTheLine();
   for (const [n, lap] of laps.entries()) {
-    const first = lap.samples[0];
-    const last = lap.samples[lap.samples.length - 1];
+    const first = lap.gps[0];
+    const last = lap.gps[lap.gps.length - 1];
     // Pré-condição: as fronteiras herdaram os 25 m, e há ponto cru ruim no meio.
     assert.equal(first.accuracy, BAD_M);
     assert.equal(last.accuracy, BAD_M);
-    const inner = lap.samples.slice(1, -1);
+    const inner = lap.gps.slice(1, -1);
     assert.ok(inner.some((s) => s.accuracy! > 10), `volta ${n + 1} sem ponto cru ruim`);
 
-    const cleaned = cleanSamples(lap.samples, 10);
+    const cleaned = cleanSamples(lap.gps, 10);
     assert.deepEqual(cleaned[0], first);
     assert.equal(cleaned[0].synthetic, true);
     assert.deepEqual(cleaned[cleaned.length - 1], last);
@@ -69,7 +69,7 @@ test('com a volta limpa, sectorSplits fecha s1 + s2 + s3 === durationMs (± 1 ms
   const ref = referenceFromLayout(layout);
   assert.ok(ref);
   for (const [n, lap] of laps.entries()) {
-    const { s1Ms, s2Ms, s3Ms } = sectorSplits(cleanSamples(lap.samples, 10), ref);
+    const { s1Ms, s2Ms, s3Ms } = sectorSplits(cleanSamples(lap.gps, 10), ref);
     assert.ok(s1Ms !== null && s2Ms !== null && s3Ms !== null, `volta ${n + 1}: ${s1Ms}/${s2Ms}/${s3Ms}`);
     assert.ok(
       Math.abs(s1Ms + s2Ms + s3Ms - lap.durationMs) <= 1,

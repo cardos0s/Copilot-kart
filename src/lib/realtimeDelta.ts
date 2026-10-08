@@ -106,7 +106,6 @@ export class DeltaTracker {
       id: '__ref__',
       sessionId: '__ref__',
       gps: samples,
-      samples,
       startedAt: samples[0].t,
       durationMs,
     };

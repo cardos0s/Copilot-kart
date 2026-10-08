@@ -296,7 +296,7 @@ function legacyImu(f: ImuFrame, t0Utc: number) {
 
 /** Os lotes pela tarefa de localização, no relógio da sessão que começa em `t0Utc`. */
 async function captureGps(batches: LocationBatch[], t0Utc: number): Promise<GpsFrame[]> {
-  const buf = { samples: [] as GpsFrame[] };
+  const buf = { gps: [] as GpsFrame[] };
   const clock = { trustsRaw: false, session: createSessionClock(t0Utc) };
   for (const b of batches) {
     await handleLocations(b.locations, {
@@ -308,7 +308,7 @@ async function captureGps(batches: LocationBatch[], t0Utc: number): Promise<GpsF
       clock,
     });
   }
-  return buf.samples;
+  return buf.gps;
 }
 
 /**
@@ -355,7 +355,7 @@ function captureImu(events: ImuEvent[], t0Utc: number): ImuFrame[] {
 // ---------------------------------------------------------------------------
 
 async function livePoll(input: RecordedSessionInput, line: StartLine | null, sectorRef: ReferenceLap | null) {
-  const buf = { samples: [] as GpsFrame[] };
+  const buf = { gps: [] as GpsFrame[] };
   const clock = { trustsRaw: false, session: createSessionClock(input.t0) };
   const frames: GpsFrame[] = [];
   const poll = createLivePoll(line, () => sectorRef);
@@ -378,9 +378,9 @@ async function livePoll(input: RecordedSessionInput, line: StartLine | null, sec
       });
       bi++;
     }
-    if (buf.samples.length > 0) {
-      frames.push(...buf.samples);
-      buf.samples = [];
+    if (buf.gps.length > 0) {
+      frames.push(...buf.gps);
+      buf.gps = [];
     }
     const r = poll.step(frames, { nowMs: pollAt, mode: 'best' });
 
@@ -443,7 +443,7 @@ type GoldenSession = {
 function prepareLap(l: LapRecord): { lap: LapRecord; repaired: boolean } {
   const cleaned = cleanSamples(l.gps, 10);
   const { samples, repaired } = repairDegenerateTimestamps(cleaned, l.durationMs, l.startedAt);
-  return { lap: { ...l, gps: samples, samples }, repaired };
+  return { lap: { ...l, gps: samples }, repaired };
 }
 
 /** A tela da sessão (`app/session/[id].tsx`), com cada volta como a selecionada. */
@@ -459,7 +459,7 @@ function sessionScreen(gs: GoldenSession) {
     const { samples, repaired } = repairDegenerateTimestamps(layoutGps(reference), reference.durationMs);
     if (repaired) {
       anyRepaired = true;
-      reference = { ...reference, gps: samples, samples };
+      reference = { ...reference, gps: samples };
     }
   }
   const saved: Record<string, GpsFrame[]> = {};
@@ -472,7 +472,7 @@ function sessionScreen(gs: GoldenSession) {
   const refLap = buildReferenceLap(refSamples, { lat: refSamples[0].lat, lng: refSamples[0].lng });
   const corners = detectCorners(refLap);
   const matchedRef = matchLapToReference(
-    { id: 'ref', sessionId: 'ref', startedAt: 0, durationMs: refDurationMs, gps: refSamples, samples: refSamples },
+    { id: 'ref', sessionId: 'ref', startedAt: 0, durationMs: refDurationMs, gps: refSamples },
     refLap,
   );
   const bestSaved = saved[sessionBest.id] ?? sessionBest.gps;
@@ -641,9 +641,9 @@ async function putSession(put: Put, gs: GoldenSession): Promise<void> {
   put('buildPilotDna', gs.name, buildPilotDna([{ trackName: gs.session.trackName, startedAt: gs.session.startedAt, laps: gs.laps }]));
   put('coachContext', gs.name, await coachContexts(gs));
   const bestLap = gs.laps.reduce((b, l) => (l.durationMs < b.durationMs ? l : b), gs.laps[0]);
-  put('countCorners', gs.name, countCorners(bestLap.samples));
-  put('samplesToSilhouette', gs.name, samplesToSilhouette(bestLap.samples));
-  put('polylineLength', gs.name, gs.laps.map((l) => polylineLength(l.samples)));
+  put('countCorners', gs.name, countCorners(bestLap.gps));
+  put('samplesToSilhouette', gs.name, samplesToSilhouette(bestLap.gps));
+  put('polylineLength', gs.name, gs.laps.map((l) => polylineLength(l.gps)));
 }
 
 /** O Pilot DNA de todas as sessões juntas. */
@@ -861,7 +861,7 @@ async function recordOnDb(input: RecordedSessionInput, line: StartLine | null, s
     line,
   });
   const t0 = journal.t0Utc!;
-  const buf = { samples: [] as GpsFrame[] };
+  const buf = { gps: [] as GpsFrame[] };
   const clock = { trustsRaw: false, session: createSessionClock(t0) };
   const gps: GpsFrame[] = [];
   const imu: ImuFrame[] = [];
@@ -892,8 +892,8 @@ async function recordOnDb(input: RecordedSessionInput, line: StartLine | null, s
         now: () => b.arrivalAt,
         clock,
       });
-      gps.push(...buf.samples);
-      buf.samples = [];
+      gps.push(...buf.gps);
+      buf.gps = [];
       drainImu();
     } else {
       const e = a.imu!;

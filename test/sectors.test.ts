@@ -27,7 +27,7 @@ function near(actual: number | null, expected: number, label: string) {
  */
 function layoutSamples(): GpsFrame[] {
   const { samples } = generateTimedLaps({ lapDurationMs: D, sampleRateHz: 10, laps: 2, warmupS: 3 });
-  return sliceLaps(samples, [])[0].samples;
+  return sliceLaps(samples, [])[0].gps;
 }
 
 /** Voltas fechadas (com pontos de fronteira) numa sessão com traçado, começando andando. */
@@ -46,7 +46,7 @@ test('sectorSplits: em velocidade constante, S1, S2 e S3 são os terços do tra�
     const { laps } = closedLaps(hz);
     assert.equal(laps.length, 3);
     for (const [i, lap] of laps.entries()) {
-      const s = sectorSplits(lap.samples, ref);
+      const s = sectorSplits(lap.gps, ref);
       near(s.s1Ms, D / 3, `${hz} Hz, volta ${i + 1}, S1`);
       near(s.s2Ms, D / 3, `${hz} Hz, volta ${i + 1}, S2`);
       near(s.s3Ms, D / 3, `${hz} Hz, volta ${i + 1}, S3`);
@@ -59,7 +59,7 @@ test('sectorSplits: numa volta fechada, s1 + s2 + s3 === durationMs (± 1 ms)', 
   assert.ok(ref);
   for (const hz of [10, 5]) {
     for (const lap of closedLaps(hz).laps) {
-      const { s1Ms, s2Ms, s3Ms } = sectorSplits(lap.samples, ref);
+      const { s1Ms, s2Ms, s3Ms } = sectorSplits(lap.gps, ref);
       assert.ok(s1Ms !== null && s2Ms !== null && s3Ms !== null);
       assert.ok(Math.abs(s1Ms + s2Ms + s3Ms - lap.durationMs) <= 1, `${s1Ms + s2Ms + s3Ms} × ${lap.durationMs}`);
     }
@@ -70,16 +70,16 @@ test('sectorSplits: na volta em curso, o setor ainda não alcançado fica null',
   const ref = referenceFromLayout(layoutSamples());
   assert.ok(ref);
   const lap = closedLaps(10).laps[0];
-  const t0 = lap.samples[0].t;
+  const t0 = lap.gps[0].t;
 
   // Em curso, a meio caminho: passou de 1/3, não chegou a 2/3.
-  const half = sectorSplits(lap.samples.filter((s) => s.t < t0 + 0.5 * D), ref);
+  const half = sectorSplits(lap.gps.filter((s) => s.t < t0 + 0.5 * D), ref);
   near(half.s1Ms, D / 3, 'S1 em curso');
   assert.equal(half.s2Ms, null);
   assert.equal(half.s3Ms, null);
 
   // Em curso, a 90%: passou de 2/3, não chegou à linha.
-  const almost = sectorSplits(lap.samples.filter((s) => s.t < t0 + 0.9 * D), ref);
+  const almost = sectorSplits(lap.gps.filter((s) => s.t < t0 + 0.9 * D), ref);
   near(almost.s1Ms, D / 3, 'S1 a 90%');
   near(almost.s2Ms, D / 3, 'S2 a 90%');
   assert.equal(almost.s3Ms, null);
@@ -92,9 +92,9 @@ test('sectorSplits: a volta calculada "em curso" no fechamento e depois "fechada
     const { samples, laps, detected } = closedLaps(hz);
     laps.forEach((lap, i) => {
       // No poll em que a volta fecha, o hook vê a volta em curso até o 1º ponto cru depois da linha.
-      const live = [...lap.samples.slice(0, -1), samples[detected[i].endIdx]];
+      const live = [...lap.gps.slice(0, -1), samples[detected[i].endIdx]];
       const a = sectorSplits(live, ref);
-      const b = sectorSplits(lap.samples, ref);
+      const b = sectorSplits(lap.gps, ref);
       for (const k of ['s1Ms', 's2Ms', 's3Ms'] as const) {
         const va = a[k];
         const vb = b[k];
@@ -124,11 +124,11 @@ test('sem traçado, referenceFromLap(melhor volta) dá a régua, e os terços sa
   assert.equal(laps.length, 3);
 
   const best = laps.reduce((b, l) => (l.durationMs < b.durationMs ? l : b), laps[0]);
-  const ref = referenceFromLap({ gps: best.samples });
+  const ref = referenceFromLap({ gps: best.gps });
   // A régua é o comprimento da própria volta: uma volta no círculo de 120 m de raio (± 1 %).
   assert.ok(Math.abs(ref.totalLength / (2 * Math.PI * 120) - 1) < 0.01, `comprimento ${ref.totalLength}`);
   for (const [i, lap] of laps.entries()) {
-    const s = sectorSplits(lap.samples, ref);
+    const s = sectorSplits(lap.gps, ref);
     near(s.s1Ms, 16_667, `volta ${i + 1}, S1`);
     near(s.s2Ms, 13_333, `volta ${i + 1}, S2`);
     near(s.s3Ms, 10_000, `volta ${i + 1}, S3`);

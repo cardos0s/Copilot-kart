@@ -32,7 +32,7 @@ function meridian(lat0: number, lat1: number, n: number): GpsFrame[] {
 }
 
 function lap(id: string, sessionId: string, durationMs: number, gps: GpsFrame[]): LapRecord {
-  return { id, sessionId, startedAt: 0, durationMs, gps, samples: gps };
+  return { id, sessionId, startedAt: 0, durationMs, gps };
 }
 
 function session(id: string, startedAt: number): Session {

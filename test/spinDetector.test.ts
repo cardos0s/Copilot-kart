@@ -26,7 +26,7 @@ import { session1, session1Spin, T0 } from './golden/sessions';
 /** As voltas da sessão 1 pela captura e pelas janelas do app, no relógio da sessão. */
 async function session1Laps(): Promise<Array<{ gps: GpsFrame[]; imu: ImuFrame[] }>> {
   const s1 = session1();
-  const buf = { samples: [] as GpsFrame[] };
+  const buf = { gps: [] as GpsFrame[] };
   const clock = { trustsRaw: false, session: createSessionClock(s1.t0) };
   for (const b of s1.batches) {
     await handleLocations(b.locations, {
@@ -57,9 +57,9 @@ async function session1Laps(): Promise<Array<{ gps: GpsFrame[]; imu: ImuFrame[] 
     t0Utc: s1.t0,
     legacy: false,
   });
-  const gps = gpsSeriesOf(meta('gps'), buf.samples);
+  const gps = gpsSeriesOf(meta('gps'), buf.gps);
   const imuSeries = imuSeriesOf(meta('imu'), imu);
-  return sliceLapWindows(buf.samples, null).map((w) => lapFrames(w.window, gps, imuSeries));
+  return sliceLapWindows(buf.gps, null).map((w) => lapFrames(w.window, gps, imuSeries));
 }
 
 test('detectSpins: o trompo da sessão 1 sai pela IMU no instante simulado, e o GPS desse instante põe o kart no ponto e a 4 m/s', async () => {

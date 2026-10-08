@@ -69,7 +69,7 @@ function makeLap(c2Speed: number, stopS = 0): LapRecord {
     else s += v * 0.1;
     t += 100;
   }
-  return { id, sessionId: 's1', gps: samples, samples, startedAt: t0, durationMs: t - t0 };
+  return { id, sessionId: 's1', gps: samples, startedAt: t0, durationMs: t - t0 };
 }
 
 const best = makeLap(15);
@@ -100,7 +100,7 @@ test('buildLapInsight: 3 voltas boas e 1 com a curva 2 inválida dão, na curva 
 
 test('buildLapInsight: volta com timestamps degenerados é reparada antes de entrar (± 20 ms na perda da curva)', () => {
   const degenerated = g3.gps.map((p) => ({ ...p, t: g3.startedAt }));
-  const degenerate: LapRecord = { ...g3, gps: degenerated, samples: degenerated };
+  const degenerate: LapRecord = { ...g3, gps: degenerated };
   const expected = c2Loss([best, g1, g2, g3]);
   const loss = c2Loss([best, g1, g2, degenerate]);
   assert.ok(Math.abs(loss - expected) <= 20, `curva 2: ${loss} ms com a volta reparada, ${expected} ms com a original`);
@@ -117,10 +117,10 @@ test('buildLapInsight: fixes com precisão acima de 10 m não entram', () => {
       const { lat, lng } = proj.toLatLng({ x: xy.x - 60, y: xy.y - 10 });
       return { ...p, lat, lng, accuracy: 30 };
   });
-  const g2Bad: LapRecord = { ...g2, gps: g2BadFrames, samples: g2BadFrames };
+  const g2Bad: LapRecord = { ...g2, gps: g2BadFrames };
   assert.equal(bad.size, 5);
   const g2WithoutFrames = g2.gps.filter((_, i) => !bad.has(i));
-  const g2Without: LapRecord = { ...g2, gps: g2WithoutFrames, samples: g2WithoutFrames };
+  const g2Without: LapRecord = { ...g2, gps: g2WithoutFrames };
 
   const withBad = buildLapInsight([best, g1, g2Bad, g3]);
   const without = buildLapInsight([best, g1, g2Without, g3]);
@@ -164,7 +164,7 @@ test('buildLapInsight: numa melhor volta a ~80 km/h com um único ponto a 150 km
     return { kind: 'gps', source: 'PHONE', fix: 'unknown', t: t0 + i * 100, lat, lng, speed: v + ((i % 3) - 1) * 0.1, accuracy: 4 };
   });
   samples[250] = { ...samples[250], speed: 150 / 3.6 };
-  const best: LapRecord = { id: 'lap_pico', sessionId: 's_pico', gps: samples, samples, startedAt: t0, durationMs: 49_900 };
+  const best: LapRecord = { id: 'lap_pico', sessionId: 's_pico', gps: samples, startedAt: t0, durationMs: 49_900 };
 
   const insight = buildLapInsight([best]);
   assert.ok(insight);

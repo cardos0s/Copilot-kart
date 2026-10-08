@@ -512,11 +512,13 @@ export function session3(): TrackLayout {
     synthetic: true,
   });
   const samples = [boundary(c0, inner[0].accuracy), ...inner, boundary(c1, inner[inner.length - 1].accuracy)];
+  const cross = (f: GpsFrame) => ({ t: f.t, lat: f.lat, lng: f.lng, speed: f.speed, accuracy: f.accuracy! });
   return {
     id: 'layout_golden_s1',
     trackId: 'golden-track',
     name: 'Layout principal',
-    samples,
+    window: { kind: 'cross', start: cross(samples[0]), end: cross(samples[samples.length - 1]) },
+    gps: samples,
     durationMs: Math.round(c1.t - c0.t),
     lengthM: polylineLength(samples),
     recordedAt: T0 + sim().phases.end,
@@ -553,7 +555,6 @@ export function session4(): LapRecord {
     id: 'session_golden_legacy_lap_1',
     sessionId: 'session_golden_legacy',
     gps: samples,
-    samples,
     startedAt: Math.round(c0.t) - 86_400_000,
     durationMs: Math.round(c1.t - c0.t),
   };

@@ -99,7 +99,8 @@ test('sessão (T36): mantém os caminhos de limpeza — cleanSamples + reparo na
   assert.equal(/cleanSamples\(\s*layoutGps\(/.test(SRC), false, 'o traçado não passa por cleanSamples');
   assert.equal(SRC.match(/cleanSamples\(/g)?.length, 1, 'um único cleanSamples, o da análise');
   // O traçado reparado troca os frames que layoutGps devolve.
-  assert.ok(SRC.includes('ref = { ...ref, gps: repairedRefSamples, samples: repairedRefSamples };'));
+  // Migrado na T46: o traçado reparado não leva mais o alias `samples: repairedRefSamples`.
+  assert.ok(SRC.includes('ref = { ...ref, gps: repairedRefSamples };'));
 });
 
 test('sessão (T36): o selo sai de sessionBadge/badgeText sobre as voltas do banco e, sem volta, sobre a série GPS da sessão', () => {

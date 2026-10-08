@@ -31,10 +31,12 @@ test('componentes de mapa: nenhum importa GpsSample nem chama listTrackReference
 
 test('componentes de mapa: os pontos são GpsFrame', () => {
   const frameImport = /import type \{ GpsFrame \} from '[./]+\/telemetry\/frame';/;
-  for (const path of ['src/components/TrackSilhouette.tsx', 'src/components/ColoredTrackPath.tsx']) {
+  // Na T46 o campo do segmento de cor (`ColoredSegment.samples`) virou `frames`: o mesmo
+  // GpsFrame[], com outro nome, para nenhum objeto do app ter mais um campo `samples` lido.
+  for (const [path, field] of [['src/components/TrackSilhouette.tsx', 'samples'], ['src/components/ColoredTrackPath.tsx', 'frames']]) {
     const src = source(path);
     assert.ok(frameImport.test(src), `${path} importa GpsFrame`);
-    assert.ok(/samples: GpsFrame\[\];/.test(src), `${path} recebe GpsFrame[]`);
+    assert.ok(new RegExp(`${field}: GpsFrame\\[\\];`).test(src), `${path} recebe GpsFrame[]`);
   }
   // PaintedLap recebia um tipo estrutural `{ lat; lng; speed }[]`.
   const parts = source('src/components/analysis/parts.tsx');
@@ -53,10 +55,13 @@ test('TrackShape: traçados e referências vêm do layoutRepo, pelos frames', ()
   assert.equal(/\.samples\b/.test(src), false, 'nenhuma leitura de .samples');
 });
 
-test('layoutGps: com série devolve os frames dela; o traçado ainda em JSON devolve os pontos do JSON', () => {
+/**
+ * Migrado na T46: substitui "com série devolve os frames dela; o traçado ainda em JSON
+ * devolve os pontos do JSON". O traçado não tem mais `samples` (o que a v5b não converteu
+ * já sai em frames pela conversão), e `layoutGps` devolve os frames dele.
+ */
+test('layoutGps: devolve os frames do traçado', () => {
   const frame = (t: number): GpsFrame => ({ kind: 'gps', source: 'PHONE', fix: 'unknown', t, lat: -14.86, lng: -40.84, speed: 10, accuracy: 4 });
   const gps = [frame(0), frame(100)];
-  assert.equal(layoutGps({ gps, samples: [] }), gps);
-  const json = [frame(5)];
-  assert.equal(layoutGps({ samples: json }), json);
+  assert.equal(layoutGps({ gps }), gps);
 });

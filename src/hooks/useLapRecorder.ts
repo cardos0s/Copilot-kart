@@ -3,7 +3,7 @@ import * as Location from 'expo-location';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { DEMO_LAP } from '../data/demoLap';
 import { Accelerometer, Gyroscope } from 'expo-sensors';
-import type { GpsSample, LatLng, ReferenceLap } from '../lib/geometry';
+import type { LatLng, ReferenceLap } from '../lib/geometry';
 import { detectLaps } from '../lib/lapDetector';
 import { referenceFromLayout } from '../lib/sectors';
 import { lineFromLayout, type StartLine } from '../lib/startLine';
@@ -282,7 +282,7 @@ export function useLapRecorder(options?: LapRecorderOptions) {
     meta?: RecordingMetaInput;
   }) => {
     setState('requesting');
-    buf.samples = [];
+    buf.gps = [];
     buf.imu = [];
     allGpsRef.current = [];
     allImuRef.current = [];
@@ -315,7 +315,7 @@ export function useLapRecorder(options?: LapRecorderOptions) {
 
     const simulate = startOpts?.simulate === true;
     if (simulate) {
-      // Modo demo: replaya o GPX de bench no MESMO buffer (buf.samples) que o
+      // Modo demo: replaya o GPX de bench no MESMO buffer (buf.gps) que o
       // GPS preencheria — todo o pipeline (velocímetro, voltas, setores, save)
       // roda idêntico, sem precisar de GPS/movimento.
       await activateKeepAwakeAsync('copilot-recording');
@@ -326,7 +326,7 @@ export function useLapRecorder(options?: LapRecorderOptions) {
       simRef.current = setInterval(() => {
         const simulated = sim.step(Date.now());
         // No GPS real, é a tarefa de localização que entrega ao diário.
-        buf.samples.push(...simulated);
+        buf.gps.push(...simulated);
         journal.appendGps(simulated);
       }, 80);
     } else {
@@ -378,9 +378,9 @@ export function useLapRecorder(options?: LapRecorderOptions) {
 
     pollRef.current = setInterval(() => {
       // Drena buffer GPS
-      if (buf.samples.length > 0) {
-        allGpsRef.current.push(...buf.samples);
-        buf.samples = [];
+      if (buf.gps.length > 0) {
+        allGpsRef.current.push(...buf.gps);
+        buf.gps = [];
       }
       // Drena buffer IMU (50Hz × 500ms = ~25 frames por poll). A IMU só vai
       // para o diário com a tela montada (via poll); o recorder nativo (v2)
@@ -460,9 +460,9 @@ export function useLapRecorder(options?: LapRecorderOptions) {
 
     // Última drenagem do buffer — pode ter frames chegando entre o poll
     // anterior e agora. GPS + IMU.
-    if (buf.samples.length > 0) {
-      allGpsRef.current.push(...buf.samples);
-      buf.samples = [];
+    if (buf.gps.length > 0) {
+      allGpsRef.current.push(...buf.gps);
+      buf.gps = [];
     }
     if (buf.imu.length > 0) {
       allImuRef.current.push(...buf.imu);
@@ -549,7 +549,7 @@ export function useLapRecorder(options?: LapRecorderOptions) {
    * partir do próximo start().
    */
   const setLayoutReference = useCallback(
-    (samples: GpsSample[], _durationMs: number) => {
+    (samples: GpsFrame[], _durationMs: number) => {
       layoutLineRef.current = lineFromLayout(samples);
       layoutSectorRefRef.current = layoutLineRef.current ? referenceFromLayout(samples) : null;
     },

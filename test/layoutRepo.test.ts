@@ -54,9 +54,10 @@ test('saveReferenceLayout (sql.js): o traçado salvo a partir de uma volta devol
   assert.equal(read.gps![read.gps!.length - 1].synthetic, true);
   assert.deepEqual(read.gps, r.best.gps);
   assert.deepEqual(read.window, r.best.window);
-  assert.equal(read.samples, read.gps);
-  assert.deepEqual(lineFromLayout(read.samples), lineFromLayout(r.best.samples));
-  assert.ok(lineFromLayout(read.samples));
+  // Migrado na T46: era `read.samples === read.gps` (o alias de transição); o alias saiu.
+  assert.equal('samples' in read, false);
+  assert.deepEqual(lineFromLayout(read.gps), lineFromLayout(r.best.gps));
+  assert.ok(lineFromLayout(read.gps));
 
   // Frames próprios: a série gps do dono layout:<id>, só com os frames internos (as
   // fronteiras saem da janela), e nenhum JSON de amostra.
@@ -132,11 +133,13 @@ test('layoutRepo (sql.js): traçado que a v5b ainda não converteu (JSON, sem ja
   );
   assert.equal(read.window!.kind, 'cross');
   assert.deepEqual(read.gps!.map((f) => oldPoint(f, 0)), samples);
-  assert.equal(read.samples, read.gps);
+  // Migrado na T46: era `read.samples === read.gps` (o alias de transição); o alias saiu.
+  assert.equal('samples' in read, false);
   assert.deepEqual(rowsOf(conn, 'SELECT COUNT(*) AS c FROM telemetry_series'), [{ c: 0 }]);
 
+  // O tipo exige janela e frames; o repositório recusa também quem chega sem eles em tempo de execução.
   const { window: _w, gps: _g, ...withoutWindow } = read;
-  await assert.rejects(saveLayout(conn, { ...withoutWindow, id: 'layout_sem_janela' }), /sem a janela/);
+  await assert.rejects(saveLayout(conn, { ...withoutWindow, id: 'layout_sem_janela' } as unknown as TrackLayout), /sem a janela/);
   assert.equal(await getLayout(conn, 'layout_sem_janela'), null);
 });
 
@@ -147,7 +150,6 @@ test('saveLayout (sql.js, TF-19): a janela por índice de uma volta vale sobre a
     id: 'layout_index',
     trackId: 'track_1',
     name: 'Layout principal',
-    samples: frames,
     gps: frames,
     window: { kind: 'index', from: 120, to: 124 },
     durationMs: 400,
@@ -189,12 +191,14 @@ test('track_references (sql.js): a referência é lida da série do dono referen
 
   const b = (await getTrackReference(conn, 'track_b'))!;
   assert.deepEqual(b.gps, frames);
-  assert.equal(b.samples, b.gps);
+  // Migrado na T46: era `b.samples === b.gps` (o alias de transição); o alias saiu.
+  assert.equal('samples' in b, false);
   assert.deepEqual([b.trackName, b.durationMs, b.lengthM, b.sourceSessionId, b.sourceLapId], ['Pista B', 41000, 610, 's_b', 'l_b']);
 
   const a = (await getTrackReference(conn, 'track_a'))!;
   assert.deepEqual(a.gps!.map((f) => oldPoint(f, 0)), oldSamples);
-  assert.equal(a.samples, a.gps);
+  // Migrado na T46: era `a.samples === a.gps` (o alias de transição); o alias saiu.
+  assert.equal('samples' in a, false);
 
-  assert.deepEqual((await listTrackReferences(conn)).map((x) => [x.trackId, x.samples.length]), [['track_b', 40], ['track_a', 1]]);
+  assert.deepEqual((await listTrackReferences(conn)).map((x) => [x.trackId, x.gps.length]), [['track_b', 40], ['track_a', 1]]);
 });

@@ -9,7 +9,7 @@
  * a linha da gravação: a mesma função e a mesma linha do "Encerrar" (TMP-06).
  * Os índices (`openCross.idx`, voltas) são índices nesse array de análise.
  */
-import type { GpsSample, ReferenceLap } from '../lib/geometry';
+import type { ReferenceLap } from '../lib/geometry';
 import { detectLaps, type DetectLapsResult, type OpenCross } from '../lib/lapDetector';
 import { DeltaTracker, type DeltaReading } from '../lib/realtimeDelta';
 import { sectorSplits } from '../lib/sectors';
@@ -60,7 +60,7 @@ export type LivePoll = {
 };
 
 /** Ponto sintético na linha de chegada (AD-006), como o `sliceLaps` monta. */
-function crossSample(cross: CrossPoint, from: GpsSample): GpsSample {
+function crossSample(cross: CrossPoint, from: GpsFrame): GpsFrame {
   return {
     kind: 'gps',
     source: from.source,
@@ -81,7 +81,7 @@ function crossSample(cross: CrossPoint, from: GpsSample): GpsSample {
  * depois da parada, e não o fim da última volta fechada. `null` se a volta
  * ainda não abriu.
  */
-function currentLapSamples(all: GpsSample[], openCross: OpenCross | null): GpsSample[] | null {
+function currentLapSamples(all: GpsFrame[], openCross: OpenCross | null): GpsFrame[] | null {
   if (!openCross) return null;
   const t0 = openCross.t;
   return [crossSample(openCross, all[openCross.idx]), ...all.slice(openCross.idx).filter((p) => p.t > t0)];
@@ -159,7 +159,7 @@ export function createLivePoll(line: StartLine | null, sectorRef: () => Referenc
         // mesma `sectorSplits` da análise. É o que vai para a equipe (TMP-08).
         if (sectors) {
           const sliced = sliceLaps(all, [], line);
-          const splits = sectorSplits(sliced[sliced.length - 1].samples, sectors);
+          const splits = sectorSplits(sliced[sliced.length - 1].gps, sectors);
           lastClosedLapSectors = splits;
           const { s1Ms: s1, s2Ms: s2, s3Ms: s3 } = splits;
           if (s1 !== null && s2 !== null && s3 !== null) {
@@ -178,7 +178,7 @@ export function createLivePoll(line: StartLine | null, sectorRef: () => Referenc
       const loaded = trackerLoadedFrom;
       if (refLapIdx >= 0 && (loaded === null || loaded.mode !== mode || loaded.lapIdx !== refLapIdx)) {
         const refLap = deltaReferenceLap(all, line, refLapIdx);
-        if (refLap) tracker.setReference(refLap.samples, refLap.durationMs);
+        if (refLap) tracker.setReference(refLap.gps, refLap.durationMs);
         trackerLoadedFrom = { mode, lapIdx: refLapIdx };
       } else if (refLapIdx < 0 && tracker.hasReference()) {
         tracker.clear();

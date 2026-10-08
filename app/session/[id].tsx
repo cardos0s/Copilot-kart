@@ -259,7 +259,7 @@ function SessionScreenInner() {
         );
         if (repaired) {
           anyRepaired = true;
-          ref = { ...ref, gps: repairedRefSamples, samples: repairedRefSamples };
+          ref = { ...ref, gps: repairedRefSamples };
         }
       }
 
@@ -347,7 +347,6 @@ function SessionScreenInner() {
           startedAt: 0,
           durationMs: refDurationMs,
           gps: refSamples,
-          samples: refSamples,
         },
         refLap
       );
@@ -1293,11 +1292,11 @@ function MapPanel({
       const color = sampleColors[i] ?? colors.primary;
       const sample = selected.gps[i];
       if (!cur || cur.color !== color) {
-        if (cur) cur.samples.push(sample); // overlap pra evitar gap
-        cur = { samples: [sample], color };
+        if (cur) cur.frames.push(sample); // overlap pra evitar gap
+        cur = { frames: [sample], color };
         out.push(cur);
       } else {
-        cur.samples.push(sample);
+        cur.frames.push(sample);
       }
     }
     return out;

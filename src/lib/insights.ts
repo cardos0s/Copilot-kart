@@ -96,8 +96,7 @@ export async function computeSmartInsights(opts?: {
     recentSessions.map(async (sess) => {
       const lapsRaw = await getLapsForSession(sess.id);
       const laps = lapsRaw.map((l) => {
-        const samples = cleanSamples(l.samples, 10);
-        return { ...l, gps: samples, samples };
+        return { ...l, gps: cleanSamples(l.gps, 10) };
       });
       const bestLap = laps.length
         ? laps.reduce((a, b) => (a.durationMs < b.durationMs ? a : b))
@@ -115,7 +114,7 @@ export async function computeSmartInsights(opts?: {
   const avgLapMs = allDurations.length
     ? allDurations.reduce((a, b) => a + b, 0) / allDurations.length
     : null;
-  const peakKmh = allLaps.length ? msToKmh(Math.max(0, ...allLaps.map((l) => peakSpeedMs(l.samples) ?? 0))) : 0;
+  const peakKmh = allLaps.length ? msToKmh(Math.max(0, ...allLaps.map((l) => peakSpeedMs(l.gps) ?? 0))) : 0;
 
   // Score com 3 componentes
   const scoreBreakdown = computeScore(allDurations);
@@ -299,13 +298,13 @@ async function computeRecurringWorstSector(
 
   // Carrega referência + corners
   const ref = await getTrackReference(bestTrack.trackId);
-  if (!ref || ref.samples.length < 5) return null;
+  if (!ref || ref.gps.length < 5) return null;
 
   let refLap: ReturnType<typeof buildReferenceLap>;
   try {
-    refLap = buildReferenceLap(ref.samples, {
-      lat: ref.samples[0].lat,
-      lng: ref.samples[0].lng,
+    refLap = buildReferenceLap(ref.gps, {
+      lat: ref.gps[0].lat,
+      lng: ref.gps[0].lng,
     });
   } catch {
     return null;
@@ -318,8 +317,7 @@ async function computeRecurringWorstSector(
       sessionId: 'ref',
       startedAt: 0,
       durationMs: ref.durationMs,
-      gps: ref.samples,
-      samples: ref.samples,
+      gps: ref.gps,
     },
     refLap
   );
@@ -331,7 +329,7 @@ async function computeRecurringWorstSector(
 
   for (const s of bestTrack.sessions) {
     for (const lap of s.laps) {
-      if (lap.samples.length < 5) continue;
+      if (lap.gps.length < 5) continue;
       try {
         const matched = matchLapToReference(lap, refLap);
         const analysis = analyzeLap(matched, matchedRef, 20);
@@ -379,7 +377,7 @@ function computeSpeedTrend(
     if (!sd.session.trackId) continue;
     let peak = 0;
     for (const lap of sd.laps) {
-      const p = peakSpeedMs(lap.samples) ?? 0;
+      const p = peakSpeedMs(lap.gps) ?? 0;
       if (p > peak) peak = p;
     }
     if (peak <= 0) continue;

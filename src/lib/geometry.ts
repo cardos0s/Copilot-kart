@@ -8,23 +8,10 @@
  *    a cada frame, e com pista de <1km o erro de planificação é desprezível.
  */
 
-import type { GpsFrame, ImuFrame, LocalGpsFrame } from '../telemetry/frame';
+import type { GpsFrame, LocalGpsFrame } from '../telemetry/frame';
 
 export type LatLng = { lat: number; lng: number };
 export type XY = { x: number; y: number };
-
-/** @deprecated Transição até a T46: use `GpsFrame` (`t` em ms desde o t0Utc da série). */
-export type GpsSample = GpsFrame;
-
-/**
- * @deprecated Transição até a T46: use `ImuFrame` (accel em m/s², gyro em rad/s, cada um pode
- * faltar). Eixos do expo-sensors: x para a direita do celular, y para cima em retrato, z saindo
- * da tela; o yaw rate da cabine é o gyro z.
- */
-export type ImuSample = ImuFrame;
-
-/** @deprecated Transição até a T46: use `LocalGpsFrame`. */
-export type LocalSample = LocalGpsFrame;
 
 const R_EARTH = 6371000; // metros
 const DEG2RAD = Math.PI / 180;

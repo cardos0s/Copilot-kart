@@ -7,12 +7,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { haversine, type GpsSample } from '../src/lib/geometry';
+import { haversine } from '../src/lib/geometry';
 import { detectLaps } from '../src/lib/lapDetector';
 import { lineFromLayout } from '../src/lib/startLine';
 import { sliceLaps, type RecordedSessionRow } from '../src/recording/finishSession';
 import { sqlSessionRepo } from '../src/storage/sqlSessionRepo';
-import type { ImuFrame } from '../src/telemetry/frame';
+import type { GpsFrame, ImuFrame } from '../src/telemetry/frame';
 import { analysisGps } from '../src/telemetry/laps';
 import {
   finishRecording,
@@ -29,7 +29,7 @@ import { generateLapSamples, generateTimedLaps } from './helpers/syntheticTrack'
 const T0 = 1_700_000_000_000;
 
 /** Grava pelo diário, como no app, e devolve o que o `stop()` devolveria. */
-async function recorded(samples: GpsSample[]) {
+async function recorded(samples: GpsFrame[]) {
   const store = await fakeJournalStore();
   const journal = new RecordingJournal(store, () => T0);
   const recordingId = await journal.begin({
@@ -84,7 +84,7 @@ async function recorded(samples: GpsSample[]) {
   return { store, journal, recordingId, repo, deps, meta, result, events, endCalls, discardCalls, postSaveCalls };
 }
 
-function track(numLaps: number): GpsSample[] {
+function track(numLaps: number): GpsFrame[] {
   return generateLapSamples({ numLaps, warmupS: 5, cooldownS: 10, startTimestamp: T0 });
 }
 
@@ -158,7 +158,7 @@ test('finishRecording: com meta.line no diário, salva voltas que começam no cr
   // Traçado salvo (melhor volta com pontos de fronteira) e uma corrida que
   // começa andando na metade da pista: a linha inferida ficaria a 240 m.
   const layout = generateTimedLaps({ lapDurationMs: 37_699, sampleRateHz: 10, laps: 2, warmupS: 3, t0: T0 }).samples;
-  const line = lineFromLayout(sliceLaps(layout, [])[0].samples);
+  const line = lineFromLayout(sliceLaps(layout, [])[0].gps);
   assert.ok(line);
   const samples = generateTimedLaps({ lapDurationMs: 37_699, sampleRateHz: 10, startPhase: 0.5, laps: 4, t0: T0 }).samples;
 
@@ -194,7 +194,7 @@ test('finishRecording: com meta.line no diário, salva voltas que começam no cr
   assert.equal(repo.laps.length, 3);
   assert.equal(repo.laps.length, detected.length);
   for (const [i, l] of repo.laps.entries()) {
-    const first = l.samples[0];
+    const first = l.gps[0];
     assert.equal(first.synthetic, true);
     assert.equal(first.t, detected[i].startCross.t);
     assert.ok(haversine(first, line) < 1, `volta ${i + 1} começa a ${haversine(first, line)} m da linha`);
@@ -206,7 +206,7 @@ test('finishRecording: com meta.line no diário, salva voltas que começam no cr
 // ---------------------------------------------------------------------------
 
 /** Grava pelo diário GPS e IMU (50 Hz), em blocos de 5 s, sobre o banco do app. */
-async function recordedOnDb(samples: GpsSample[], imuMs: number) {
+async function recordedOnDb(samples: GpsFrame[], imuMs: number) {
   const db = await openV5Database();
   const journal = new RecordingJournal(db.store, () => T0);
   const recordingId = await journal.begin({

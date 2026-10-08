@@ -11,10 +11,11 @@ import { createSessionClock } from './sessionClock';
 
 export const BG_TASK = 'KARTLAP_BG_LOCATION';
 
-type Buffer = { samples: GpsFrame[]; imu: ImuFrame[] };
+type Buffer = { gps: GpsFrame[]; imu: ImuFrame[] };
 
 /** Buffer que a UI drena a cada poll. Global para sobreviver a reload em dev. */
-export const buf: Buffer = (globalThis as any).__kartlapBuf ?? { samples: [], imu: [] };
+export const buf: Buffer = (globalThis as any).__kartlapBuf ?? { gps: [], imu: [] };
+if (!buf.gps) buf.gps = [];
 if (!buf.imu) buf.imu = [];
 (globalThis as any).__kartlapBuf = buf;
 

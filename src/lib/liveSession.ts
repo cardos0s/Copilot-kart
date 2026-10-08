@@ -164,7 +164,7 @@ export async function endLiveSession(code: string): Promise<void> {
     .eq('code', code);
 }
 
-/** O que o ponto do ao vivo leva do frame de GPS (um `GpsSample` também serve). */
+/** O que o ponto do ao vivo leva do frame de GPS. */
 export type LiveFrame = Pick<GpsFrame, 't' | 'lat' | 'lng' | 'speed' | 'heading' | 'accuracy' | 'altitude' | 'altitudeAccuracy'>;
 
 /** O que o ponto do ao vivo leva do `info` do hook de gravação. */

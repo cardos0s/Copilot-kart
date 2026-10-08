@@ -21,6 +21,212 @@ import { layoutOwner, referenceOwner } from './layoutRepo';
 import type { SqlConn, SqlTx } from './sqlConn';
 import { FRAMES_VERSION, windowColumns } from './sqlSessionRepo';
 
+// ---------------------------------------------------------------------------
+// Schema base e v1 → v3, anteriores ao executor injetado (movidos do `db.ts` na T46)
+// ---------------------------------------------------------------------------
+
+/** As tabelas como a primeira versão do app as criava. As colunas de JSON saem na v5c. */
+const BASE_SCHEMA = `
+    CREATE TABLE IF NOT EXISTS sessions (
+      id TEXT PRIMARY KEY,
+      track_name TEXT NOT NULL,
+      kart TEXT,
+      notes TEXT,
+      started_at INTEGER NOT NULL,
+      weather TEXT,
+      track_id TEXT,
+      mode TEXT
+    );
+    CREATE TABLE IF NOT EXISTS laps (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      started_at INTEGER NOT NULL,
+      duration_ms INTEGER NOT NULL,
+      samples_json TEXT NOT NULL,
+      FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_laps_session ON laps(session_id);
+
+    CREATE TABLE IF NOT EXISTS track_references (
+      track_id TEXT PRIMARY KEY,
+      track_name TEXT NOT NULL,
+      samples_json TEXT NOT NULL,
+      duration_ms INTEGER NOT NULL,
+      length_m REAL NOT NULL,
+      recorded_at INTEGER NOT NULL,
+      source_session_id TEXT,
+      source_lap_id TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS ai_chat_threads (
+      cache_key TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      lap_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      system_prompt TEXT NOT NULL,
+      messages_json TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_ai_threads_updated ON ai_chat_threads(updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS track_layouts (
+      id TEXT PRIMARY KEY,
+      track_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      samples_json TEXT NOT NULL,
+      duration_ms INTEGER NOT NULL,
+      length_m REAL NOT NULL,
+      recorded_at INTEGER NOT NULL,
+      source_session_id TEXT,
+      source_lap_id TEXT,
+      is_default INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_layouts_track ON track_layouts(track_id);
+
+    CREATE TABLE IF NOT EXISTS gamification_state (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      xp INTEGER NOT NULL DEFAULT 0,
+      level INTEGER NOT NULL DEFAULT 1,
+      season_started_at INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS achievements_unlocked (
+      achievement_id TEXT PRIMARY KEY,
+      session_id TEXT,
+      unlocked_at INTEGER NOT NULL,
+      celebrated INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS daily_challenges (
+      id TEXT PRIMARY KEY,
+      date TEXT NOT NULL,
+      template_id TEXT NOT NULL,
+      target INTEGER NOT NULL,
+      progress INTEGER NOT NULL DEFAULT 0,
+      completed INTEGER NOT NULL DEFAULT 0,
+      completed_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_challenges_date ON daily_challenges(date);
+
+    CREATE TABLE IF NOT EXISTS pb_records (
+      id TEXT PRIMARY KEY,
+      track_id TEXT NOT NULL,
+      layout_id TEXT,
+      session_id TEXT NOT NULL,
+      lap_id TEXT NOT NULL,
+      duration_ms INTEGER NOT NULL,
+      celebrated INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_pb_track ON pb_records(track_id, layout_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS kart_setups (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      chassis_brand TEXT,
+      chassis_model TEXT,
+      chassis_year INTEGER,
+      engine_type TEXT,
+      engine_tune TEXT,
+      hours REAL DEFAULT 0,
+      tire_pressure_front REAL,
+      tire_pressure_rear REAL,
+      camber_deg REAL,
+      gear_front INTEGER,
+      gear_rear INTEGER,
+      ballast_kg REAL,
+      category TEXT,
+      notes TEXT,
+      is_active INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_kart_setups_active ON kart_setups(is_active DESC);
+`;
+
+/**
+ * Cria as tabelas que faltam e roda as migrações v1 → v3, cada uma controlada pelo
+ * `user_version`, como sempre rodaram. Banco novo passa por elas e chega à v5c com as
+ * colunas de JSON vazias, que então saem.
+ */
+export async function migrateBaseSchema(conn: SqlTx): Promise<void> {
+  await conn.execAsync(BASE_SCHEMA);
+
+  // Migration v1 → v2: copia track_references pra track_layouts (1 layout
+  // por pista, marcado como default). Roda uma vez só — controlado via
+  // PRAGMA user_version. Mantém track_references pra rollback fácil; será
+  // removida num release futuro quando o caminho novo estiver assentado.
+  const version = await conn.getFirstAsync<{ user_version: number }>(
+    'PRAGMA user_version'
+  );
+  if ((version?.user_version ?? 0) < 1) {
+    const legacyRefs = await conn.getAllAsync<any>(
+      'SELECT * FROM track_references'
+    );
+    for (const r of legacyRefs) {
+      const exists = await conn.getFirstAsync<any>(
+        'SELECT id FROM track_layouts WHERE track_id = ? LIMIT 1',
+        r.track_id
+      );
+      if (exists) continue; // já tem algum layout pra essa pista, pula
+      const layoutId = `layout_${r.track_id}_${Date.now()}`;
+      await conn.runAsync(
+        `INSERT INTO track_layouts (id, track_id, name, samples_json, duration_ms, length_m, recorded_at, source_session_id, source_lap_id, is_default)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+        layoutId,
+        r.track_id,
+        'Layout principal',
+        r.samples_json,
+        r.duration_ms,
+        r.length_m,
+        r.recorded_at,
+        r.source_session_id ?? null,
+        r.source_lap_id ?? null
+      );
+    }
+    // Sessions ganham coluna layout_id (nullable, sessões antigas ficam null).
+    // ALTER TABLE em SQLite só adiciona coluna no fim — perfeito pra migration.
+    try {
+      await conn.execAsync('ALTER TABLE sessions ADD COLUMN layout_id TEXT');
+    } catch {
+      // Coluna já existe (rerun de migration depois de crash) — segue.
+    }
+    await conn.execAsync('PRAGMA user_version = 1');
+  }
+
+  // Migration v1 → v2: sessions ganham kart_setup_id pra associar o setup
+  // usado naquela sessão (pneus, cambagem, etc).
+  const v2 = await conn.getFirstAsync<{ user_version: number }>(
+    'PRAGMA user_version'
+  );
+  if ((v2?.user_version ?? 0) < 2) {
+    try {
+      await conn.execAsync('ALTER TABLE sessions ADD COLUMN kart_setup_id TEXT');
+    } catch {
+      // Coluna já existe — segue.
+    }
+    await conn.execAsync('PRAGMA user_version = 2');
+  }
+
+  // Migration v2 → v3: laps ganham coluna imu_samples_json pra guardar
+  // o stream da IMU (accel + gyro a ~50Hz). Pra voltas antigas o campo
+  // fica NULL — readers tratam null como "sem dado IMU".
+  const v3 = await conn.getFirstAsync<{ user_version: number }>(
+    'PRAGMA user_version'
+  );
+  if ((v3?.user_version ?? 0) < 3) {
+    try {
+      await conn.execAsync('ALTER TABLE laps ADD COLUMN imu_samples_json TEXT');
+    } catch {
+      // Coluna já existe — segue.
+    }
+    await conn.execAsync('PRAGMA user_version = 3');
+  }
+}
+
 export type MigrationTx = {
   exec(sql: string): Promise<void>;
 };

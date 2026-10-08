@@ -33,7 +33,7 @@ test('comparação (T37): lê frames — nenhum GpsSample e nenhuma leitura de .
 test('comparação (T37): o traço limpa e repara a volta; o traçado só é reparado, sem cleanSamples', () => {
   // Substitui `cleanSamples(raw.samples, 10)`.
   assert.ok(
-    /const cleaned = cleanSamples\(raw\.gps, 10\);\s*const \{ samples \} = repairDegenerateTimestamps\(cleaned, raw\.durationMs, raw\.startedAt\);\s*return \{ \.\.\.raw, gps: samples, samples \};/.test(SRC),
+    /const cleaned = cleanSamples\(raw\.gps, 10\);\s*const \{ samples \} = repairDegenerateTimestamps\(cleaned, raw\.durationMs, raw\.startedAt\);\s*return \{ \.\.\.raw, gps: samples \};/.test(SRC), // T46: sem o alias `samples`
   );
   assert.ok(/const lapARec = forTrace\(savedA\);/.test(SRC));
   assert.ok(/const lapBRec = forTrace\(savedB\);/.test(SRC));

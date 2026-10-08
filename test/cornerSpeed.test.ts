@@ -28,7 +28,7 @@ function circularLap(): LapRecord {
     if (Math.abs(progress - 0.6) < 0.02) speed = Math.abs(progress - 0.6) < 0.003 ? 12 : 14;
     return { ...p, speed };
   });
-  return { id: 'l1', sessionId: 's1', gps: samples, samples, startedAt: T0, durationMs: LAP_MS };
+  return { id: 'l1', sessionId: 's1', gps: samples, startedAt: T0, durationMs: LAP_MS };
 }
 
 function corner(index: number, sStart: number, sEnd: number): Corner {

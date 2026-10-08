@@ -34,12 +34,17 @@ export function nextReferenceLayout(
   sessionId: string,
   now: number
 ): TrackLayout {
+  // Toda volta lida do banco tem janela; sem ela, não há o que o traçado guardar.
+  if (!best.window) throw new Error(`a volta ${best.id} não tem janela`);
   const baseName = reference.name.replace(DATE_SUFFIX, '');
-  const layout: TrackLayout = {
+  return {
     id: `layout_${best.id}`,
     trackId: reference.trackId,
     name: `${baseName} · ${ddmm(now)}`,
-    samples: [...best.gps],
+    // A janela e os frames da volta: o `promoteReferenceLayout` os copia para a série
+    // do traçado novo (TF-19).
+    window: best.window,
+    gps: [...best.gps],
     durationMs: best.durationMs,
     lengthM: polylineLength(best.gps),
     recordedAt: now,
@@ -47,15 +52,6 @@ export function nextReferenceLayout(
     sourceLapId: best.id,
     isDefault: true,
   };
-  // A janela e os frames da volta: o `promoteReferenceLayout` os copia para a série
-  // do traçado novo (TF-19). A volta ainda em JSON (até a v5b) não tem janela.
-  if (best.window) {
-    layout.window = best.window;
-    layout.gps = [...best.gps];
-    // Transição (até a T46): `samples` é o mesmo array de `gps`.
-    layout.samples = layout.gps as typeof layout.samples;
-  }
-  return layout;
 }
 
 /**

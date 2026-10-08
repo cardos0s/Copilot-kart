@@ -6,7 +6,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import type { GpsSample } from '../src/lib/geometry';
 import { haversine } from '../src/lib/geometry';
 import { detectLaps } from '../src/lib/lapDetector';
 import { handleLocations } from '../src/recording/locationHandler';
@@ -20,9 +19,9 @@ import { session1, session2, session3, session4, type LocationBatch } from './go
  * frames no relógio da sessão e sem o corte de 30 m; aqui eles voltam ao tempo
  * absoluto e ao corte de 30 m, que é o que as fases da sessão descrevem.
  */
-async function capture(batches: LocationBatch[]): Promise<GpsSample[]> {
+async function capture(batches: LocationBatch[]): Promise<GpsFrame[]> {
   const t0Utc = batches[0].arrivalAt;
-  const buf = { samples: [] as GpsFrame[] };
+  const buf = { gps: [] as GpsFrame[] };
   const clock = { trustsRaw: false, session: createSessionClock(t0Utc) };
   for (const b of batches) {
     await handleLocations(b.locations, {
@@ -34,7 +33,7 @@ async function capture(batches: LocationBatch[]): Promise<GpsSample[]> {
       clock,
     });
   }
-  return analysisGps(buf.samples).map((f) => ({ ...f, t: t0Utc + f.t }));
+  return analysisGps(buf.gps).map((f) => ({ ...f, t: t0Utc + f.t }));
 }
 
 test('sessão 1: paddock, volta de saída, 6 voltas e box; detectLaps fecha exatamente 6 voltas', async () => {

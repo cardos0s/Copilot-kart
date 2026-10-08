@@ -43,7 +43,8 @@ export function referenceFromLap(lap: { gps: GpsFrame[] }): ReferenceLap {
  * salvar.
  */
 export function sectorLapSamples(lap: Pick<LapRecord, 'gps' | 'durationMs' | 'startedAt'>): GpsFrame[] {
-  return repairDegenerateTimestamps(lap.gps, lap.durationMs, lap.startedAt).samples;
+  const { samples } = repairDegenerateTimestamps(lap.gps, lap.durationMs, lap.startedAt);
+  return samples;
 }
 
 /**
@@ -59,7 +60,7 @@ export function sectorSplits(lapSamples: GpsFrame[], ref: ReferenceLap): SectorS
   const L = ref.totalLength;
   if (lapSamples.length < 2 || L <= 0) return none;
 
-  const lap: LapRecord = { id: '', sessionId: '', gps: lapSamples, samples: lapSamples, startedAt: lapSamples[0].t, durationMs: 0 };
+  const lap: LapRecord = { id: '', sessionId: '', gps: lapSamples, startedAt: lapSamples[0].t, durationMs: 0 };
   const matched = matchLapToReference(lap, ref);
   const pts = matched.points;
   // O início da volta é a linha: s ≈ 0, ou s ≈ L quando o map matching o

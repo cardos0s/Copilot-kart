@@ -6,7 +6,6 @@
  * Puro: o diário, o armazenamento e os efeitos pós-salvamento são injetados.
  */
 import type { LapRecord } from '../lib/analysis';
-import type { GpsSample } from '../lib/geometry';
 import {
   saveRecordedSession,
   type RecordedLap,
@@ -15,6 +14,7 @@ import {
   type SavedSession,
   type SessionRepo,
 } from './finishSession';
+import type { GpsFrame } from '../telemetry/frame';
 import type { RecordingJournal } from './journal';
 
 /**
@@ -39,7 +39,7 @@ export type FinishRecordingOutcome =
   | { kind: 'save-failed'; error: unknown };
 
 export async function finishRecording(
-  result: { allSamples: GpsSample[]; laps: RecordedLap[] },
+  result: { allSamples: GpsFrame[]; laps: RecordedLap[] },
   meta: FinishRecordingMeta,
   deps: FinishRecordingDeps
 ): Promise<FinishRecordingOutcome> {

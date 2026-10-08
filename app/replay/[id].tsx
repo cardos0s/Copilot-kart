@@ -764,7 +764,6 @@ function buildScene(
           startedAt: bestLap.startedAt,
           durationMs: bestLap.durationMs,
           gps: bestLap.gps,
-          samples: bestLap.gps,
         },
         ref
       );
@@ -812,7 +811,6 @@ function buildScene(
                 startedAt: lap.startedAt,
                 durationMs: lap.durationMs,
                 gps: lap.gps,
-                samples: lap.gps,
               },
               ref
             );

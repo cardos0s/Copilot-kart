@@ -23,7 +23,7 @@ export type LocationLike = Pick<LocationObject, 'timestamp'> & {
 };
 
 export type LocationTaskDeps = {
-  buf: { samples: GpsFrame[] };
+  buf: { gps: GpsFrame[] };
   journal: Pick<RecordingJournal, 'recordingId' | 'appendGps' | 'flushIfDue'> | null;
   /** Alguma tela de gravação ligou o GPS neste processo. */
   uiActive: boolean;
@@ -85,7 +85,7 @@ export async function handleLocations(locations: LocationLike[], deps: LocationT
   }
   if (samples.length === 0) return;
 
-  deps.buf.samples.push(...samples);
+  deps.buf.gps.push(...samples);
   if (!journal) return;
   journal.appendGps(samples);
   await journal.flushIfDue(arrivalNow);

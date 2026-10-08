@@ -5,7 +5,7 @@ import { colors } from '../theme';
 
 export type ColoredSegment = {
   /** Samples consecutivos no segmento (mínimo 2). */
-  samples: GpsFrame[];
+  frames: GpsFrame[];
   color: string;
 };
 
@@ -72,7 +72,7 @@ export function ColoredTrackPath({
   let minLng = Infinity;
   let maxLng = -Infinity;
   for (const seg of segments) {
-    for (const p of seg.samples) {
+    for (const p of seg.frames) {
       if (p.lat < minLat) minLat = p.lat;
       if (p.lat > maxLat) maxLat = p.lat;
       if (p.lng < minLng) minLng = p.lng;
@@ -93,16 +93,16 @@ export function ColoredTrackPath({
   const toX = (lng: number) => (lng - minLng) * scale + offsetX;
   const toY = (lat: number) => height - ((lat - minLat) * scale + offsetY);
 
-  const firstSample = segments[0]?.samples[0];
+  const firstSample = segments[0]?.frames[0];
 
   return (
     <Svg width={width} height={height}>
       {/* Trilha colorida */}
       {segments.map((seg, segIdx) => {
-        if (seg.samples.length < 2) return null;
-        const step = Math.max(1, Math.floor(seg.samples.length / 100));
-        const filtered = seg.samples.filter(
-          (_, i) => i % step === 0 || i === seg.samples.length - 1
+        if (seg.frames.length < 2) return null;
+        const step = Math.max(1, Math.floor(seg.frames.length / 100));
+        const filtered = seg.frames.filter(
+          (_, i) => i % step === 0 || i === seg.frames.length - 1
         );
         const d = filtered
           .map((p, i) => `${i === 0 ? 'M' : 'L'}${toX(p.lng).toFixed(1)},${toY(p.lat).toFixed(1)}`)

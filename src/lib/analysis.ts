@@ -14,8 +14,6 @@
 
 import type { GpsFrame, ImuFrame, LapWindow } from '../telemetry/frame';
 import {
-  GpsSample,
-  ImuSample,
   ReferenceLap,
   buildReferenceLap,
   makeLocalProjector,
@@ -30,18 +28,15 @@ export type LapRecord = {
   startedAt: number;
   durationMs: number;
   /**
-   * A janela da volta sobre o bruto da sessão (AD-007). Ausente só na volta ainda
-   * no formato antigo (JSON), até a v5b (T43).
+   * A janela da volta sobre o bruto da sessão (AD-007). Toda volta lida do banco tem
+   * uma; falta só na volta montada em memória por quem não grava (a referência de uma
+   * comparação, a volta ao vivo).
    */
   window?: LapWindow;
   /** Os frames de GPS da volta, com as fronteiras quando a janela é por cruzamento. */
   gps: GpsFrame[];
   /** IMU da volta (50 Hz). Ausente quando a volta não tem IMU ou ela não foi pedida. */
   imu?: ImuFrame[];
-  /** @deprecated Transição até a T46: o mesmo array de `gps`, para os consumidores ainda não migrados. */
-  samples: GpsSample[];
-  /** @deprecated Transição até a T46: o mesmo array de `imu`. */
-  imuSamples?: ImuSample[];
 };
 
 export type MatchedLap = {
